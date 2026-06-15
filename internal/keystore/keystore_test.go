@@ -85,3 +85,50 @@ func TestFingerprint_MatchesSHA256Prefix(t *testing.T) {
 		t.Error("fingerprint does not match SHA256(key)[:8]")
 	}
 }
+
+func TestNewMapKeyStore_Empty(t *testing.T) {
+	s := NewMapKeyStore(nil)
+	if s.GetKey([]byte{0x01}) != nil {
+		t.Error("expected nil for unknown hash")
+	}
+}
+
+func TestNewMapKeyStore_GetKey_Hit(t *testing.T) {
+	key := []byte{0x01, 0x02, 0x03}
+	hash := []byte{0xab}
+	entries := map[string][]Entry{
+		hex.EncodeToString(hash): {{Key: key, Name: "test"}},
+	}
+	s := NewMapKeyStore(entries)
+	result := s.GetKey(hash)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(result))
+	}
+	if !bytes.Equal(result[0].Key, key) {
+		t.Errorf("expected key %v, got %v", key, result[0].Key)
+	}
+}
+
+func TestNewMapKeyStore_GetKey_Miss(t *testing.T) {
+	s := NewMapKeyStore(map[string][]Entry{
+		"ab": {{Key: []byte{0x01}}},
+	})
+	if s.GetKey([]byte{0xcd}) != nil {
+		t.Error("expected nil for unknown hash")
+	}
+}
+
+func TestNewMapKeyStore_MultipleEntriesPerHash(t *testing.T) {
+	hash := []byte{0xab}
+	entries := map[string][]Entry{
+		hex.EncodeToString(hash): {
+			{Key: []byte{0x01}, Name: "first"},
+			{Key: []byte{0x02}, Name: "second"},
+		},
+	}
+	s := NewMapKeyStore(entries)
+	result := s.GetKey(hash)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(result))
+	}
+}
