@@ -31,7 +31,7 @@ jobs:
 
     - name: Filter generated files from coverage
       run: |
-        grep -v -e "db/sqlc" -e "docs" -e "iatadb/gen" coverage.out > coverage.filtered.out
+        grep -v -e "db/sqlc" -e "docs" coverage.out > coverage.filtered.out
 
     - name: Display coverage
       run: go tool cover -func=coverage.filtered.out
