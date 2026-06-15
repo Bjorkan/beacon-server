@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/go-chi/chi/v5"
@@ -76,6 +77,111 @@ func TestGetStatsOverview_OK(t *testing.T) {
 		},
 	}))
 	req := httptest.NewRequest(http.MethodGet, "/stats/overview", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetStatsObservations_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/observations", getStatsObservations(stubReader{
+		getStatsObservations: func(_ context.Context, _ []string, _ time.Time) ([]api.ObservationPoint, error) {
+			return []api.ObservationPoint{{IATA: "YVR", ObservationCount: 10}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/observations", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetStatsPayloadBreakdown_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/payload-breakdown", getStatsPayloadBreakdown(stubReader{
+		getStatsPayloadBreakdown: func(_ context.Context, _ []string, _ time.Time) ([]api.PayloadBreakdownItem, error) {
+			return []api.PayloadBreakdownItem{{PayloadType: 4, Count: 100}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/payload-breakdown", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetStatsTopNodes_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/top-nodes", getStatsTopNodes(stubReader{
+		getStatsTopNodes: func(_ context.Context, _ []string, _ int32) ([]api.TopNode, error) {
+			return []api.TopNode{{IATA: "YVR", ObservationCount: 50}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/top-nodes", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetStatsTopObservers_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/top-observers", getStatsTopObservers(stubReader{
+		getStatsTopObservers: func(_ context.Context, _ []string, _ time.Time, _ int32) ([]api.TopObserver, error) {
+			return []api.TopObserver{{IATA: "YVR", ObservationCount: 20}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/top-observers", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetStatsRadioPresets_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/radio-presets", getStatsRadioPresets(stubReader{
+		getRadioPresets: func(_ context.Context, _ string, _ []string) ([]api.RadioPreset, error) {
+			return []api.RadioPreset{{Preset: "915.0,125,7", IATA: "YVR"}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/radio-presets", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetStatsScopes_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/scopes", getStatsScopes(stubReader{
+		getScopeStats: func(_ context.Context) ([]api.ScopeStats, error) {
+			return []api.ScopeStats{{Name: "#bc", PacketCount: 100}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/scopes", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetStatsNodeTypes_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/node-types", getStatsNodeTypes(stubReader{
+		getStatsNodeTypes: func(_ context.Context, _ []string) ([]api.NodeTypeCount, error) {
+			return []api.NodeTypeCount{{NodeType: 1, Count: 5}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/node-types", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

@@ -155,3 +155,46 @@ func TestGetNode_OK(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 }
+
+func TestListNodeNeighbors_OK(t *testing.T) {
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	r := chi.NewRouter()
+	r.Get("/nodes/{nodeId}/neighbors", listNodeNeighbors(stubReader{
+		getNodeNeighbors: func(_ context.Context, _ uuid.UUID) ([]api.NodeNeighbor, error) {
+			return []api.NodeNeighbor{{ID: nodeID}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/nodes/"+nodeID.String()+"/neighbors", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestListNodeNeighbors_InvalidUUID(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/nodes/{nodeId}/neighbors", listNodeNeighbors(stubReader{}))
+	req := httptest.NewRequest(http.MethodGet, "/nodes/not-a-uuid/neighbors", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestListNodeObservations_OK(t *testing.T) {
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	r := chi.NewRouter()
+	r.Get("/nodes/{nodeId}/observations", listNodeObservations(stubReader{
+		listNodeObservations: func(_ context.Context, _ uuid.UUID, _ int64, _ int32) (api.Page[api.PacketObservationSummary], error) {
+			return api.Page[api.PacketObservationSummary]{Items: []api.PacketObservationSummary{{ID: 1}}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/nodes/"+nodeID.String()+"/observations", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}

@@ -89,3 +89,18 @@ func TestSearchKnownRoutes_OK(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 }
+
+func TestSearchCrossIATARoutes_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/routes/cross", searchCrossIATARoutes(stubReader{
+		searchCrossIATARoutes: func(_ context.Context, _, _, _, _ string) ([]api.CrossIATARoute, error) {
+			return []api.CrossIATARoute{}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/routes/cross?fromHash=aa&fromIata=YVR&toHash=bb&toIata=YYJ", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
