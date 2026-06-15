@@ -29,13 +29,17 @@ jobs:
     - name: Run tests with coverage
       run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
+    - name: Filter generated files from coverage
+      run: |
+        grep -v -e "db/sqlc" -e "docs" -e "iatadb/gen" coverage.out > coverage.filtered.out
+
     - name: Display coverage
-      run: go tool cover -func=coverage.out
+      run: go tool cover -func=coverage.filtered.out
 
     - name: Extract coverage percentage
       id: coverage
       run: |
-        COVERAGE=$(go tool cover -func=coverage.out | grep ^total | awk '{print $3}' | tr -d '%')
+        COVERAGE=$(go tool cover -func=coverage.filtered.out | grep ^total | awk '{print $3}' | tr -d '%')
         echo "pct=$COVERAGE" >> $GITHUB_OUTPUT
 
     - name: Update coverage badge
