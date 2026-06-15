@@ -4,10 +4,13 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -54,5 +57,35 @@ func TestSearchCrossIATARoutes_MissingParams(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("%s: expected 400, got %d", tt.name, w.Code)
 		}
+	}
+}
+
+func TestListKnownRoutes_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/routes", listKnownRoutes(stubReader{
+		listKnownRoutes: func(_ context.Context, _ string, _ int32, _ time.Time, _ int32) ([]api.KnownRoute, error) {
+			return []api.KnownRoute{{IATA: "YVR"}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/routes", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestSearchKnownRoutes_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/routes/search", searchKnownRoutes(stubReader{
+		searchKnownRoutes: func(_ context.Context, _, _, _ string) ([]api.KnownRoute, error) {
+			return []api.KnownRoute{{IATA: "YVR"}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/routes/search?iata=YVR&from=aa&to=bb", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 }

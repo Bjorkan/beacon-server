@@ -4,10 +4,12 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -63,5 +65,20 @@ func TestGetStatsTopObservers_InvalidLimit(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetStatsOverview_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/overview", getStatsOverview(stubReader{
+		getStatsOverview: func(_ context.Context, _ []string) (*api.StatsOverview, error) {
+			return &api.StatsOverview{TotalPackets: 100}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/overview", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 }

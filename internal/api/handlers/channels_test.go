@@ -4,10 +4,12 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -107,5 +109,35 @@ func TestListChannelMessages_InvalidCursor(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestListChannels_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/channels", listChannels(stubReader{
+		listChannels: func(_ context.Context, _ int32, _ []byte, _ string, _ int64) (api.Page[api.ChannelSummary], error) {
+			return api.Page[api.ChannelSummary]{Items: []api.ChannelSummary{{ID: 1, ChannelHash: "ab"}}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/channels", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetChannel_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/channels/{channelID}", getChannel(stubReader{
+		getChannel: func(_ context.Context, id int32) (*api.Channel, error) {
+			return &api.Channel{ChannelSummary: api.ChannelSummary{ID: int(id)}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/channels/1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 }

@@ -4,11 +4,14 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 func TestGetNode_InvalidUUID(t *testing.T) {
@@ -118,5 +121,37 @@ func TestListNodes_InvalidSupportsMultibyteTraces(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestListNodes_OK(t *testing.T) {
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	r := chi.NewRouter()
+	r.Get("/nodes", listNodes(stubReader{
+		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _ string, _ int64, _ int32) (api.Page[api.NodeSummary], error) {
+			return api.Page[api.NodeSummary]{Items: []api.NodeSummary{{ID: nodeID}}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/nodes", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetNode_OK(t *testing.T) {
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	r := chi.NewRouter()
+	r.Get("/nodes/{nodeId}", getNode(stubReader{
+		getNode: func(_ context.Context, id uuid.UUID) (*api.Node, error) {
+			return &api.Node{NodeSummary: api.NodeSummary{ID: id}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/nodes/"+nodeID.String(), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 }
