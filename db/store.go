@@ -20,7 +20,7 @@ import (
 
 // Store wraps the sqlc-generated Queries and implements both ingest.DB and api.Reader.
 type Store struct {
-	q *sqlc.Queries
+	q sqlc.Querier
 }
 
 // New creates a Store backed by the given pgxpool connection pool.
