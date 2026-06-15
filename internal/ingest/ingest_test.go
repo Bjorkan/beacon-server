@@ -4,9 +4,17 @@
 package ingest
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"testing"
+	"time"
+
+	"github.com/MeshCore-Beacon/beacon-server/internal/api"
+	"github.com/MeshCore-Beacon/beacon-server/internal/hub"
+	"github.com/MeshCore-Beacon/beacon-server/internal/keystore"
+	"github.com/MeshCore-Beacon/beacon-server/internal/scopestore"
+	"github.com/google/uuid"
 )
 
 func TestParseNumber_Float(t *testing.T) {
@@ -122,5 +130,198 @@ func TestUint32ToBytes_RoundTrip(t *testing.T) {
 	got := binary.LittleEndian.Uint32(b)
 	if got != v {
 		t.Errorf("round trip failed: expected %x, got %x", v, got)
+	}
+}
+
+func TestComputeTransportCode_Deterministic(t *testing.T) {
+	key := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
+	payload := []byte{0xde, 0xad, 0xbe, 0xef}
+	c1 := computeTransportCode(key, 4, payload)
+	c2 := computeTransportCode(key, 4, payload)
+	if c1 != c2 {
+		t.Error("expected deterministic output")
+	}
+}
+
+func TestComputeTransportCode_DifferentPayloadTypes(t *testing.T) {
+	key := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
+	payload := []byte{0xde, 0xad}
+	c1 := computeTransportCode(key, 4, payload)
+	c2 := computeTransportCode(key, 5, payload)
+	if c1 == c2 {
+		t.Error("expected different codes for different payload types")
+	}
+}
+
+func TestComputeTransportCode_NeverReturnsReservedValues(t *testing.T) {
+	key := make([]byte, 16)
+	for i := 0; i < 256; i++ {
+		key[0] = byte(i)
+		for j := 0; j < 16; j++ {
+			code := computeTransportCode(key, uint8(j), []byte{byte(i), byte(j)})
+			if code == 0x0000 {
+				t.Errorf("got reserved 0x0000 for key[0]=%d payloadType=%d", i, j)
+			}
+			if code == 0xFFFF {
+				t.Errorf("got reserved 0xFFFF for key[0]=%d payloadType=%d", i, j)
+			}
+		}
+	}
+}
+
+// stubDB implements only the methods needed for capability detection tests.
+type stubDB struct {
+	setCapabilityCalls []setCapabilityCall
+}
+
+type setCapabilityCall struct {
+	nodeID uuid.UUID
+	paths  bool
+	traces bool
+}
+
+func (s *stubDB) SetNodeCapability(_ context.Context, nodeID uuid.UUID, paths, traces bool) error {
+	s.setCapabilityCalls = append(s.setCapabilityCalls, setCapabilityCall{nodeID, paths, traces})
+	return nil
+}
+
+// no-op implementations for remaining DB interface methods
+func (s *stubDB) UpsertObserver(_ context.Context, _ []byte) (uuid.UUID, string, error) {
+	return uuid.Nil, "", nil
+}
+func (s *stubDB) UpsertObserverBroker(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+func (s *stubDB) UpsertIATA(_ context.Context, _ string) error                        { return nil }
+func (s *stubDB) UpsertPacket(_ context.Context, _ UpsertPacketParams) (bool, error) {
+	return false, nil
+}
+func (s *stubDB) SetPacketDecrypted(_ context.Context, _ []byte) error { return nil }
+func (s *stubDB) InsertObservation(_ context.Context, _ InsertObservationParams) (bool, error) {
+	return false, nil
+}
+func (s *stubDB) SetNodeDefaultScope(_ context.Context, _ uuid.UUID, _ int32) error { return nil }
+func (s *stubDB) UpsertNode(_ context.Context, _ UpsertNodeParams, _ RadioSettings) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
+func (s *stubDB) UpsertNodeIATA(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+func (s *stubDB) UpsertNodeShortID(_ context.Context, _ uuid.UUID, _ string, _ []byte) error {
+	return nil
+}
+
+func (s *stubDB) InsertChannelMessage(_ context.Context, _ InsertChannelMessageParams) (bool, error) {
+	return false, nil
+}
+
+func (s *stubDB) UpdateObserverStatus(_ context.Context, _ UpdateObserverStatusParams) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
+
+func (s *stubDB) GetObserverLastIATA(_ context.Context, _ uuid.UUID) (string, error) { return "", nil }
+
+func (s *stubDB) InsertObserverTelemetry(_ context.Context, _ uuid.UUID, _ time.Time, _ *int32, _, _ *float32, _ float32, _ int64, _, _, _ *int32) error {
+	return nil
+}
+
+func (s *stubDB) GetObserverRadio(_ context.Context, _ uuid.UUID) (RadioSettings, error) {
+	return RadioSettings{}, nil
+}
+func (s *stubDB) IsObserverByPubkey(_ context.Context, _ []byte) bool { return false }
+func (s *stubDB) GetObserverScopes(_ context.Context, _ uuid.UUID) ([]string, error) {
+	return nil, nil
+}
+
+func (s *stubDB) ResolvePathHashes(_ context.Context, _ string, _ [][]byte) (map[string][]api.ResolvedPathEntry, error) {
+	return nil, nil
+}
+
+func (s *stubDB) UpsertChannel(_ context.Context, _ []byte, _ []byte, _, _ string) (int, error) {
+	return 0, nil
+}
+func (s *stubDB) UpsertChannelHashOnly(_ context.Context, _ []byte) (int, error) { return 0, nil }
+func (s *stubDB) GetPacketObservationCount(_ context.Context, _ []byte) (int64, error) {
+	return 0, nil
+}
+
+func (s *stubDB) GetTransportScopeByName(_ context.Context, _ string) (int32, error) { return 0, nil }
+func (s *stubDB) UpsertObserverScope(_ context.Context, _ uuid.UUID, _ int32) error  { return nil }
+func (s *stubDB) UpsertKnownRoute(_ context.Context, _ []uuid.UUID, _ [][]byte, _ string, _ int32) error {
+	return nil
+}
+
+func (s *stubDB) UpsertNodeNeighbor(_ context.Context, _, _ uuid.UUID, _ string) error { return nil }
+
+func newTestWorker() (*Worker, *stubDB) {
+	db := &stubDB{}
+	w := &Worker{
+		cfg:    Config{BrokerName: "test"},
+		db:     db,
+		hub:    hub.New(),
+		scopes: &stubScopes{},
+		keys:   &stubKeys{},
+	}
+	return w, db
+}
+
+type stubScopes struct{}
+
+func (s *stubScopes) Entries() []scopestore.Entry { return nil }
+
+type stubKeys struct{}
+
+func (s *stubKeys) GetKey(_ []byte) []keystore.Entry { return nil }
+
+func TestRunCapabilityDetection_HashSizeOne_DoesNothing(t *testing.T) {
+	w, db := newTestWorker()
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	w.runCapabilityDetection(context.Background(), 4, 1, []uuid.UUID{nodeID})
+	if len(db.setCapabilityCalls) != 0 {
+		t.Errorf("expected no capability calls for hashSize 1, got %d", len(db.setCapabilityCalls))
+	}
+}
+
+func TestRunCapabilityDetection_NonTrace_HashSize2_SetsPaths(t *testing.T) {
+	w, db := newTestWorker()
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	w.runCapabilityDetection(context.Background(), 4, 2, []uuid.UUID{nodeID})
+	if len(db.setCapabilityCalls) != 1 {
+		t.Fatalf("expected 1 capability call, got %d", len(db.setCapabilityCalls))
+	}
+	if !db.setCapabilityCalls[0].paths {
+		t.Error("expected paths=true for non-trace hashSize 2")
+	}
+	if db.setCapabilityCalls[0].traces {
+		t.Error("expected traces=false for non-trace hashSize 2")
+	}
+}
+
+func TestRunCapabilityDetection_Trace_HashSize2_SetsTraces(t *testing.T) {
+	w, db := newTestWorker()
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	w.runCapabilityDetection(context.Background(), 0x09, 2, []uuid.UUID{nodeID})
+	if len(db.setCapabilityCalls) != 1 {
+		t.Fatalf("expected 1 capability call, got %d", len(db.setCapabilityCalls))
+	}
+	if db.setCapabilityCalls[0].paths {
+		t.Error("expected paths=false for trace hashSize 2")
+	}
+	if !db.setCapabilityCalls[0].traces {
+		t.Error("expected traces=true for trace hashSize 2")
+	}
+}
+
+func TestRunCapabilityDetection_MultipleNodes(t *testing.T) {
+	w, db := newTestWorker()
+	node1 := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	node2 := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	w.runCapabilityDetection(context.Background(), 4, 2, []uuid.UUID{node1, node2})
+	if len(db.setCapabilityCalls) != 2 {
+		t.Errorf("expected 2 capability calls, got %d", len(db.setCapabilityCalls))
+	}
+}
+
+func TestRunCapabilityDetection_NoNodes_DoesNothing(t *testing.T) {
+	w, db := newTestWorker()
+	w.runCapabilityDetection(context.Background(), 4, 2, nil)
+	if len(db.setCapabilityCalls) != 0 {
+		t.Errorf("expected no capability calls for empty node list, got %d", len(db.setCapabilityCalls))
 	}
 }
