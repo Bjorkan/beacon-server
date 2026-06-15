@@ -7,6 +7,7 @@
 package keystore
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 )
@@ -59,4 +60,13 @@ func DeriveHashtagKey(tag string) (secret []byte, channelHash byte, fingerprint 
 func Fingerprint(key []byte) []byte {
 	h := sha256.Sum256(key)
 	return h[:8]
+}
+
+func EntryExists(entries []Entry, e Entry) bool {
+	for _, existing := range entries {
+		if bytes.Equal(existing.Key, e.Key) {
+			return true
+		}
+	}
+	return false
 }

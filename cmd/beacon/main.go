@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -166,7 +165,7 @@ func main() {
 			Hashtag:     tag,
 			Name:        "#" + tag,
 		}
-		if !entryExists(entries[hashHex], entry) {
+		if !keystore.EntryExists(entries[hashHex], entry) {
 			entries[hashHex] = append(entries[hashHex], entry)
 			log.Printf("config: loaded hashtag channel #%s (hash=%s)", tag, hashHex)
 		}
@@ -184,7 +183,7 @@ func main() {
 			Fingerprint: keystore.Fingerprint(key),
 			Name:        keyCfg.Name,
 		}
-		if !entryExists(entries[hashHex], entry) {
+		if !keystore.EntryExists(entries[hashHex], entry) {
 			entries[hashHex] = append(entries[hashHex], entry)
 			log.Printf("config: loaded explicit channel key for hash %s name=%q", hashHex, keyCfg.Name)
 		}
@@ -273,17 +272,6 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("server shutdown error: %v", err)
 	}
-}
-
-// entryExists checks if an identical key entry already exists in the slice
-// to prevent loading duplicate key/hash pairs from config.
-func entryExists(entries []keystore.Entry, e keystore.Entry) bool {
-	for _, existing := range entries {
-		if bytes.Equal(existing.Key, e.Key) {
-			return true
-		}
-	}
-	return false
 }
 
 // getEnv returns the value of an env var and logs a warning if it is unset.

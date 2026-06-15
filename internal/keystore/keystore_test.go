@@ -132,3 +132,24 @@ func TestNewMapKeyStore_MultipleEntriesPerHash(t *testing.T) {
 		t.Fatalf("expected 2 entries, got %d", len(result))
 	}
 }
+
+func TestEntryExists_Found(t *testing.T) {
+	key := []byte{0x01, 0x02}
+	entries := []Entry{{Key: key}}
+	if !EntryExists(entries, Entry{Key: key}) {
+		t.Error("expected entry to be found")
+	}
+}
+
+func TestEntryExists_NotFound(t *testing.T) {
+	entries := []Entry{{Key: []byte{0x01}}}
+	if EntryExists(entries, Entry{Key: []byte{0x02}}) {
+		t.Error("expected entry not to be found")
+	}
+}
+
+func TestEntryExists_Empty(t *testing.T) {
+	if EntryExists(nil, Entry{Key: []byte{0x01}}) {
+		t.Error("expected false for empty slice")
+	}
+}
