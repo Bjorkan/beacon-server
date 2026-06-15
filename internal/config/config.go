@@ -6,6 +6,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -25,6 +26,17 @@ type Config struct {
 	Cache       CacheConfig           `yaml:"cache"`
 	CORS        CORSConfig            `yaml:"cors"`
 	Background  BackgroundConfig      `yaml:"background"`
+}
+
+// ResolvedConfig holds all runtime configuration with defaults applied.
+type ResolvedConfig struct {
+	TelemetryResolution time.Duration
+	TelemetryRetention  time.Duration
+	PacketRetention     time.Duration
+	MaxConnsPerIP       int
+	ViewRefreshInterval time.Duration
+	ReconfirmInterval   time.Duration
+	CleanupInterval     time.Duration
 }
 
 // BackgroundConfig controls the intervals for background maintenance tasks.
@@ -226,4 +238,47 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// Resolve returns a ResolvedConfig with defaults applied for any zero values.
+func Resolve(cfg *Config) ResolvedConfig {
+	r := ResolvedConfig{
+		TelemetryResolution: cfg.Telemetry.Resolution.Duration,
+		TelemetryRetention:  cfg.Telemetry.Retention.Duration,
+		PacketRetention:     cfg.Packets.Retention.Duration,
+		MaxConnsPerIP:       cfg.WebSocket.MaxConnectionsPerIP,
+		ViewRefreshInterval: cfg.Background.ViewRefresh.Duration,
+		ReconfirmInterval:   cfg.Background.Reconfirm.Duration,
+		CleanupInterval:     cfg.Background.Cleanup.Duration,
+	}
+	if r.TelemetryResolution == 0 {
+		r.TelemetryResolution = time.Hour
+	}
+	if r.TelemetryRetention == 0 {
+		r.TelemetryRetention = 28 * 24 * time.Hour
+	}
+	if r.PacketRetention == 0 {
+		r.PacketRetention = 30 * 24 * time.Hour
+	}
+	if r.MaxConnsPerIP == 0 {
+		r.MaxConnsPerIP = 5
+	}
+	if r.ViewRefreshInterval == 0 {
+		r.ViewRefreshInterval = time.Hour
+	}
+	if r.ReconfirmInterval == 0 {
+		r.ReconfirmInterval = time.Hour
+	}
+	if r.CleanupInterval == 0 {
+		r.CleanupInterval = time.Hour
+	}
+	return r
+}
+
+func (r ResolvedConfig) String() string {
+	return fmt.Sprintf(
+		"telemetryResolution=%s telemetryRetention=%s packetRetention=%s maxConnsPerIP=%d viewRefresh=%s reconfirm=%s cleanup=%s",
+		r.TelemetryResolution, r.TelemetryRetention, r.PacketRetention,
+		r.MaxConnsPerIP, r.ViewRefreshInterval, r.ReconfirmInterval, r.CleanupInterval,
+	)
 }

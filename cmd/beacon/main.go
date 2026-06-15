@@ -88,40 +88,9 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	telemetryResolution := cfg.Telemetry.Resolution.Duration
-	if telemetryResolution == 0 {
-		telemetryResolution = time.Hour
-	}
-	telemetryRetention := cfg.Telemetry.Retention.Duration
-	if telemetryRetention == 0 {
-		telemetryRetention = 28 * 24 * time.Hour // 4 weeks
-	}
-	packetRetention := cfg.Packets.Retention.Duration
-	if packetRetention == 0 {
-		packetRetention = 30 * 24 * time.Hour // 30 days
-	}
+	resolved := config.Resolve(cfg)
 
-	maxConnsPerIP := cfg.WebSocket.MaxConnectionsPerIP
-	if maxConnsPerIP == 0 {
-		maxConnsPerIP = 5
-	}
-
-	// resolve background intervals with defaults
-	viewRefreshInterval := cfg.Background.ViewRefresh.Duration
-	if viewRefreshInterval == 0 {
-		viewRefreshInterval = time.Hour
-	}
-	reconfirmInterval := cfg.Background.Reconfirm.Duration
-	if reconfirmInterval == 0 {
-		reconfirmInterval = time.Hour
-	}
-	cleanupInterval := cfg.Background.Cleanup.Duration
-	if cleanupInterval == 0 {
-		cleanupInterval = time.Hour
-	}
-
-	log.Printf("config: loaded — telemetryResolution=%s telemetryRetention=%s packetRetention=%s maxConnsPerIP=%d viewRefresh=%s reconfirm=%s cleanup=%s",
-		telemetryResolution, telemetryRetention, packetRetention, maxConnsPerIP, viewRefreshInterval, reconfirmInterval, cleanupInterval)
+	log.Printf("config: loaded — %s", resolved)
 
 	// ── Hub ──────────────────────────────────────────────────────────────────
 	h := hub.New()
@@ -238,7 +207,7 @@ func main() {
 			URL:                 getEnv("MQTT_BROKER_1_URL"),
 			Username:            getEnv("MQTT_BROKER_1_USERNAME"),
 			Password:            getEnv("MQTT_BROKER_1_PASSWORD"),
-			TelemetryResolution: telemetryResolution,
+			TelemetryResolution: resolved.TelemetryResolution,
 			AllowedIATAs:        allowedIATAs,
 		},
 		store,
@@ -253,7 +222,7 @@ func main() {
 			URL:                 getEnv("MQTT_BROKER_2_URL"),
 			Username:            getEnv("MQTT_BROKER_2_USERNAME"),
 			Password:            getEnv("MQTT_BROKER_2_PASSWORD"),
-			TelemetryResolution: telemetryResolution,
+			TelemetryResolution: resolved.TelemetryResolution,
 			AllowedIATAs:        allowedIATAs,
 		},
 		store,
@@ -271,14 +240,14 @@ func main() {
 	go broker2.Start(ctx)
 
 	scheduler := background.New([]background.Task{
-		background.ViewRefreshTask(store, viewRefreshInterval),
-		background.CleanupTask(store, telemetryRetention, packetRetention, cleanupInterval),
-		background.ReconfirmTask(store, reconfirmInterval),
+		background.ViewRefreshTask(store, resolved.ViewRefreshInterval),
+		background.CleanupTask(store, resolved.TelemetryRetention, resolved.PacketRetention, resolved.CleanupInterval),
+		background.ReconfirmTask(store, resolved.ReconfirmInterval),
 	})
 	go scheduler.Start(ctx)
 
 	// ── HTTP server ──────────────────────────────────────────────────────────
-	r := router.New(h, reader, []*ingest.Worker{broker1, broker2}, maxConnsPerIP, cfg.CORS)
+	r := router.New(h, reader, []*ingest.Worker{broker1, broker2}, resolved.MaxConnsPerIP, cfg.CORS)
 
 	srv := &http.Server{
 		Addr:    addr,
