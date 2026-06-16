@@ -184,7 +184,7 @@ func TestGetObserver_OnlineStatus(t *testing.T) {
 			PublicKey:        []byte{0x01},
 			ObservationCount: &obsCount,
 			FirstSeen:        pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
-			LastSeen:         pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			LastSeen:         pgtype.Timestamptz{Time: time.Now().Add(-time.Minute), Valid: true},
 			LastStatusAt:     pgtype.Timestamptz{Time: time.Now().Add(-time.Minute), Valid: true},
 		}, nil)
 
@@ -227,7 +227,7 @@ func TestGetObserver_OfflineStatus(t *testing.T) {
 			PublicKey:        []byte{0x01},
 			ObservationCount: &obsCount,
 			FirstSeen:        pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
-			LastSeen:         pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			LastSeen:         pgtype.Timestamptz{Time: time.Now().Add(-10 * time.Minute), Valid: true},
 			LastStatusAt:     pgtype.Timestamptz{Time: time.Now().Add(-10 * time.Minute), Valid: true},
 		}, nil)
 

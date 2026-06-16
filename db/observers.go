@@ -140,7 +140,8 @@ func (s *Store) GetObserver(ctx context.Context, observerID uuid.UUID) (*api.Obs
 		})
 	}
 	observer.Brokers = brokers
-	if obs.LastStatusAt.Valid && time.Since(obs.LastStatusAt.Time) < 5*time.Minute {
+	if (obs.LastStatusAt.Valid && time.Since(obs.LastStatusAt.Time) < 5*time.Minute) ||
+		(obs.LastSeen.Valid && time.Since(obs.LastSeen.Time) < 5*time.Minute) {
 		observer.Status = "online"
 	}
 	var lastStatusAt *int64

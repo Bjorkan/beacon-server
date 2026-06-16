@@ -146,7 +146,7 @@ SELECT
   o.radio_bw_khz,
   array_remove(array_agg(DISTINCT ts.name ORDER BY ts.name), NULL)::text[] AS scopes,
 COALESCE(CASE
-    WHEN o.last_status_at > NOW() - INTERVAL '5 minutes' THEN 'online'
+    WHEN GREATEST(COALESCE(o.last_status_at, o.last_seen), o.last_seen) > NOW() - INTERVAL '5 minutes' THEN 'online'
     ELSE 'offline'
 END, 'offline')::text AS status,
 COALESCE((
@@ -169,7 +169,7 @@ WHERE
   AND ($2 = '' OR o.observer_type = $2)
   AND ($3 = '' OR ob.broker_name = $3)
   AND ($4 = '' OR CASE
-    WHEN o.last_status_at > NOW() - INTERVAL '5 minutes' THEN 'online'
+    WHEN GREATEST(COALESCE(o.last_status_at, o.last_seen), o.last_seen) > NOW() - INTERVAL '5 minutes' THEN 'online'
     ELSE 'offline'
   END = $4)
   AND ($5 = '' OR o.display_name ILIKE '%' || $5 || '%')
