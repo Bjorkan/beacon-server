@@ -2425,6 +2425,9 @@ const docTemplate = `{
                 },
                 "publicKey": {
                     "type": "string"
+                },
+                "snr": {
+                    "type": "number"
                 }
             }
         },
