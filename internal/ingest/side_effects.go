@@ -65,7 +65,7 @@ type nodeUpdateEvent struct {
 // new observation is confirmed inserted. Currently handles:
 //   - PayloadTypeAdvert (0x04): upsert node and node_iatas
 //   - PayloadTypeGrpTxt (0x05): decrypt and store channel message if key is known
-func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshcore.Packet, iata string, packetHash []byte, radio RadioSettings, scopeID *int32, matchedScope *string) {
+func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshcore.Packet, iata string, packetHash []byte, radio RadioSettings, scopeID *int32, matchedScope *string, observerPubkey []byte, rxSNR float32) {
 	if packet.PayloadType() == meshcore.PayloadTypeAdvert {
 		advert, err := meshcore.AdvertFromBytes(packet.Payload)
 		if err != nil {
@@ -99,6 +99,7 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 		if w.onNodeUpsert != nil {
 			w.onNodeUpsert(ctx, nodeID)
 		}
+		// record advertiser neighbors
 		// if the advert was forwarded, the first hop is a neighbor
 		if packet.PathHashCount() > 0 && (advert.Type() == meshcore.AdvertTypeRepeater || advert.Type() == meshcore.AdvertTypeRoom) {
 			firstHop := packet.PathHashes()
@@ -111,6 +112,19 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 							log.Printf("ingest[%s]: failed to upsert node neighbor: %v", w.cfg.BrokerName, err)
 						}
 					}
+				}
+			}
+		}
+		// record observer neighbors
+		// if heard directly (zero-hop), record the observer's own RX SNR
+		// of hearing this advertiser as a node_neighbors edge. Skipped if
+		// the observer has no node row yet (hasn't advertised itself).
+		if packet.PathHashCount() == 0 && (advert.Type() == meshcore.AdvertTypeRepeater || advert.Type() == meshcore.AdvertTypeRoom) {
+			observerNodeID, oErr := w.db.GetNodeByPubkey(ctx, observerPubkey)
+			if oErr == nil && observerNodeID != nodeID {
+				snr := rxSNR
+				if err := w.db.UpsertNodeNeighbor(ctx, observerNodeID, nodeID, iata, &snr); err != nil {
+					log.Printf("ingest[%s]: failed to upsert observer-advert neighbor: %v", w.cfg.BrokerName, err)
 				}
 			}
 		}
