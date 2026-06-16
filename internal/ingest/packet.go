@@ -469,7 +469,7 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 			pa := parsedAck{
 				Raw:      hex.EncodeToString(packet.Payload),
 				Type:     "ACK",
-				Checksum: hex.EncodeToString(uint32ToBytes(ack.AckCRC)),
+				Checksum: hex.EncodeToString(uint32ToBytes(ack.CRC())),
 			}
 			parsedPayload, _ = json.Marshal(pa)
 		}
