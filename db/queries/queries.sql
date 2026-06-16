@@ -474,7 +474,7 @@ SELECT n.*, ts.name AS default_scope_name,
   (SELECT o.id FROM observers o WHERE o.public_key = n.public_key LIMIT 1) AS observer_id,
   (SELECT json_agg(json_build_object('iata', ni.iata, 'lastHeard', (extract(epoch from ni.last_heard) * 1000)::bigint) ORDER BY ni.last_heard DESC)
    FROM node_iatas ni WHERE ni.node_id = n.id) AS iatas,
-  (SELECT COUNT(*) FROM node_neighbors nn WHERE nn.node_id = n.id)::bigint AS known_neighbor_count
+  (SELECT COUNT(DISTINCT nn.neighbor_id) FROM node_neighbors nn WHERE nn.node_id = n.id)::bigint AS known_neighbor_count
 FROM nodes n
 LEFT JOIN transport_scopes ts ON ts.id = n.default_scope_id
 WHERE n.id = $1;
@@ -491,7 +491,7 @@ SELECT n.id, n.public_key, n.node_type, n.name, n.latitude, n.longitude, n.last_
   json_agg(json_build_object('iata', ni.iata, 'lastHeard', (extract(epoch from ni.last_heard) * 1000)::bigint) ORDER BY ni.last_heard DESC) FILTER (WHERE ni.iata IS NOT NULL) AS iatas,
   EXISTS (SELECT 1 FROM observers o WHERE o.public_key = n.public_key) AS is_observer,
   (SELECT o.id FROM observers o WHERE o.public_key = n.public_key LIMIT 1) AS observer_id,
-  (SELECT COUNT(*) FROM node_neighbors nn WHERE nn.node_id = n.id)::bigint AS known_neighbor_count
+  (SELECT COUNT(DISTINCT nn.neighbor_id) FROM node_neighbors nn WHERE nn.node_id = n.id)::bigint AS known_neighbor_count
 FROM nodes n
 LEFT JOIN node_iatas ni ON ni.node_id = n.id
 LEFT JOIN transport_scopes ts ON ts.id = n.default_scope_id
