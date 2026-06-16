@@ -97,6 +97,10 @@ type packetObservationEvent struct {
 	} `json:"observation"`
 }
 
+// parsedAnonReq is the parsed form of an ANON_REQ payload. Per
+// coreprotocol.org §2.10: the sender includes its full public key inline
+// (not yet a known contact of the destination) so the destination can
+// derive a shared secret; EphemeralPubKey here is that inline sender key.
 type parsedAnonReq struct {
 	Raw             string `json:"raw"`
 	Type            string `json:"type"`
@@ -104,6 +108,10 @@ type parsedAnonReq struct {
 	EphemeralPubKey string `json:"ephemeralPubKey"` // hex
 }
 
+// advertFlags is the decoded form of an advert's app_data flags byte. Per
+// coreprotocol.org §2.8.3: DeviceRole occupies the low 4 bits (ADV_TYPE_*),
+// and the presence bits occupy the high 4 bits, gating which optional
+// fields (location, name, feature1/2) follow in app_data.
 type advertFlags struct {
 	Raw            string `json:"raw"`
 	DeviceRole     int    `json:"deviceRole"`
@@ -114,6 +122,10 @@ type advertFlags struct {
 	HasFeature2    bool   `json:"hasFeature2"`
 }
 
+// advertAppData is the parsed form of an ADVERT payload's app_data section.
+// Per coreprotocol.org §2.8.2: fields are present in this fixed order, each
+// only if its corresponding flag bit is set; Name, if present, fills the
+// remainder of app_data with no null terminator on the wire.
 type advertAppData struct {
 	Raw       string      `json:"raw"`
 	Flags     advertFlags `json:"flags"`
@@ -124,6 +136,8 @@ type advertAppData struct {
 	Name      *string     `json:"name"`
 }
 
+// parsedAdvert is the parsed form of an ADVERT payload (§2.8). Unencrypted
+// but signed; Signature covers public_key || timestamp || app_data.
 type parsedAdvert struct {
 	Type      string        `json:"type"`
 	Raw       string        `json:"raw"`
@@ -133,6 +147,10 @@ type parsedAdvert struct {
 	AppData   advertAppData `json:"appData"`
 }
 
+// parsedEnvelope is the parsed form of the shared direct-encrypted wrapper
+// used by REQ/RESPONSE/TXT_MSG/PATH payloads (§2.9). Decrypted holds the
+// payload-type-specific plaintext once MAC verification and decryption
+// succeed, or nil if the observer doesn't hold the relevant key.
 type parsedEnvelope struct {
 	Raw              string `json:"raw"`
 	Type             string `json:"type"`
@@ -144,6 +162,10 @@ type parsedEnvelope struct {
 	Decrypted        any    `json:"decrypted"`
 }
 
+// parsedGroupEnvelope is the parsed form of the shared group-channel
+// wrapper used by GRP_TXT/GRP_DATA payloads (§2.11). Decrypted holds the
+// payload-type-specific plaintext once MAC verification and decryption
+// succeed against a known channel key, or nil otherwise.
 type parsedGroupEnvelope struct {
 	Raw              string `json:"raw"`
 	Type             string `json:"type"`
@@ -154,6 +176,10 @@ type parsedGroupEnvelope struct {
 	Decrypted        any    `json:"decrypted"`
 }
 
+// parsedTrace is the parsed form of a TRACE payload (§2.13). PathHashes is
+// the original hop-hash sequence carried in the payload trailer; SNRValues
+// is the accumulated per-hop SNR sequence carried in the packet header's
+// path field (a protocol-level repurposing distinct from the payload).
 type parsedTrace struct {
 	Raw        string    `json:"raw"`
 	Type       string    `json:"type"`
@@ -164,12 +190,20 @@ type parsedTrace struct {
 	SNRValues  []float32 `json:"snrValues"`
 }
 
+// parsedAck is the parsed form of an ACK payload (§2.12). Checksum is the
+// first 4 bytes of a SHA-256 digest (not a CRC, despite the firmware's
+// naming) used as a short identifier of the specific message being
+// acknowledged.
 type parsedAck struct {
 	Raw      string `json:"raw"`
 	Type     string `json:"type"`
 	Checksum string `json:"checksum"`
 }
 
+// parsedMultipart is the parsed form of a MULTIPART payload (§2.14),
+// currently used only for multi-ACK bursts. Remaining is the number of
+// additional bursts expected; WrappedType/WrappedPayload are the
+// encapsulated sub-payload (e.g. an ACK).
 type parsedMultipart struct {
 	Raw            string `json:"raw"`
 	Type           string `json:"type"`
@@ -208,6 +242,9 @@ type parsedDiscoverResp struct {
 	PubKeyPrefixOnly bool    `json:"pubKeyPrefixOnly"` // true when PubKey is only an 8-byte prefix (not enough to resolve a node)
 }
 
+// parsedControl is the generic fallback shape for any CONTROL sub-type
+// (§2.15) not given its own typed parser above (currently everything
+// except DISCOVER_REQ/DISCOVER_RESP).
 type parsedControl struct {
 	Raw   string `json:"raw"`
 	Type  string `json:"type"`
@@ -215,6 +252,9 @@ type parsedControl struct {
 	Data  string `json:"data"`
 }
 
+// parsedRaw is the fallback shape for any payload type with no dedicated
+// parser, including PAYLOAD_TYPE_RAW_CUSTOM (§2.16), which is opaque to
+// the network layer by design.
 type parsedRaw struct {
 	Type string `json:"type"`
 	Raw  string `json:"raw"`
