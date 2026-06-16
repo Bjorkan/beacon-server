@@ -178,6 +178,36 @@ type parsedMultipart struct {
 	WrappedPayload string `json:"wrappedPayload"`
 }
 
+// parsedDiscoverReq is the parsed form of a CONTROL/DISCOVER_REQ payload.
+// Per coreprotocol.org §2.15.1: type_filter is a bitfield where bit n means
+// "wants responses from ADV_TYPE_n", and since is an optional last-advert
+// cutoff. Repeaters rarely originate these, so the contained SNR-adjacent
+// data is mostly useful for UI display rather than analysis.
+type parsedDiscoverReq struct {
+	Raw        string `json:"raw"`
+	Type       string `json:"type"`
+	PrefixOnly bool   `json:"prefixOnly"`
+	TypeFilter byte   `json:"typeFilter"`
+	Tag        string `json:"tag"` // hex-encoded uint32, matches traceTag/checksum style elsewhere
+	Since      *int64 `json:"since,omitempty"`
+}
+
+// parsedDiscoverResp is the parsed form of a CONTROL/DISCOVER_RESP payload.
+// Per coreprotocol.org §2.15.2: flags low nibble is the responder's
+// ADV_TYPE_*, snr is the responder's reading of the *request* packet (a
+// node-to-node measurement, not the observer's reception quality — see
+// PubKeyPrefixOnly below for why we don't always have a resolvable node).
+type parsedDiscoverResp struct {
+	Raw              string  `json:"raw"`
+	Type             string  `json:"type"`
+	NodeType         byte    `json:"nodeType"`
+	NodeTypeName     string  `json:"nodeTypeName"`
+	RequestSNR       float32 `json:"requestSnr"` // responder's measurement of the request packet; node-to-node, not observer reception
+	Tag              string  `json:"tag"`
+	PubKey           string  `json:"pubKey"`           // hex; full 32 bytes or 8-byte prefix
+	PubKeyPrefixOnly bool    `json:"pubKeyPrefixOnly"` // true when PubKey is only an 8-byte prefix (not enough to resolve a node)
+}
+
 type parsedControl struct {
 	Raw   string `json:"raw"`
 	Type  string `json:"type"`
@@ -490,13 +520,47 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 	case meshcore.PayloadTypeControl:
 		ctrl, err := meshcore.ControlFromBytes(packet.Payload)
 		if err == nil {
-			pc := parsedControl{
-				Raw:   hex.EncodeToString(packet.Payload),
-				Type:  "CONTROL",
-				Flags: ctrl.Flags,
-				Data:  hex.EncodeToString(ctrl.Data),
+			switch ctrl.SubType() {
+			case meshcore.ControlSubTypeDiscoverReq:
+				req, err := ctrl.DiscoverRequest()
+				if err == nil {
+					pd := parsedDiscoverReq{
+						Raw:        hex.EncodeToString(packet.Payload),
+						Type:       "DISCOVER_REQ",
+						PrefixOnly: req.PrefixOnly,
+						TypeFilter: req.TypeFilter,
+						Tag:        hex.EncodeToString(uint32ToBytes(req.Tag)),
+					}
+					if req.Since != 0 {
+						since := int64(req.Since)
+						pd.Since = &since
+					}
+					parsedPayload, _ = json.Marshal(pd)
+				}
+			case meshcore.ControlSubTypeDiscoverResp:
+				resp, err := ctrl.DiscoverResponse()
+				if err == nil {
+					pd := parsedDiscoverResp{
+						Raw:              hex.EncodeToString(packet.Payload),
+						Type:             "DISCOVER_RESP",
+						NodeType:         resp.NodeType,
+						NodeTypeName:     api.NodeTypeName(int16(resp.NodeType)),
+						RequestSNR:       resp.SNR,
+						Tag:              hex.EncodeToString(uint32ToBytes(resp.Tag)),
+						PubKey:           hex.EncodeToString(resp.PubKey),
+						PubKeyPrefixOnly: len(resp.PubKey) < 32,
+					}
+					parsedPayload, _ = json.Marshal(pd)
+				}
+			default:
+				pc := parsedControl{
+					Raw:   hex.EncodeToString(packet.Payload),
+					Type:  "CONTROL",
+					Flags: ctrl.Flags,
+					Data:  hex.EncodeToString(ctrl.Data),
+				}
+				parsedPayload, _ = json.Marshal(pc)
 			}
-			parsedPayload, _ = json.Marshal(pc)
 		}
 
 	default:
