@@ -509,8 +509,11 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 			traceTag = uint32ToBytes(trace.Tag)
 			hashSize := int(trace.PathHashSize())
 			hashes := make([]string, 0)
+			rawHashes := make([][]byte, 0)
 			for i := 0; i+hashSize <= len(trace.PathHashes); i += hashSize {
-				hashes = append(hashes, hex.EncodeToString(trace.PathHashes[i:i+hashSize]))
+				h := trace.PathHashes[i : i+hashSize]
+				hashes = append(hashes, hex.EncodeToString(h))
+				rawHashes = append(rawHashes, h)
 			}
 			// SNR values are in packet.Path, one signed int8 per consumed hop
 			snrValues := make([]float32, 0, len(packet.Path))
@@ -531,6 +534,31 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 				SNRValues:  snrValues,
 			}
 			parsedPayload, _ = json.Marshal(pt)
+
+			// Each consecutive hop pair becomes a node_neighbors edge:
+			// hop[i]'s measured SNR of receiving from hop[i-1]. hop[0]'s
+			// SNR (snrValues[0]) has no resolvable "previous" node (the
+			// originator isn't in PathHashes) and is skipped. Either side
+			// resolving ambiguously (>1 candidate) or not at all (0
+			// candidates) skips that specific pair.
+			if len(rawHashes) >= 2 {
+				resolved, rErr := w.db.ResolvePathHashes(ctx, iata, rawHashes)
+				if rErr == nil {
+					for i := 1; i < len(rawHashes); i++ {
+						if i >= len(snrValues) {
+							break
+						}
+						prevEntries := resolved[hashes[i-1]]
+						currEntries := resolved[hashes[i]]
+						if len(prevEntries) == 1 && len(currEntries) == 1 {
+							snr := snrValues[i]
+							if err := w.db.UpsertNodeNeighbor(ctx, currEntries[0].NodeID, prevEntries[0].NodeID, iata, &snr); err != nil {
+								log.Printf("ingest[%s]: failed to upsert trace neighbor: %v", w.cfg.BrokerName, err)
+							}
+						}
+					}
+				}
+			}
 		}
 
 	case meshcore.PayloadTypeAck:
