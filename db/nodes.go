@@ -210,6 +210,10 @@ func (s *Store) GetNodesByIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UU
 	return result, nil
 }
 
+func (s *Store) GetNodeByPubkey(ctx context.Context, pubkey []byte) (uuid.UUID, error) {
+	return s.q.GetNodeByPubkey(ctx, pubkey)
+}
+
 func (s *Store) GetNodeNeighbors(ctx context.Context, nodeID uuid.UUID) ([]api.NodeNeighbor, error) {
 	rows, err := s.q.GetNodeNeighbors(ctx, nodeID)
 	if err != nil {

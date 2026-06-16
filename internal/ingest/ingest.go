@@ -99,6 +99,12 @@ type DB interface {
 	// UpsertNode upserts a nodes row from an advert payload.
 	UpsertNode(ctx context.Context, n UpsertNodeParams, r RadioSettings) (uuid.UUID, error)
 
+	// GetNodeByPubkey returns the node ID for a given public key, or an
+	// error (sql.ErrNoRows-equivalent) if no node exists yet for that key.
+	// Used for observer-sourced neighbor writes (e.g. DISCOVER_RESP), where
+	// the observer's own node may not exist until it has advertised.
+	GetNodeByPubkey(ctx context.Context, pubkey []byte) (uuid.UUID, error)
+
 	// UpsertNodeIATA upserts a node_iatas row.
 	UpsertNodeIATA(ctx context.Context, nodeID uuid.UUID, iata string) error
 

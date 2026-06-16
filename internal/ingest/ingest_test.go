@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -205,6 +206,10 @@ func (s *stubDB) UpsertNode(_ context.Context, _ UpsertNodeParams, _ RadioSettin
 func (s *stubDB) UpsertNodeIATA(_ context.Context, _ uuid.UUID, _ string) error { return nil }
 func (s *stubDB) UpsertNodeShortID(_ context.Context, _ uuid.UUID, _ string, _ []byte) error {
 	return nil
+}
+
+func (s *stubDB) GetNodeByPubkey(_ context.Context, _ []byte) (uuid.UUID, error) {
+	return uuid.Nil, errors.New("not found")
 }
 
 func (s *stubDB) InsertChannelMessage(_ context.Context, _ InsertChannelMessageParams) (bool, error) {

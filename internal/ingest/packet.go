@@ -591,6 +591,24 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 						PubKeyPrefixOnly: len(resp.PubKey) < 32,
 					}
 					parsedPayload, _ = json.Marshal(pd)
+
+					// Record the observer's own RX SNR of hearing this
+					// DISCOVER_RESP as a node_neighbors edge: observer's
+					// node -> responder's node. Skipped (not an error) if
+					// either the observer or the responder has no node row
+					// yet (e.g. neither has advertised), or if the pubkey
+					// is only an 8-byte prefix (not enough to resolve).
+					if len(resp.PubKey) == 32 {
+						observerNodeID, oErr := w.db.GetNodeByPubkey(ctx, pubkeyBytes)
+						responderNodeID, rErr := w.db.GetNodeByPubkey(ctx, resp.PubKey)
+						// don't insert our own node as a neighbor
+						if oErr == nil && rErr == nil && observerNodeID != responderNodeID {
+							rxSNR := float32(parseNumber(envelope.SNR))
+							if err := w.db.UpsertNodeNeighbor(ctx, observerNodeID, responderNodeID, iata, &rxSNR); err != nil {
+								log.Printf("ingest[%s]: failed to upsert observer-discover neighbor: %v", w.cfg.BrokerName, err)
+							}
+						}
+					}
 				}
 			default:
 				pc := parsedControl{

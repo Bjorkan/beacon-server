@@ -24,6 +24,7 @@ type Querier interface {
 	GetIATA(ctx context.Context, iata string) (IataCode, error)
 	GetKnownRoutesByNode(ctx context.Context, arg GetKnownRoutesByNodeParams) ([]KnownRoute, error)
 	GetNodeByID(ctx context.Context, id uuid.UUID) (GetNodeByIDRow, error)
+	GetNodeByPubkey(ctx context.Context, publicKey []byte) (uuid.UUID, error)
 	// Returns the neighbors of a node with details, ordered by most recently seen.
 	GetNodeNeighbors(ctx context.Context, nodeID uuid.UUID) ([]GetNodeNeighborsRow, error)
 	GetNodesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]GetNodesByIDsRow, error)

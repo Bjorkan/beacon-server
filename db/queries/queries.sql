@@ -484,6 +484,9 @@ SELECT id, public_key, name, latitude, longitude
 FROM nodes
 WHERE id = ANY($1::uuid[]);
 
+-- name: GetNodeByPubkey :one
+SELECT id FROM nodes WHERE public_key = $1;
+
 -- name: ListNodes :many
 SELECT n.id, n.public_key, n.node_type, n.name, n.latitude, n.longitude, n.last_seen,
   n.radio_freq_mhz, n.radio_sf, n.radio_bw_khz,

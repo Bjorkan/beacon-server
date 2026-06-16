@@ -13,7 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
+	db "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
 	uuid "github.com/google/uuid"
 	pgtype "github.com/jackc/pgx/v5/pgtype"
 	gomock "go.uber.org/mock/gomock"
@@ -72,10 +72,10 @@ func (mr *MockQuerierMockRecorder) DeleteOldTelemetry(ctx, reportedAt any) *gomo
 }
 
 // GetChannelByID mocks base method.
-func (m *MockQuerier) GetChannelByID(ctx context.Context, id int32) (sqlc.Channel, error) {
+func (m *MockQuerier) GetChannelByID(ctx context.Context, id int32) (db.Channel, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetChannelByID", ctx, id)
-	ret0, _ := ret[0].(sqlc.Channel)
+	ret0, _ := ret[0].(db.Channel)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -87,10 +87,10 @@ func (mr *MockQuerierMockRecorder) GetChannelByID(ctx, id any) *gomock.Call {
 }
 
 // GetCrossIATANeighbors mocks base method.
-func (m *MockQuerier) GetCrossIATANeighbors(ctx context.Context, arg sqlc.GetCrossIATANeighborsParams) ([]sqlc.GetCrossIATANeighborsRow, error) {
+func (m *MockQuerier) GetCrossIATANeighbors(ctx context.Context, arg db.GetCrossIATANeighborsParams) ([]db.GetCrossIATANeighborsRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCrossIATANeighbors", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.GetCrossIATANeighborsRow)
+	ret0, _ := ret[0].([]db.GetCrossIATANeighborsRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -102,10 +102,10 @@ func (mr *MockQuerierMockRecorder) GetCrossIATANeighbors(ctx, arg any) *gomock.C
 }
 
 // GetHourlyStats mocks base method.
-func (m *MockQuerier) GetHourlyStats(ctx context.Context, arg sqlc.GetHourlyStatsParams) ([]sqlc.MvHourlyIataStat, error) {
+func (m *MockQuerier) GetHourlyStats(ctx context.Context, arg db.GetHourlyStatsParams) ([]db.MvHourlyIataStat, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetHourlyStats", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.MvHourlyIataStat)
+	ret0, _ := ret[0].([]db.MvHourlyIataStat)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -117,10 +117,10 @@ func (mr *MockQuerierMockRecorder) GetHourlyStats(ctx, arg any) *gomock.Call {
 }
 
 // GetIATA mocks base method.
-func (m *MockQuerier) GetIATA(ctx context.Context, iata string) (sqlc.IataCode, error) {
+func (m *MockQuerier) GetIATA(ctx context.Context, iata string) (db.IataCode, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetIATA", ctx, iata)
-	ret0, _ := ret[0].(sqlc.IataCode)
+	ret0, _ := ret[0].(db.IataCode)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -132,10 +132,10 @@ func (mr *MockQuerierMockRecorder) GetIATA(ctx, iata any) *gomock.Call {
 }
 
 // GetKnownRoutesByNode mocks base method.
-func (m *MockQuerier) GetKnownRoutesByNode(ctx context.Context, arg sqlc.GetKnownRoutesByNodeParams) ([]sqlc.KnownRoute, error) {
+func (m *MockQuerier) GetKnownRoutesByNode(ctx context.Context, arg db.GetKnownRoutesByNodeParams) ([]db.KnownRoute, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetKnownRoutesByNode", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.KnownRoute)
+	ret0, _ := ret[0].([]db.KnownRoute)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -147,10 +147,10 @@ func (mr *MockQuerierMockRecorder) GetKnownRoutesByNode(ctx, arg any) *gomock.Ca
 }
 
 // GetNodeByID mocks base method.
-func (m *MockQuerier) GetNodeByID(ctx context.Context, id uuid.UUID) (sqlc.GetNodeByIDRow, error) {
+func (m *MockQuerier) GetNodeByID(ctx context.Context, id uuid.UUID) (db.GetNodeByIDRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetNodeByID", ctx, id)
-	ret0, _ := ret[0].(sqlc.GetNodeByIDRow)
+	ret0, _ := ret[0].(db.GetNodeByIDRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -161,11 +161,26 @@ func (mr *MockQuerierMockRecorder) GetNodeByID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeByID", reflect.TypeOf((*MockQuerier)(nil).GetNodeByID), ctx, id)
 }
 
+// GetNodeByPubkey mocks base method.
+func (m *MockQuerier) GetNodeByPubkey(ctx context.Context, publicKey []byte) (uuid.UUID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNodeByPubkey", ctx, publicKey)
+	ret0, _ := ret[0].(uuid.UUID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNodeByPubkey indicates an expected call of GetNodeByPubkey.
+func (mr *MockQuerierMockRecorder) GetNodeByPubkey(ctx, publicKey any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeByPubkey", reflect.TypeOf((*MockQuerier)(nil).GetNodeByPubkey), ctx, publicKey)
+}
+
 // GetNodeNeighbors mocks base method.
-func (m *MockQuerier) GetNodeNeighbors(ctx context.Context, nodeID uuid.UUID) ([]sqlc.GetNodeNeighborsRow, error) {
+func (m *MockQuerier) GetNodeNeighbors(ctx context.Context, nodeID uuid.UUID) ([]db.GetNodeNeighborsRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetNodeNeighbors", ctx, nodeID)
-	ret0, _ := ret[0].([]sqlc.GetNodeNeighborsRow)
+	ret0, _ := ret[0].([]db.GetNodeNeighborsRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -177,10 +192,10 @@ func (mr *MockQuerierMockRecorder) GetNodeNeighbors(ctx, nodeID any) *gomock.Cal
 }
 
 // GetNodesByIDs mocks base method.
-func (m *MockQuerier) GetNodesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]sqlc.GetNodesByIDsRow, error) {
+func (m *MockQuerier) GetNodesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]db.GetNodesByIDsRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetNodesByIDs", ctx, dollar_1)
-	ret0, _ := ret[0].([]sqlc.GetNodesByIDsRow)
+	ret0, _ := ret[0].([]db.GetNodesByIDsRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -192,10 +207,10 @@ func (mr *MockQuerierMockRecorder) GetNodesByIDs(ctx, dollar_1 any) *gomock.Call
 }
 
 // GetObserverBrokers mocks base method.
-func (m *MockQuerier) GetObserverBrokers(ctx context.Context, observerID uuid.UUID) ([]sqlc.GetObserverBrokersRow, error) {
+func (m *MockQuerier) GetObserverBrokers(ctx context.Context, observerID uuid.UUID) ([]db.GetObserverBrokersRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetObserverBrokers", ctx, observerID)
-	ret0, _ := ret[0].([]sqlc.GetObserverBrokersRow)
+	ret0, _ := ret[0].([]db.GetObserverBrokersRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -207,10 +222,10 @@ func (mr *MockQuerierMockRecorder) GetObserverBrokers(ctx, observerID any) *gomo
 }
 
 // GetObserverByID mocks base method.
-func (m *MockQuerier) GetObserverByID(ctx context.Context, id uuid.UUID) (sqlc.Observer, error) {
+func (m *MockQuerier) GetObserverByID(ctx context.Context, id uuid.UUID) (db.Observer, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetObserverByID", ctx, id)
-	ret0, _ := ret[0].(sqlc.Observer)
+	ret0, _ := ret[0].(db.Observer)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -222,10 +237,10 @@ func (mr *MockQuerierMockRecorder) GetObserverByID(ctx, id any) *gomock.Call {
 }
 
 // GetObserverByPubkey mocks base method.
-func (m *MockQuerier) GetObserverByPubkey(ctx context.Context, publicKey []byte) (sqlc.Observer, error) {
+func (m *MockQuerier) GetObserverByPubkey(ctx context.Context, publicKey []byte) (db.Observer, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetObserverByPubkey", ctx, publicKey)
-	ret0, _ := ret[0].(sqlc.Observer)
+	ret0, _ := ret[0].(db.Observer)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -252,10 +267,10 @@ func (mr *MockQuerierMockRecorder) GetObserverLastIATA(ctx, observerID any) *gom
 }
 
 // GetObserverRadio mocks base method.
-func (m *MockQuerier) GetObserverRadio(ctx context.Context, id uuid.UUID) (sqlc.GetObserverRadioRow, error) {
+func (m *MockQuerier) GetObserverRadio(ctx context.Context, id uuid.UUID) (db.GetObserverRadioRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetObserverRadio", ctx, id)
-	ret0, _ := ret[0].(sqlc.GetObserverRadioRow)
+	ret0, _ := ret[0].(db.GetObserverRadioRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -282,10 +297,10 @@ func (mr *MockQuerierMockRecorder) GetObserverScopes(ctx, observerID any) *gomoc
 }
 
 // GetObserverTelemetry mocks base method.
-func (m *MockQuerier) GetObserverTelemetry(ctx context.Context, arg sqlc.GetObserverTelemetryParams) ([]sqlc.GetObserverTelemetryRow, error) {
+func (m *MockQuerier) GetObserverTelemetry(ctx context.Context, arg db.GetObserverTelemetryParams) ([]db.GetObserverTelemetryRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetObserverTelemetry", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.GetObserverTelemetryRow)
+	ret0, _ := ret[0].([]db.GetObserverTelemetryRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -297,10 +312,10 @@ func (mr *MockQuerierMockRecorder) GetObserverTelemetry(ctx, arg any) *gomock.Ca
 }
 
 // GetObserverTelemetryBucketed mocks base method.
-func (m *MockQuerier) GetObserverTelemetryBucketed(ctx context.Context, arg sqlc.GetObserverTelemetryBucketedParams) ([]sqlc.GetObserverTelemetryBucketedRow, error) {
+func (m *MockQuerier) GetObserverTelemetryBucketed(ctx context.Context, arg db.GetObserverTelemetryBucketedParams) ([]db.GetObserverTelemetryBucketedRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetObserverTelemetryBucketed", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.GetObserverTelemetryBucketedRow)
+	ret0, _ := ret[0].([]db.GetObserverTelemetryBucketedRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -312,10 +327,10 @@ func (mr *MockQuerierMockRecorder) GetObserverTelemetryBucketed(ctx, arg any) *g
 }
 
 // GetPacketByHash mocks base method.
-func (m *MockQuerier) GetPacketByHash(ctx context.Context, packetHash []byte) (sqlc.GetPacketByHashRow, error) {
+func (m *MockQuerier) GetPacketByHash(ctx context.Context, packetHash []byte) (db.GetPacketByHashRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetPacketByHash", ctx, packetHash)
-	ret0, _ := ret[0].(sqlc.GetPacketByHashRow)
+	ret0, _ := ret[0].(db.GetPacketByHashRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -342,10 +357,10 @@ func (mr *MockQuerierMockRecorder) GetPacketObservationCount(ctx, packetHash any
 }
 
 // GetPacketsByTraceTag mocks base method.
-func (m *MockQuerier) GetPacketsByTraceTag(ctx context.Context, decode string) ([]sqlc.GetPacketsByTraceTagRow, error) {
+func (m *MockQuerier) GetPacketsByTraceTag(ctx context.Context, decode string) ([]db.GetPacketsByTraceTagRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetPacketsByTraceTag", ctx, decode)
-	ret0, _ := ret[0].([]sqlc.GetPacketsByTraceTagRow)
+	ret0, _ := ret[0].([]db.GetPacketsByTraceTagRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -357,10 +372,10 @@ func (mr *MockQuerierMockRecorder) GetPacketsByTraceTag(ctx, decode any) *gomock
 }
 
 // GetRadioPresets mocks base method.
-func (m *MockQuerier) GetRadioPresets(ctx context.Context, arg sqlc.GetRadioPresetsParams) ([]sqlc.MvRadioPreset, error) {
+func (m *MockQuerier) GetRadioPresets(ctx context.Context, arg db.GetRadioPresetsParams) ([]db.MvRadioPreset, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRadioPresets", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.MvRadioPreset)
+	ret0, _ := ret[0].([]db.MvRadioPreset)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -372,10 +387,10 @@ func (mr *MockQuerierMockRecorder) GetRadioPresets(ctx, arg any) *gomock.Call {
 }
 
 // GetRegion mocks base method.
-func (m *MockQuerier) GetRegion(ctx context.Context, id int32) (sqlc.GetRegionRow, error) {
+func (m *MockQuerier) GetRegion(ctx context.Context, id int32) (db.GetRegionRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRegion", ctx, id)
-	ret0, _ := ret[0].(sqlc.GetRegionRow)
+	ret0, _ := ret[0].(db.GetRegionRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -387,10 +402,10 @@ func (mr *MockQuerierMockRecorder) GetRegion(ctx, id any) *gomock.Call {
 }
 
 // GetRegionBySlug mocks base method.
-func (m *MockQuerier) GetRegionBySlug(ctx context.Context, slug string) (sqlc.GetRegionBySlugRow, error) {
+func (m *MockQuerier) GetRegionBySlug(ctx context.Context, slug string) (db.GetRegionBySlugRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRegionBySlug", ctx, slug)
-	ret0, _ := ret[0].(sqlc.GetRegionBySlugRow)
+	ret0, _ := ret[0].(db.GetRegionBySlugRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -417,10 +432,10 @@ func (mr *MockQuerierMockRecorder) GetRegionIATAs(ctx, regionID any) *gomock.Cal
 }
 
 // GetScopeByName mocks base method.
-func (m *MockQuerier) GetScopeByName(ctx context.Context, name string) (sqlc.GetScopeByNameRow, error) {
+func (m *MockQuerier) GetScopeByName(ctx context.Context, name string) (db.GetScopeByNameRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetScopeByName", ctx, name)
-	ret0, _ := ret[0].(sqlc.GetScopeByNameRow)
+	ret0, _ := ret[0].(db.GetScopeByNameRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -447,10 +462,10 @@ func (mr *MockQuerierMockRecorder) GetScopeNames(ctx any) *gomock.Call {
 }
 
 // GetScopeStats mocks base method.
-func (m *MockQuerier) GetScopeStats(ctx context.Context) ([]sqlc.GetScopeStatsRow, error) {
+func (m *MockQuerier) GetScopeStats(ctx context.Context) ([]db.GetScopeStatsRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetScopeStats", ctx)
-	ret0, _ := ret[0].([]sqlc.GetScopeStatsRow)
+	ret0, _ := ret[0].([]db.GetScopeStatsRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -462,10 +477,10 @@ func (mr *MockQuerierMockRecorder) GetScopeStats(ctx any) *gomock.Call {
 }
 
 // GetScopesByIATAs mocks base method.
-func (m *MockQuerier) GetScopesByIATAs(ctx context.Context, dollar_1 string) ([]sqlc.GetScopesByIATAsRow, error) {
+func (m *MockQuerier) GetScopesByIATAs(ctx context.Context, dollar_1 string) ([]db.GetScopesByIATAsRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetScopesByIATAs", ctx, dollar_1)
-	ret0, _ := ret[0].([]sqlc.GetScopesByIATAsRow)
+	ret0, _ := ret[0].([]db.GetScopesByIATAsRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -477,10 +492,10 @@ func (mr *MockQuerierMockRecorder) GetScopesByIATAs(ctx, dollar_1 any) *gomock.C
 }
 
 // GetStatsNodeTypes mocks base method.
-func (m *MockQuerier) GetStatsNodeTypes(ctx context.Context, dollar_1 string) ([]sqlc.GetStatsNodeTypesRow, error) {
+func (m *MockQuerier) GetStatsNodeTypes(ctx context.Context, dollar_1 string) ([]db.GetStatsNodeTypesRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetStatsNodeTypes", ctx, dollar_1)
-	ret0, _ := ret[0].([]sqlc.GetStatsNodeTypesRow)
+	ret0, _ := ret[0].([]db.GetStatsNodeTypesRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -492,10 +507,10 @@ func (mr *MockQuerierMockRecorder) GetStatsNodeTypes(ctx, dollar_1 any) *gomock.
 }
 
 // GetStatsOverview mocks base method.
-func (m *MockQuerier) GetStatsOverview(ctx context.Context, dollar_1 string) (sqlc.GetStatsOverviewRow, error) {
+func (m *MockQuerier) GetStatsOverview(ctx context.Context, dollar_1 string) (db.GetStatsOverviewRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetStatsOverview", ctx, dollar_1)
-	ret0, _ := ret[0].(sqlc.GetStatsOverviewRow)
+	ret0, _ := ret[0].(db.GetStatsOverviewRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -507,10 +522,10 @@ func (mr *MockQuerierMockRecorder) GetStatsOverview(ctx, dollar_1 any) *gomock.C
 }
 
 // GetStatsPayloadBreakdown mocks base method.
-func (m *MockQuerier) GetStatsPayloadBreakdown(ctx context.Context, arg sqlc.GetStatsPayloadBreakdownParams) ([]sqlc.GetStatsPayloadBreakdownRow, error) {
+func (m *MockQuerier) GetStatsPayloadBreakdown(ctx context.Context, arg db.GetStatsPayloadBreakdownParams) ([]db.GetStatsPayloadBreakdownRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetStatsPayloadBreakdown", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.GetStatsPayloadBreakdownRow)
+	ret0, _ := ret[0].([]db.GetStatsPayloadBreakdownRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -522,10 +537,10 @@ func (mr *MockQuerierMockRecorder) GetStatsPayloadBreakdown(ctx, arg any) *gomoc
 }
 
 // GetStatsTopObservers mocks base method.
-func (m *MockQuerier) GetStatsTopObservers(ctx context.Context, arg sqlc.GetStatsTopObserversParams) ([]sqlc.GetStatsTopObserversRow, error) {
+func (m *MockQuerier) GetStatsTopObservers(ctx context.Context, arg db.GetStatsTopObserversParams) ([]db.GetStatsTopObserversRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetStatsTopObservers", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.GetStatsTopObserversRow)
+	ret0, _ := ret[0].([]db.GetStatsTopObserversRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -537,10 +552,10 @@ func (mr *MockQuerierMockRecorder) GetStatsTopObservers(ctx, arg any) *gomock.Ca
 }
 
 // GetTopNodes mocks base method.
-func (m *MockQuerier) GetTopNodes(ctx context.Context, arg sqlc.GetTopNodesParams) ([]sqlc.MvTopNodesByIatum, error) {
+func (m *MockQuerier) GetTopNodes(ctx context.Context, arg db.GetTopNodesParams) ([]db.MvTopNodesByIatum, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetTopNodes", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.MvTopNodesByIatum)
+	ret0, _ := ret[0].([]db.MvTopNodesByIatum)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -567,10 +582,10 @@ func (mr *MockQuerierMockRecorder) GetTransportScopeByName(ctx, name any) *gomoc
 }
 
 // GetTransportScopes mocks base method.
-func (m *MockQuerier) GetTransportScopes(ctx context.Context) ([]sqlc.GetTransportScopesRow, error) {
+func (m *MockQuerier) GetTransportScopes(ctx context.Context) ([]db.GetTransportScopesRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetTransportScopes", ctx)
-	ret0, _ := ret[0].([]sqlc.GetTransportScopesRow)
+	ret0, _ := ret[0].([]db.GetTransportScopesRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -582,7 +597,7 @@ func (mr *MockQuerierMockRecorder) GetTransportScopes(ctx any) *gomock.Call {
 }
 
 // InsertChannelMessage mocks base method.
-func (m *MockQuerier) InsertChannelMessage(ctx context.Context, arg sqlc.InsertChannelMessageParams) (int64, error) {
+func (m *MockQuerier) InsertChannelMessage(ctx context.Context, arg db.InsertChannelMessageParams) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "InsertChannelMessage", ctx, arg)
 	ret0, _ := ret[0].(int64)
@@ -597,10 +612,10 @@ func (mr *MockQuerierMockRecorder) InsertChannelMessage(ctx, arg any) *gomock.Ca
 }
 
 // InsertObservation mocks base method.
-func (m *MockQuerier) InsertObservation(ctx context.Context, arg sqlc.InsertObservationParams) (sqlc.PacketObservation, error) {
+func (m *MockQuerier) InsertObservation(ctx context.Context, arg db.InsertObservationParams) (db.PacketObservation, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "InsertObservation", ctx, arg)
-	ret0, _ := ret[0].(sqlc.PacketObservation)
+	ret0, _ := ret[0].(db.PacketObservation)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -612,7 +627,7 @@ func (mr *MockQuerierMockRecorder) InsertObservation(ctx, arg any) *gomock.Call 
 }
 
 // InsertObserverTelemetry mocks base method.
-func (m *MockQuerier) InsertObserverTelemetry(ctx context.Context, arg sqlc.InsertObserverTelemetryParams) error {
+func (m *MockQuerier) InsertObserverTelemetry(ctx context.Context, arg db.InsertObserverTelemetryParams) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "InsertObserverTelemetry", ctx, arg)
 	ret0, _ := ret[0].(error)
@@ -626,10 +641,10 @@ func (mr *MockQuerierMockRecorder) InsertObserverTelemetry(ctx, arg any) *gomock
 }
 
 // ListAllChannelMessages mocks base method.
-func (m *MockQuerier) ListAllChannelMessages(ctx context.Context, arg sqlc.ListAllChannelMessagesParams) ([]sqlc.ListAllChannelMessagesRow, error) {
+func (m *MockQuerier) ListAllChannelMessages(ctx context.Context, arg db.ListAllChannelMessagesParams) ([]db.ListAllChannelMessagesRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListAllChannelMessages", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ListAllChannelMessagesRow)
+	ret0, _ := ret[0].([]db.ListAllChannelMessagesRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -641,10 +656,10 @@ func (mr *MockQuerierMockRecorder) ListAllChannelMessages(ctx, arg any) *gomock.
 }
 
 // ListChannelMessages mocks base method.
-func (m *MockQuerier) ListChannelMessages(ctx context.Context, arg sqlc.ListChannelMessagesParams) ([]sqlc.ListChannelMessagesRow, error) {
+func (m *MockQuerier) ListChannelMessages(ctx context.Context, arg db.ListChannelMessagesParams) ([]db.ListChannelMessagesRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListChannelMessages", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ListChannelMessagesRow)
+	ret0, _ := ret[0].([]db.ListChannelMessagesRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -656,10 +671,10 @@ func (mr *MockQuerierMockRecorder) ListChannelMessages(ctx, arg any) *gomock.Cal
 }
 
 // ListChannelMessagesByHash mocks base method.
-func (m *MockQuerier) ListChannelMessagesByHash(ctx context.Context, arg sqlc.ListChannelMessagesByHashParams) ([]sqlc.ListChannelMessagesByHashRow, error) {
+func (m *MockQuerier) ListChannelMessagesByHash(ctx context.Context, arg db.ListChannelMessagesByHashParams) ([]db.ListChannelMessagesByHashRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListChannelMessagesByHash", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ListChannelMessagesByHashRow)
+	ret0, _ := ret[0].([]db.ListChannelMessagesByHashRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -671,10 +686,10 @@ func (mr *MockQuerierMockRecorder) ListChannelMessagesByHash(ctx, arg any) *gomo
 }
 
 // ListChannels mocks base method.
-func (m *MockQuerier) ListChannels(ctx context.Context, arg sqlc.ListChannelsParams) ([]sqlc.Channel, error) {
+func (m *MockQuerier) ListChannels(ctx context.Context, arg db.ListChannelsParams) ([]db.Channel, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListChannels", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.Channel)
+	ret0, _ := ret[0].([]db.Channel)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -686,10 +701,10 @@ func (mr *MockQuerierMockRecorder) ListChannels(ctx, arg any) *gomock.Call {
 }
 
 // ListIATAs mocks base method.
-func (m *MockQuerier) ListIATAs(ctx context.Context) ([]sqlc.IataCode, error) {
+func (m *MockQuerier) ListIATAs(ctx context.Context) ([]db.IataCode, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListIATAs", ctx)
-	ret0, _ := ret[0].([]sqlc.IataCode)
+	ret0, _ := ret[0].([]db.IataCode)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -701,10 +716,10 @@ func (mr *MockQuerierMockRecorder) ListIATAs(ctx any) *gomock.Call {
 }
 
 // ListKnownRoutes mocks base method.
-func (m *MockQuerier) ListKnownRoutes(ctx context.Context, arg sqlc.ListKnownRoutesParams) ([]sqlc.KnownRoute, error) {
+func (m *MockQuerier) ListKnownRoutes(ctx context.Context, arg db.ListKnownRoutesParams) ([]db.KnownRoute, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListKnownRoutes", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.KnownRoute)
+	ret0, _ := ret[0].([]db.KnownRoute)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -716,10 +731,10 @@ func (mr *MockQuerierMockRecorder) ListKnownRoutes(ctx, arg any) *gomock.Call {
 }
 
 // ListMessagesAfterID mocks base method.
-func (m *MockQuerier) ListMessagesAfterID(ctx context.Context, arg sqlc.ListMessagesAfterIDParams) ([]sqlc.ListMessagesAfterIDRow, error) {
+func (m *MockQuerier) ListMessagesAfterID(ctx context.Context, arg db.ListMessagesAfterIDParams) ([]db.ListMessagesAfterIDRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListMessagesAfterID", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ListMessagesAfterIDRow)
+	ret0, _ := ret[0].([]db.ListMessagesAfterIDRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -731,10 +746,10 @@ func (mr *MockQuerierMockRecorder) ListMessagesAfterID(ctx, arg any) *gomock.Cal
 }
 
 // ListNodeObservations mocks base method.
-func (m *MockQuerier) ListNodeObservations(ctx context.Context, arg sqlc.ListNodeObservationsParams) ([]sqlc.ListNodeObservationsRow, error) {
+func (m *MockQuerier) ListNodeObservations(ctx context.Context, arg db.ListNodeObservationsParams) ([]db.ListNodeObservationsRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListNodeObservations", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ListNodeObservationsRow)
+	ret0, _ := ret[0].([]db.ListNodeObservationsRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -746,10 +761,10 @@ func (mr *MockQuerierMockRecorder) ListNodeObservations(ctx, arg any) *gomock.Ca
 }
 
 // ListNodes mocks base method.
-func (m *MockQuerier) ListNodes(ctx context.Context, arg sqlc.ListNodesParams) ([]sqlc.ListNodesRow, error) {
+func (m *MockQuerier) ListNodes(ctx context.Context, arg db.ListNodesParams) ([]db.ListNodesRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListNodes", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ListNodesRow)
+	ret0, _ := ret[0].([]db.ListNodesRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -761,10 +776,10 @@ func (mr *MockQuerierMockRecorder) ListNodes(ctx, arg any) *gomock.Call {
 }
 
 // ListObservationsForPacket mocks base method.
-func (m *MockQuerier) ListObservationsForPacket(ctx context.Context, packetHash []byte) ([]sqlc.ListObservationsForPacketRow, error) {
+func (m *MockQuerier) ListObservationsForPacket(ctx context.Context, packetHash []byte) ([]db.ListObservationsForPacketRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListObservationsForPacket", ctx, packetHash)
-	ret0, _ := ret[0].([]sqlc.ListObservationsForPacketRow)
+	ret0, _ := ret[0].([]db.ListObservationsForPacketRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -776,10 +791,10 @@ func (mr *MockQuerierMockRecorder) ListObservationsForPacket(ctx, packetHash any
 }
 
 // ListObserverAdverts mocks base method.
-func (m *MockQuerier) ListObserverAdverts(ctx context.Context, arg sqlc.ListObserverAdvertsParams) ([]sqlc.ListObserverAdvertsRow, error) {
+func (m *MockQuerier) ListObserverAdverts(ctx context.Context, arg db.ListObserverAdvertsParams) ([]db.ListObserverAdvertsRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListObserverAdverts", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ListObserverAdvertsRow)
+	ret0, _ := ret[0].([]db.ListObserverAdvertsRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -791,10 +806,10 @@ func (mr *MockQuerierMockRecorder) ListObserverAdverts(ctx, arg any) *gomock.Cal
 }
 
 // ListObservers mocks base method.
-func (m *MockQuerier) ListObservers(ctx context.Context, arg sqlc.ListObserversParams) ([]sqlc.ListObserversRow, error) {
+func (m *MockQuerier) ListObservers(ctx context.Context, arg db.ListObserversParams) ([]db.ListObserversRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListObservers", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ListObserversRow)
+	ret0, _ := ret[0].([]db.ListObserversRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -806,10 +821,10 @@ func (mr *MockQuerierMockRecorder) ListObservers(ctx, arg any) *gomock.Call {
 }
 
 // ListPackets mocks base method.
-func (m *MockQuerier) ListPackets(ctx context.Context, arg sqlc.ListPacketsParams) ([]sqlc.ListPacketsRow, error) {
+func (m *MockQuerier) ListPackets(ctx context.Context, arg db.ListPacketsParams) ([]db.ListPacketsRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListPackets", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ListPacketsRow)
+	ret0, _ := ret[0].([]db.ListPacketsRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -821,10 +836,10 @@ func (mr *MockQuerierMockRecorder) ListPackets(ctx, arg any) *gomock.Call {
 }
 
 // ListPacketsAfterID mocks base method.
-func (m *MockQuerier) ListPacketsAfterID(ctx context.Context, arg sqlc.ListPacketsAfterIDParams) ([]sqlc.ListPacketsAfterIDRow, error) {
+func (m *MockQuerier) ListPacketsAfterID(ctx context.Context, arg db.ListPacketsAfterIDParams) ([]db.ListPacketsAfterIDRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListPacketsAfterID", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ListPacketsAfterIDRow)
+	ret0, _ := ret[0].([]db.ListPacketsAfterIDRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -836,10 +851,10 @@ func (mr *MockQuerierMockRecorder) ListPacketsAfterID(ctx, arg any) *gomock.Call
 }
 
 // ListRegions mocks base method.
-func (m *MockQuerier) ListRegions(ctx context.Context) ([]sqlc.ListRegionsRow, error) {
+func (m *MockQuerier) ListRegions(ctx context.Context) ([]db.ListRegionsRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListRegions", ctx)
-	ret0, _ := ret[0].([]sqlc.ListRegionsRow)
+	ret0, _ := ret[0].([]db.ListRegionsRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -851,10 +866,10 @@ func (mr *MockQuerierMockRecorder) ListRegions(ctx any) *gomock.Call {
 }
 
 // ListTraceTags mocks base method.
-func (m *MockQuerier) ListTraceTags(ctx context.Context, arg sqlc.ListTraceTagsParams) ([]sqlc.ListTraceTagsRow, error) {
+func (m *MockQuerier) ListTraceTags(ctx context.Context, arg db.ListTraceTagsParams) ([]db.ListTraceTagsRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListTraceTags", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ListTraceTagsRow)
+	ret0, _ := ret[0].([]db.ListTraceTagsRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -936,10 +951,10 @@ func (mr *MockQuerierMockRecorder) RefreshTopNodes(ctx any) *gomock.Call {
 }
 
 // ResolvePathHashes mocks base method.
-func (m *MockQuerier) ResolvePathHashes(ctx context.Context, arg sqlc.ResolvePathHashesParams) ([]sqlc.ResolvePathHashesRow, error) {
+func (m *MockQuerier) ResolvePathHashes(ctx context.Context, arg db.ResolvePathHashesParams) ([]db.ResolvePathHashesRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ResolvePathHashes", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.ResolvePathHashesRow)
+	ret0, _ := ret[0].([]db.ResolvePathHashesRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -951,10 +966,10 @@ func (mr *MockQuerierMockRecorder) ResolvePathHashes(ctx, arg any) *gomock.Call 
 }
 
 // SearchKnownRoutes mocks base method.
-func (m *MockQuerier) SearchKnownRoutes(ctx context.Context, arg sqlc.SearchKnownRoutesParams) ([]sqlc.KnownRoute, error) {
+func (m *MockQuerier) SearchKnownRoutes(ctx context.Context, arg db.SearchKnownRoutesParams) ([]db.KnownRoute, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SearchKnownRoutes", ctx, arg)
-	ret0, _ := ret[0].([]sqlc.KnownRoute)
+	ret0, _ := ret[0].([]db.KnownRoute)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -966,7 +981,7 @@ func (mr *MockQuerierMockRecorder) SearchKnownRoutes(ctx, arg any) *gomock.Call 
 }
 
 // SetNodeDefaultScope mocks base method.
-func (m *MockQuerier) SetNodeDefaultScope(ctx context.Context, arg sqlc.SetNodeDefaultScopeParams) error {
+func (m *MockQuerier) SetNodeDefaultScope(ctx context.Context, arg db.SetNodeDefaultScopeParams) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetNodeDefaultScope", ctx, arg)
 	ret0, _ := ret[0].(error)
@@ -1022,7 +1037,7 @@ func (mr *MockQuerierMockRecorder) SetPacketDecrypted(ctx, packetHash any) *gomo
 }
 
 // UpdateObserverStatus mocks base method.
-func (m *MockQuerier) UpdateObserverStatus(ctx context.Context, arg sqlc.UpdateObserverStatusParams) (uuid.UUID, error) {
+func (m *MockQuerier) UpdateObserverStatus(ctx context.Context, arg db.UpdateObserverStatusParams) (uuid.UUID, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateObserverStatus", ctx, arg)
 	ret0, _ := ret[0].(uuid.UUID)
@@ -1037,10 +1052,10 @@ func (mr *MockQuerierMockRecorder) UpdateObserverStatus(ctx, arg any) *gomock.Ca
 }
 
 // UpsertChannel mocks base method.
-func (m *MockQuerier) UpsertChannel(ctx context.Context, arg sqlc.UpsertChannelParams) (sqlc.Channel, error) {
+func (m *MockQuerier) UpsertChannel(ctx context.Context, arg db.UpsertChannelParams) (db.Channel, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertChannel", ctx, arg)
-	ret0, _ := ret[0].(sqlc.Channel)
+	ret0, _ := ret[0].(db.Channel)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -1081,7 +1096,7 @@ func (mr *MockQuerierMockRecorder) UpsertIATA(ctx, iata any) *gomock.Call {
 }
 
 // UpsertIATADetails mocks base method.
-func (m *MockQuerier) UpsertIATADetails(ctx context.Context, arg sqlc.UpsertIATADetailsParams) error {
+func (m *MockQuerier) UpsertIATADetails(ctx context.Context, arg db.UpsertIATADetailsParams) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertIATADetails", ctx, arg)
 	ret0, _ := ret[0].(error)
@@ -1095,7 +1110,7 @@ func (mr *MockQuerierMockRecorder) UpsertIATADetails(ctx, arg any) *gomock.Call 
 }
 
 // UpsertKnownRoute mocks base method.
-func (m *MockQuerier) UpsertKnownRoute(ctx context.Context, arg sqlc.UpsertKnownRouteParams) error {
+func (m *MockQuerier) UpsertKnownRoute(ctx context.Context, arg db.UpsertKnownRouteParams) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertKnownRoute", ctx, arg)
 	ret0, _ := ret[0].(error)
@@ -1109,10 +1124,10 @@ func (mr *MockQuerierMockRecorder) UpsertKnownRoute(ctx, arg any) *gomock.Call {
 }
 
 // UpsertNode mocks base method.
-func (m *MockQuerier) UpsertNode(ctx context.Context, arg sqlc.UpsertNodeParams) (sqlc.Node, error) {
+func (m *MockQuerier) UpsertNode(ctx context.Context, arg db.UpsertNodeParams) (db.Node, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertNode", ctx, arg)
-	ret0, _ := ret[0].(sqlc.Node)
+	ret0, _ := ret[0].(db.Node)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -1124,7 +1139,7 @@ func (mr *MockQuerierMockRecorder) UpsertNode(ctx, arg any) *gomock.Call {
 }
 
 // UpsertNodeIATA mocks base method.
-func (m *MockQuerier) UpsertNodeIATA(ctx context.Context, arg sqlc.UpsertNodeIATAParams) error {
+func (m *MockQuerier) UpsertNodeIATA(ctx context.Context, arg db.UpsertNodeIATAParams) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertNodeIATA", ctx, arg)
 	ret0, _ := ret[0].(error)
@@ -1138,7 +1153,7 @@ func (mr *MockQuerierMockRecorder) UpsertNodeIATA(ctx, arg any) *gomock.Call {
 }
 
 // UpsertNodeNeighbor mocks base method.
-func (m *MockQuerier) UpsertNodeNeighbor(ctx context.Context, arg sqlc.UpsertNodeNeighborParams) error {
+func (m *MockQuerier) UpsertNodeNeighbor(ctx context.Context, arg db.UpsertNodeNeighborParams) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertNodeNeighbor", ctx, arg)
 	ret0, _ := ret[0].(error)
@@ -1152,7 +1167,7 @@ func (mr *MockQuerierMockRecorder) UpsertNodeNeighbor(ctx, arg any) *gomock.Call
 }
 
 // UpsertNodeShortID mocks base method.
-func (m *MockQuerier) UpsertNodeShortID(ctx context.Context, arg sqlc.UpsertNodeShortIDParams) error {
+func (m *MockQuerier) UpsertNodeShortID(ctx context.Context, arg db.UpsertNodeShortIDParams) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertNodeShortID", ctx, arg)
 	ret0, _ := ret[0].(error)
@@ -1166,10 +1181,10 @@ func (mr *MockQuerierMockRecorder) UpsertNodeShortID(ctx, arg any) *gomock.Call 
 }
 
 // UpsertObserver mocks base method.
-func (m *MockQuerier) UpsertObserver(ctx context.Context, publicKey []byte) (sqlc.Observer, error) {
+func (m *MockQuerier) UpsertObserver(ctx context.Context, publicKey []byte) (db.Observer, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertObserver", ctx, publicKey)
-	ret0, _ := ret[0].(sqlc.Observer)
+	ret0, _ := ret[0].(db.Observer)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -1181,7 +1196,7 @@ func (mr *MockQuerierMockRecorder) UpsertObserver(ctx, publicKey any) *gomock.Ca
 }
 
 // UpsertObserverBroker mocks base method.
-func (m *MockQuerier) UpsertObserverBroker(ctx context.Context, arg sqlc.UpsertObserverBrokerParams) error {
+func (m *MockQuerier) UpsertObserverBroker(ctx context.Context, arg db.UpsertObserverBrokerParams) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertObserverBroker", ctx, arg)
 	ret0, _ := ret[0].(error)
@@ -1195,7 +1210,7 @@ func (mr *MockQuerierMockRecorder) UpsertObserverBroker(ctx, arg any) *gomock.Ca
 }
 
 // UpsertObserverScope mocks base method.
-func (m *MockQuerier) UpsertObserverScope(ctx context.Context, arg sqlc.UpsertObserverScopeParams) error {
+func (m *MockQuerier) UpsertObserverScope(ctx context.Context, arg db.UpsertObserverScopeParams) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertObserverScope", ctx, arg)
 	ret0, _ := ret[0].(error)
@@ -1209,10 +1224,10 @@ func (mr *MockQuerierMockRecorder) UpsertObserverScope(ctx, arg any) *gomock.Cal
 }
 
 // UpsertPacket mocks base method.
-func (m *MockQuerier) UpsertPacket(ctx context.Context, arg sqlc.UpsertPacketParams) (sqlc.UpsertPacketRow, error) {
+func (m *MockQuerier) UpsertPacket(ctx context.Context, arg db.UpsertPacketParams) (db.UpsertPacketRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertPacket", ctx, arg)
-	ret0, _ := ret[0].(sqlc.UpsertPacketRow)
+	ret0, _ := ret[0].(db.UpsertPacketRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -1224,7 +1239,7 @@ func (mr *MockQuerierMockRecorder) UpsertPacket(ctx, arg any) *gomock.Call {
 }
 
 // UpsertRegion mocks base method.
-func (m *MockQuerier) UpsertRegion(ctx context.Context, arg sqlc.UpsertRegionParams) (int32, error) {
+func (m *MockQuerier) UpsertRegion(ctx context.Context, arg db.UpsertRegionParams) (int32, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertRegion", ctx, arg)
 	ret0, _ := ret[0].(int32)
@@ -1239,7 +1254,7 @@ func (mr *MockQuerierMockRecorder) UpsertRegion(ctx, arg any) *gomock.Call {
 }
 
 // UpsertRegionIATA mocks base method.
-func (m *MockQuerier) UpsertRegionIATA(ctx context.Context, arg sqlc.UpsertRegionIATAParams) error {
+func (m *MockQuerier) UpsertRegionIATA(ctx context.Context, arg db.UpsertRegionIATAParams) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertRegionIATA", ctx, arg)
 	ret0, _ := ret[0].(error)
@@ -1253,7 +1268,7 @@ func (mr *MockQuerierMockRecorder) UpsertRegionIATA(ctx, arg any) *gomock.Call {
 }
 
 // UpsertTransportScope mocks base method.
-func (m *MockQuerier) UpsertTransportScope(ctx context.Context, arg sqlc.UpsertTransportScopeParams) error {
+func (m *MockQuerier) UpsertTransportScope(ctx context.Context, arg db.UpsertTransportScopeParams) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertTransportScope", ctx, arg)
 	ret0, _ := ret[0].(error)

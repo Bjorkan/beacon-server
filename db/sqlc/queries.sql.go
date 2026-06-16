@@ -282,6 +282,17 @@ func (q *Queries) GetNodeByID(ctx context.Context, id uuid.UUID) (GetNodeByIDRow
 	return i, err
 }
 
+const getNodeByPubkey = `-- name: GetNodeByPubkey :one
+SELECT id FROM nodes WHERE public_key = $1
+`
+
+func (q *Queries) GetNodeByPubkey(ctx context.Context, publicKey []byte) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getNodeByPubkey, publicKey)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getNodeNeighbors = `-- name: GetNodeNeighbors :many
 SELECT
     n.id, n.public_key, n.name, n.node_type, n.latitude, n.longitude,
