@@ -120,6 +120,7 @@ type NodeNeighbor struct {
 	FirstSeen        pgtype.Timestamptz `json:"first_seen"`
 	LastSeen         pgtype.Timestamptz `json:"last_seen"`
 	ObservationCount int64              `json:"observation_count"`
+	Snr              *float32           `json:"snr"`
 }
 
 type NodeShortID struct {

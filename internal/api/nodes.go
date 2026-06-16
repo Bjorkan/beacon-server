@@ -23,6 +23,7 @@ type NodeNeighbor struct {
 	ObservationCount int64     `json:"observationCount"`
 	FirstSeen        int64     `json:"firstSeen"` // epoch ms
 	LastSeen         int64     `json:"lastSeen"`  // epoch ms
+	SNR              *float32  `json:"snr,omitempty"`
 }
 
 // NodeIATA represents a single IATA code and the last time the node was heard there.

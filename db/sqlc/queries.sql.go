@@ -59,7 +59,7 @@ func (q *Queries) GetChannelByID(ctx context.Context, id int32) (Channel, error)
 const getCrossIATANeighbors = `-- name: GetCrossIATANeighbors :many
 SELECT
     n.id, n.name, n.node_type, n.latitude, n.longitude,
-    nn.iata AS neighbor_iata, nn.observation_count, nn.last_seen
+    nn.iata AS neighbor_iata, nn.observation_count, nn.last_seen, nn.snr
 FROM node_neighbors nn
 JOIN nodes n ON n.id = nn.neighbor_id
 WHERE nn.node_id = $1
@@ -81,6 +81,7 @@ type GetCrossIATANeighborsRow struct {
 	NeighborIata     string             `json:"neighbor_iata"`
 	ObservationCount int64              `json:"observation_count"`
 	LastSeen         pgtype.Timestamptz `json:"last_seen"`
+	Snr              *float32           `json:"snr"`
 }
 
 // Returns neighbors of a node that are in a different IATA.
@@ -102,6 +103,7 @@ func (q *Queries) GetCrossIATANeighbors(ctx context.Context, arg GetCrossIATANei
 			&i.NeighborIata,
 			&i.ObservationCount,
 			&i.LastSeen,
+			&i.Snr,
 		); err != nil {
 			return nil, err
 		}
@@ -283,7 +285,7 @@ func (q *Queries) GetNodeByID(ctx context.Context, id uuid.UUID) (GetNodeByIDRow
 const getNodeNeighbors = `-- name: GetNodeNeighbors :many
 SELECT
     n.id, n.public_key, n.name, n.node_type, n.latitude, n.longitude,
-    nn.iata, nn.observation_count, nn.first_seen, nn.last_seen
+    nn.iata, nn.observation_count, nn.first_seen, nn.last_seen, nn.snr
 FROM node_neighbors nn
 JOIN nodes n ON n.id = nn.neighbor_id
 WHERE nn.node_id = $1
@@ -301,6 +303,7 @@ type GetNodeNeighborsRow struct {
 	ObservationCount int64              `json:"observation_count"`
 	FirstSeen        pgtype.Timestamptz `json:"first_seen"`
 	LastSeen         pgtype.Timestamptz `json:"last_seen"`
+	Snr              *float32           `json:"snr"`
 }
 
 // Returns the neighbors of a node with details, ordered by most recently seen.
@@ -324,6 +327,7 @@ func (q *Queries) GetNodeNeighbors(ctx context.Context, nodeID uuid.UUID) ([]Get
 			&i.ObservationCount,
 			&i.FirstSeen,
 			&i.LastSeen,
+			&i.Snr,
 		); err != nil {
 			return nil, err
 		}
@@ -3228,17 +3232,19 @@ func (q *Queries) UpsertNodeIATA(ctx context.Context, arg UpsertNodeIATAParams) 
 
 const upsertNodeNeighbor = `-- name: UpsertNodeNeighbor :exec
 
-INSERT INTO node_neighbors (node_id, neighbor_id, iata, observation_count)
-VALUES ($1, $2, $3, 1)
+INSERT INTO node_neighbors (node_id, neighbor_id, iata, observation_count, snr)
+VALUES ($1, $2, $3, 1, $4)
 ON CONFLICT (node_id, neighbor_id, iata) DO UPDATE SET
   last_seen         = NOW(),
-  observation_count = node_neighbors.observation_count + 1
+  observation_count = node_neighbors.observation_count + 1,
+  snr               = COALESCE(EXCLUDED.snr, node_neighbors.snr)
 `
 
 type UpsertNodeNeighborParams struct {
 	NodeID     uuid.UUID `json:"node_id"`
 	NeighborID uuid.UUID `json:"neighbor_id"`
 	Iata       string    `json:"iata"`
+	Snr        *float32  `json:"snr"`
 }
 
 // ============================================================
@@ -3246,8 +3252,17 @@ type UpsertNodeNeighborParams struct {
 // ============================================================
 // Records or updates a neighbor relationship between two nodes observed in the same IATA.
 // node_id is the advertising node, neighbor_id is the first-hop forwarder.
+// snr is optional; pass NULL when no signal reading is available (the
+// common case). On conflict, snr is only overwritten when a new non-null
+// value is supplied, so a later no-SNR observation doesn't erase an
+// earlier real reading.
 func (q *Queries) UpsertNodeNeighbor(ctx context.Context, arg UpsertNodeNeighborParams) error {
-	_, err := q.db.Exec(ctx, upsertNodeNeighbor, arg.NodeID, arg.NeighborID, arg.Iata)
+	_, err := q.db.Exec(ctx, upsertNodeNeighbor,
+		arg.NodeID,
+		arg.NeighborID,
+		arg.Iata,
+		arg.Snr,
+	)
 	return err
 }
 

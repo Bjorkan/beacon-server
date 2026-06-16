@@ -247,7 +247,9 @@ func (s *stubDB) UpsertKnownRoute(_ context.Context, _ []uuid.UUID, _ [][]byte, 
 	return nil
 }
 
-func (s *stubDB) UpsertNodeNeighbor(_ context.Context, _, _ uuid.UUID, _ string) error { return nil }
+func (s *stubDB) UpsertNodeNeighbor(_ context.Context, _, _ uuid.UUID, _ string, _ *float32) error {
+	return nil
+}
 
 func newTestWorker() (*Worker, *stubDB) {
 	db := &stubDB{}

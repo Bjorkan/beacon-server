@@ -884,17 +884,22 @@ ORDER BY hop_count ASC, last_seen DESC;
 -- name: UpsertNodeNeighbor :exec
 -- Records or updates a neighbor relationship between two nodes observed in the same IATA.
 -- node_id is the advertising node, neighbor_id is the first-hop forwarder.
-INSERT INTO node_neighbors (node_id, neighbor_id, iata, observation_count)
-VALUES ($1, $2, $3, 1)
+-- snr is optional; pass NULL when no signal reading is available (the
+-- common case). On conflict, snr is only overwritten when a new non-null
+-- value is supplied, so a later no-SNR observation doesn't erase an
+-- earlier real reading.
+INSERT INTO node_neighbors (node_id, neighbor_id, iata, observation_count, snr)
+VALUES ($1, $2, $3, 1, $4)
 ON CONFLICT (node_id, neighbor_id, iata) DO UPDATE SET
   last_seen         = NOW(),
-  observation_count = node_neighbors.observation_count + 1;
+  observation_count = node_neighbors.observation_count + 1,
+  snr               = COALESCE(EXCLUDED.snr, node_neighbors.snr);
 
 -- name: GetNodeNeighbors :many
 -- Returns the neighbors of a node with details, ordered by most recently seen.
 SELECT
     n.id, n.public_key, n.name, n.node_type, n.latitude, n.longitude,
-    nn.iata, nn.observation_count, nn.first_seen, nn.last_seen
+    nn.iata, nn.observation_count, nn.first_seen, nn.last_seen, nn.snr
 FROM node_neighbors nn
 JOIN nodes n ON n.id = nn.neighbor_id
 WHERE nn.node_id = $1
@@ -904,7 +909,7 @@ ORDER BY nn.last_seen DESC;
 -- Returns neighbors of a node that are in a different IATA.
 SELECT
     n.id, n.name, n.node_type, n.latitude, n.longitude,
-    nn.iata AS neighbor_iata, nn.observation_count, nn.last_seen
+    nn.iata AS neighbor_iata, nn.observation_count, nn.last_seen, nn.snr
 FROM node_neighbors nn
 JOIN nodes n ON n.id = nn.neighbor_id
 WHERE nn.node_id = $1

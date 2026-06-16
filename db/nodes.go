@@ -53,11 +53,12 @@ func (s *Store) UpsertNodeShortID(ctx context.Context, nodeID uuid.UUID, iata st
 	})
 }
 
-func (s *Store) UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.UUID, iata string) error {
+func (s *Store) UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.UUID, iata string, snr *float32) error {
 	return s.q.UpsertNodeNeighbor(ctx, sqlc.UpsertNodeNeighborParams{
 		NodeID:     nodeID,
 		NeighborID: neighborID,
 		Iata:       iata,
+		Snr:        snr,
 	})
 }
 
@@ -222,6 +223,7 @@ func (s *Store) GetNodeNeighbors(ctx context.Context, nodeID uuid.UUID) ([]api.N
 			if r.LastSeen.Time.After(time.UnixMilli(items[idx].LastSeen)) {
 				items[idx].LastSeen = r.LastSeen.Time.UnixMilli()
 				items[idx].IATA = r.Iata
+				items[idx].SNR = r.Snr
 			}
 			if r.FirstSeen.Time.Before(time.UnixMilli(items[idx].FirstSeen)) {
 				items[idx].FirstSeen = r.FirstSeen.Time.UnixMilli()
@@ -241,6 +243,7 @@ func (s *Store) GetNodeNeighbors(ctx context.Context, nodeID uuid.UUID) ([]api.N
 			ObservationCount: r.ObservationCount,
 			FirstSeen:        r.FirstSeen.Time.UnixMilli(),
 			LastSeen:         r.LastSeen.Time.UnixMilli(),
+			SNR:              r.Snr,
 		})
 	}
 	return items, nil

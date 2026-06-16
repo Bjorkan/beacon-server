@@ -174,6 +174,10 @@ type Querier interface {
 	// ============================================================
 	// Records or updates a neighbor relationship between two nodes observed in the same IATA.
 	// node_id is the advertising node, neighbor_id is the first-hop forwarder.
+	// snr is optional; pass NULL when no signal reading is available (the
+	// common case). On conflict, snr is only overwritten when a new non-null
+	// value is supplied, so a later no-SNR observation doesn't erase an
+	// earlier real reading.
 	UpsertNodeNeighbor(ctx context.Context, arg UpsertNodeNeighborParams) error
 	UpsertNodeShortID(ctx context.Context, arg UpsertNodeShortIDParams) error
 	// ============================================================

@@ -107,7 +107,7 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 				if err == nil {
 					key := hex.EncodeToString(firstHop[0])
 					if entries := resolved[key]; len(entries) == 1 {
-						if err := w.db.UpsertNodeNeighbor(ctx, nodeID, entries[0].NodeID, iata); err != nil {
+						if err := w.db.UpsertNodeNeighbor(ctx, nodeID, entries[0].NodeID, iata, nil); err != nil {
 							log.Printf("ingest[%s]: failed to upsert node neighbor: %v", w.cfg.BrokerName, err)
 						}
 					}

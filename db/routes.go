@@ -144,6 +144,7 @@ func (s *Store) GetCrossIATANeighbors(ctx context.Context, nodeID uuid.UUID, iat
 			IATA:             r.NeighborIata,
 			ObservationCount: r.ObservationCount,
 			LastSeen:         r.LastSeen.Time.UnixMilli(),
+			SNR:              r.Snr,
 		})
 	}
 	return items, nil

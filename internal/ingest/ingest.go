@@ -157,7 +157,8 @@ type DB interface {
 
 	// UpsertNodeNeighbor records or updates a neighbor relationship between two nodes.
 	// nodeID is the advertising node, neighborID is the first-hop forwarder.
-	UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.UUID, iata string) error
+	// snr is optional (nil when no signal reading is available, the common case).
+	UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.UUID, iata string, snr *float32) error
 }
 
 // ChannelKeyStore is a read-only view of the channel keys loaded from config.
