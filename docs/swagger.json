@@ -15,7 +15,7 @@
         "license": {
             "name": "AGPL-3-or-later"
         },
-        "version": "1.5.1"
+        "version": "1.5.3"
     },
     "host": "localhost:8080",
     "basePath": "/api/v1",
