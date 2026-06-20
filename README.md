@@ -85,6 +85,8 @@ Or pull and run the Docker image:
 docker pull ghcr.io/meshcore-beacon/beacon-server:latest
 ```
 
+The image is public on GitHub Container Registry — no `docker login` required.
+
 Beacon will:
 
 - Load `.env` and `config.yaml`
