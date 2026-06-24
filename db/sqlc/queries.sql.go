@@ -1413,7 +1413,7 @@ INSERT INTO packet_observations (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
 )
-ON CONFLICT (packet_hash, observer_id, heard_at) DO NOTHING
+ON CONFLICT (packet_hash, observer_id) DO NOTHING
 RETURNING id, packet_hash, observer_id, iata, heard_at, path_length_byte, hash_size, hop_count, path_bytes, rssi, snr, propagation_time_ms, radio_freq_mhz, spread_factor, bandwidth_khz, coding_rate, source_broker
 `
 
