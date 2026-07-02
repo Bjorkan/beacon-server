@@ -4,6 +4,7 @@
 package api
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 
@@ -243,4 +244,37 @@ func RouteTypeName(t int16) string {
 	default:
 		return "unknown"
 	}
+}
+
+// BuildResolvedPath maps an ordered list of path hashes and their resolved
+// candidates (as returned by ResolvePathHashes) into per-hop confidence
+// records: "high" for exactly one match, "ambiguous" for multiple matches,
+// "none" for zero. Shared by the REST packet/observation endpoints and the
+// ingest packetObservation WS event so both report path resolution the same way.
+func BuildResolvedPath(hashes [][]byte, resolved map[string][]ResolvedPathEntry) []ResolvedHop {
+	path := make([]ResolvedHop, 0, len(hashes))
+	for _, hash := range hashes {
+		key := hex.EncodeToString(hash)
+		entries := resolved[key]
+		hop := ResolvedHop{Nodes: make([]ResolvedNode, 0, len(entries))}
+		switch len(entries) {
+		case 0:
+			hop.Confidence = "none"
+		case 1:
+			hop.Confidence = "high"
+		default:
+			hop.Confidence = "ambiguous"
+		}
+		for _, e := range entries {
+			hop.Nodes = append(hop.Nodes, ResolvedNode{
+				ID:        e.NodeID,
+				Name:      e.Name,
+				Latitude:  e.Latitude,
+				Longitude: e.Longitude,
+				PublicKey: hex.EncodeToString(e.PublicKey),
+			})
+		}
+		path = append(path, hop)
+	}
+	return path
 }

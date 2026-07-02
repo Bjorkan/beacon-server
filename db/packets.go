@@ -284,31 +284,7 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 			if err != nil {
 				log.Printf("store: path resolution failed for observation %d: %v", v.ID, err)
 			} else {
-				for _, hash := range hashes {
-					key := hex.EncodeToString(hash)
-					entries := resolved[key]
-					hop := api.ResolvedHop{
-						Nodes: make([]api.ResolvedNode, 0, len(entries)),
-					}
-					switch len(entries) {
-					case 0:
-						hop.Confidence = "none"
-					case 1:
-						hop.Confidence = "high"
-					default:
-						hop.Confidence = "ambiguous"
-					}
-					for _, e := range entries {
-						hop.Nodes = append(hop.Nodes, api.ResolvedNode{
-							ID:        e.NodeID,
-							Name:      e.Name,
-							Latitude:  e.Latitude,
-							Longitude: e.Longitude,
-							PublicKey: hex.EncodeToString(e.PublicKey),
-						})
-					}
-					resolvedPath = append(resolvedPath, hop)
-				}
+				resolvedPath = api.BuildResolvedPath(hashes, resolved)
 			}
 		}
 		obs.ResolvedPath = resolvedPath

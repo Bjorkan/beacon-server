@@ -93,7 +93,8 @@ type packetObservationEvent struct {
 			HashSize uint8  `json:"hashSize"`
 			HopCount uint8  `json:"hopCount"`
 		} `json:"pathLength"`
-		PropagationTimeMs int32 `json:"propagationTimeMs"`
+		PropagationTimeMs int32             `json:"propagationTimeMs"`
+		ResolvedPath      []api.ResolvedHop `json:"resolvedPath"`
 	} `json:"observation"`
 }
 
@@ -808,6 +809,7 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 		evt.Observation.PathLength.HashSize = packet.PathHashSize()
 		evt.Observation.PathLength.HopCount = packet.PathHashCount()
 		evt.Observation.PropagationTimeMs = 0 // not yet calculated
+		evt.Observation.ResolvedPath = api.BuildResolvedPath(hashes, resolved)
 		count, err := w.db.GetPacketObservationCount(ctx, packetHash[:])
 		if err != nil {
 			log.Printf("ingest[%s]: failed to get observation count: %v", w.cfg.BrokerName, err)
