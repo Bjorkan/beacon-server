@@ -268,6 +268,23 @@ everything). Empty array means match nothing on that dimension. `regionIds` and
 }
 ```
 
+**Configure** — toggle connection-wide settings. Currently just `resolvePath`,
+which enables per-hop node resolution on `packetObservation` events (see
+below). Unlike `subscribe`, this is a single flag for the whole connection,
+not additive across calls — each `configure` sets it to exactly the value
+sent, and it can be flipped on or off as many times as you like for the life
+of the connection. Default is `false`.
+
+```json
+{ "v": 1, "type": "configure", "id": "cfg-1", "resolvePath": true }
+```
+
+The server replies:
+
+```json
+{ "v": 1, "type": "configured", "id": "cfg-1", "resolvePath": true }
+```
+
 **Ping**
 
 ```json
@@ -282,6 +299,14 @@ everything). Empty array means match nothing on that dimension. `regionIds` and
 | `observerStatus`    | Observer status update                              |
 | `nodeUpdate`        | Node upserted from advert                           |
 | `channelMessage`    | Decrypted channel message (scope must include hash) |
+
+When `resolvePath` is enabled via `configure`, `packetObservation` events
+include a `resolvedPath` array: one entry per hop in the packet's path, each
+with a `confidence` (`"high"` for exactly one candidate node, `"ambiguous"`
+for multiple, `"none"` for zero) and the matching node(s)' id, name,
+lat/lng, and public key. Without `resolvePath` enabled, `resolvedPath` is
+`null` — this keeps the default event payload small; only opt in if you're
+actually rendering path connections (e.g. drawing hops on a map).
 
 ### Backpressure
 

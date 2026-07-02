@@ -309,6 +309,34 @@ func (w *Worker) broadcast(eventType hub.EventType, iata string, payloadType uin
 	})
 }
 
+// broadcastPacketObservation marshals evt twice: once as-is (the default
+// payload every packetObservation subscriber gets) and once with
+// resolvedPath populated (delivered only to connections that opted in via
+// the "configure" WS message; see hub.Client.ResolvePath). resolvedPath is
+// passed in rather than computed here because the caller already has the
+// path-hash resolution results in hand from other per-packet work (known
+// route detection, capability detection) — this adds no extra DB calls.
+func (w *Worker) broadcastPacketObservation(iata string, payloadType uint8, evt packetObservationEvent, resolvedPath []api.ResolvedHop) {
+	base, err := json.Marshal(evt)
+	if err != nil {
+		log.Printf("ingest[%s]: failed to marshal packetObservation event: %v", w.cfg.BrokerName, err)
+		return
+	}
+	evt.Observation.ResolvedPath = resolvedPath
+	resolved, err := json.Marshal(evt)
+	if err != nil {
+		log.Printf("ingest[%s]: failed to marshal packetObservation event (resolved variant): %v", w.cfg.BrokerName, err)
+		resolved = nil // fall back to base-only; not fatal
+	}
+	w.hub.Broadcast(hub.Event{
+		Type:            hub.EventPacketObservation,
+		Payload:         base,
+		PayloadResolved: resolved,
+		IATA:            iata,
+		PayloadType:     payloadType,
+	})
+}
+
 // parseNumber handles RSSI and SNR fields that different observer types send as
 // either a bare JSON number (e.g. -108) or a quoted string (e.g. "-108").
 // Returns 0 if the value is missing or unparseable.

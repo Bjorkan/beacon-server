@@ -4,6 +4,7 @@
 package hub
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -243,5 +244,120 @@ func TestClientMatches_ORSemantics(t *testing.T) {
 	}
 	if c.matches(Event{Type: EventChannelMessage}) {
 		t.Error("expected no match for unsubscribed event type")
+	}
+}
+
+func TestHub_ResolvePath_OptedIn_GetsResolvedPayload(t *testing.T) {
+	h := runHub(t)
+	c := h.NewClient()
+	h.AddScope(c, "sub1", Scope{Events: []EventType{EventPacketObservation}})
+	h.SetResolvePath(c, true)
+
+	time.Sleep(10 * time.Millisecond)
+
+	h.Broadcast(Event{
+		Type:            EventPacketObservation,
+		IATA:            "YVR",
+		Payload:         json.RawMessage(`{"resolvedPath":null}`),
+		PayloadResolved: json.RawMessage(`{"resolvedPath":[{"confidence":"high"}]}`),
+	})
+
+	select {
+	case evt := <-c.Send:
+		if string(evt.Payload) != `{"resolvedPath":[{"confidence":"high"}]}` {
+			t.Errorf("expected resolved payload, got %s", evt.Payload)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected event, timed out")
+	}
+}
+
+func TestHub_ResolvePath_DefaultOff_GetsBasePayload(t *testing.T) {
+	h := runHub(t)
+	c := h.NewClient()
+	h.AddScope(c, "sub1", Scope{Events: []EventType{EventPacketObservation}})
+	// no SetResolvePath call — default is off
+
+	time.Sleep(10 * time.Millisecond)
+
+	h.Broadcast(Event{
+		Type:            EventPacketObservation,
+		IATA:            "YVR",
+		Payload:         json.RawMessage(`{"resolvedPath":null}`),
+		PayloadResolved: json.RawMessage(`{"resolvedPath":[{"confidence":"high"}]}`),
+	})
+
+	select {
+	case evt := <-c.Send:
+		if string(evt.Payload) != `{"resolvedPath":null}` {
+			t.Errorf("expected base payload (not opted in), got %s", evt.Payload)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected event, timed out")
+	}
+}
+
+func TestHub_ResolvePath_OptedIn_NoResolvedVariant_FallsBackToBase(t *testing.T) {
+	h := runHub(t)
+	c := h.NewClient()
+	// e.g. nodeUpdate events never carry a PayloadResolved variant
+	h.AddScope(c, "sub1", Scope{Events: []EventType{EventNodeUpdate}})
+	h.SetResolvePath(c, true)
+
+	time.Sleep(10 * time.Millisecond)
+
+	h.Broadcast(Event{
+		Type:    EventNodeUpdate,
+		IATA:    "YVR",
+		Payload: json.RawMessage(`{"nodeId":"abc"}`),
+		// PayloadResolved intentionally left nil
+	})
+
+	select {
+	case evt := <-c.Send:
+		if string(evt.Payload) != `{"nodeId":"abc"}` {
+			t.Errorf("expected base payload as fallback, got %s", evt.Payload)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected event, timed out")
+	}
+}
+
+func TestHub_ResolvePath_ToggleableLive(t *testing.T) {
+	h := runHub(t)
+	c := h.NewClient()
+	h.AddScope(c, "sub1", Scope{Events: []EventType{EventPacketObservation}})
+
+	broadcastAndRead := func() string {
+		h.Broadcast(Event{
+			Type:            EventPacketObservation,
+			IATA:            "YVR",
+			Payload:         json.RawMessage(`{"resolvedPath":null}`),
+			PayloadResolved: json.RawMessage(`{"resolvedPath":[{"confidence":"high"}]}`),
+		})
+		select {
+		case evt := <-c.Send:
+			return string(evt.Payload)
+		case <-time.After(100 * time.Millisecond):
+			t.Fatal("expected event, timed out")
+			return ""
+		}
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	if got := broadcastAndRead(); got != `{"resolvedPath":null}` {
+		t.Errorf("expected base payload before opting in, got %s", got)
+	}
+
+	h.SetResolvePath(c, true)
+	time.Sleep(10 * time.Millisecond)
+	if got := broadcastAndRead(); got != `{"resolvedPath":[{"confidence":"high"}]}` {
+		t.Errorf("expected resolved payload after opting in, got %s", got)
+	}
+
+	h.SetResolvePath(c, false)
+	time.Sleep(10 * time.Millisecond)
+	if got := broadcastAndRead(); got != `{"resolvedPath":null}` {
+		t.Errorf("expected base payload after opting back out, got %s", got)
 	}
 }

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
-	"github.com/MeshCore-Beacon/beacon-server/internal/hub"
 	"github.com/google/uuid"
 	"github.com/meshcore-go/meshcore-go"
 )
@@ -94,7 +93,7 @@ type packetObservationEvent struct {
 			HopCount uint8  `json:"hopCount"`
 		} `json:"pathLength"`
 		PropagationTimeMs int32             `json:"propagationTimeMs"`
-		ResolvedPath      []api.ResolvedHop `json:"resolvedPath"`
+		ResolvedPath      []api.ResolvedHop `json:"resolvedPath"` // only present in the resolvePath-opted-in variant; see hub.Event.PayloadResolved
 	} `json:"observation"`
 }
 
@@ -815,7 +814,6 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 		evt.Observation.PathLength.HashSize = packet.PathHashSize()
 		evt.Observation.PathLength.HopCount = packet.PathHashCount()
 		evt.Observation.PropagationTimeMs = 0 // not yet calculated
-		evt.Observation.ResolvedPath = api.BuildResolvedPath(hashes, resolved)
 		count, err := w.db.GetPacketObservationCount(ctx, packetHash[:])
 		if err != nil {
 			log.Printf("ingest[%s]: failed to get observation count: %v", w.cfg.BrokerName, err)
@@ -825,7 +823,8 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 		if matchedScope != nil {
 			evt.Packet.Scope = matchedScope
 		}
-		w.broadcast(hub.EventPacketObservation, iata, packet.PayloadType(), "", evt)
+		resolvedPath := api.BuildResolvedPath(hashes, resolved)
+		w.broadcastPacketObservation(iata, packet.PayloadType(), evt, resolvedPath)
 	}
 }
 

@@ -8,9 +8,16 @@
 //	On connect: server sends hello { v:1, type:"hello", serverTime:<ms>, connectionId:"uuid" }
 //
 //	Client → Server:
-//	  subscribe   { v, type, id, scope }   → server replies subscribed { v, type, id, subscriptionId }
+//	  subscribe   { v, type, id, scope }         → server replies subscribed { v, type, id, subscriptionId }
 //	  unsubscribe { v, type, id, subscriptionId }
-//	  ping        { v, type, id }          → server replies pong { v, type, id }
+//	  configure   { v, type, id, resolvePath }   → server replies configured { v, type, id, resolvePath }
+//	  ping        { v, type, id }                → server replies pong { v, type, id }
+//
+//	configure's resolvePath (bool) is a connection-wide setting, not
+//	per-subscription: enables/disables per-hop resolvedPath data on
+//	packetObservation events. Freely toggleable at any point during the
+//	connection; each configure call sets it to exactly the value sent
+//	(not additive across calls, unlike subscribe scopes). Default false.
 //
 //	Server → Client events (unsolicited):
 //	  packetObservation, observerStatus, nodeUpdate, channelMessage
@@ -152,6 +159,11 @@ type clientMessage struct {
 	ID             string          `json:"id"`
 	SubscriptionID string          `json:"subscriptionId,omitempty"`
 	Scope          *subscribeScope `json:"scope,omitempty"`
+
+	// ResolvePath is only read for "configure" messages: enables/disables
+	// the resolvedPath variant of packetObservation events for the whole
+	// connection. See package doc.
+	ResolvePath bool `json:"resolvePath,omitempty"`
 }
 
 // subscribeScope mirrors the scope object in the subscribe message.
@@ -229,6 +241,16 @@ func handleClientMessage(ctx context.Context, client *hub.Client, reader api.Rea
 		log.Printf("ws[%s]: unsubscribed %s", connID, msg.SubscriptionID)
 		if err := conn.Write(ctx, websocket.MessageText, reply); err != nil {
 			log.Printf("ws[%s]: failed to send unsubscribed reply: %v", connID, err)
+		}
+
+	case "configure":
+		h.SetResolvePath(client, msg.ResolvePath)
+		reply, _ := json.Marshal(map[string]any{
+			"v": 1, "type": "configured", "id": msg.ID, "resolvePath": msg.ResolvePath,
+		})
+		log.Printf("ws[%s]: configured resolvePath=%t", connID, msg.ResolvePath)
+		if err := conn.Write(ctx, websocket.MessageText, reply); err != nil {
+			log.Printf("ws[%s]: failed to send configured reply: %v", connID, err)
 		}
 
 	case "ping":
