@@ -134,7 +134,7 @@ func TestListNodes_Pagination(t *testing.T) {
 		Return(rows, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, []string{"YVR"}, nil, nil, nil, "", "", 0, 2)
+	page, err := store.ListNodes(context.Background(), 0, []string{"YVR"}, nil, nil, nil, "", "", 0, 2, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestListNodes_IATAsUnmarshal(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", 0, 10)
+	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", 0, 10, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestListNodes_RadioStringFormatting(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", 0, 10)
+	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", 0, 10, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -367,5 +367,62 @@ func TestGetNodeNeighbors_DBError(t *testing.T) {
 	_, err := store.GetNodeNeighbors(context.Background(), nodeID)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestListNodes_IncludeNeighbors_PassesFlagAndMapsIDs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	neighborID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+
+	mock.EXPECT().
+		ListNodes(gomock.Any(), gomock.Eq(sqlc.ListNodesParams{
+			Column1: int16(0), Column2: "", Column3: "any", Column4: "any",
+			Column5: nil, Column6: "", Column7: pgtype.Timestamptz{},
+			Limit: 11, Column9: "", Column10: true,
+		})).
+		Return([]sqlc.ListNodesRow{
+			{
+				ID:          nodeID,
+				PublicKey:   []byte{0x01},
+				NeighborIds: []uuid.UUID{neighborID},
+			},
+		}, nil)
+
+	store := &Store{q: mock}
+	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", 0, 10, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(page.Items[0].NeighborIDs) != 1 || page.Items[0].NeighborIDs[0] != neighborID {
+		t.Errorf("expected NeighborIDs [%s], got %v", neighborID, page.Items[0].NeighborIDs)
+	}
+}
+
+func TestListNodes_ExcludeNeighbors_LeavesIDsNil(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+	mock.EXPECT().
+		ListNodes(gomock.Any(), gomock.Eq(sqlc.ListNodesParams{
+			Column1: int16(0), Column2: "", Column3: "any", Column4: "any",
+			Column5: nil, Column6: "", Column7: pgtype.Timestamptz{},
+			Limit: 11, Column9: "", Column10: false,
+		})).
+		Return([]sqlc.ListNodesRow{
+			{ID: nodeID, PublicKey: []byte{0x01}, NeighborIds: nil},
+		}, nil)
+
+	store := &Store{q: mock}
+	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", 0, 10, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if page.Items[0].NeighborIDs != nil {
+		t.Errorf("expected NeighborIDs to stay nil when includeNeighbors is false, got %v", page.Items[0].NeighborIDs)
 	}
 }

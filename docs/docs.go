@@ -522,6 +522,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "boolean",
+                        "description": "Include each node's known neighbor IDs (neighborIds field). Bare ?neighbors or ?neighbors=true enables it; omit/false for none",
+                        "name": "neighbors",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "last_seen epoch ms of last item for pagination",
                         "name": "cursor",
@@ -2341,6 +2347,13 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "neighborIds": {
+                    "description": "only populated when the list request opts in; see ?neighbors=true",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "neighbors": {
                     "type": "array",
                     "items": {
@@ -2465,6 +2478,13 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "neighborIds": {
+                    "description": "only populated when the list request opts in; see ?neighbors=true",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "nodeType": {
                     "description": "1=companion, 2=repeater, 3=room_server, 4=sensor",

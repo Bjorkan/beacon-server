@@ -2039,7 +2039,12 @@ SELECT n.id, n.public_key, n.node_type, n.name, n.latitude, n.longitude, n.last_
   json_agg(json_build_object('iata', ni.iata, 'lastHeard', (extract(epoch from ni.last_heard) * 1000)::bigint) ORDER BY ni.last_heard DESC) FILTER (WHERE ni.iata IS NOT NULL) AS iatas,
   EXISTS (SELECT 1 FROM observers o WHERE o.public_key = n.public_key) AS is_observer,
   (SELECT o.id FROM observers o WHERE o.public_key = n.public_key LIMIT 1) AS observer_id,
-  (SELECT COUNT(DISTINCT nn.neighbor_id) FROM node_neighbors nn WHERE nn.node_id = n.id)::bigint AS known_neighbor_count
+  (SELECT COUNT(DISTINCT nn.neighbor_id) FROM node_neighbors nn WHERE nn.node_id = n.id)::bigint AS known_neighbor_count,
+  -- CASE short-circuits: the array_agg subquery only runs when $10 is true,
+  -- so requests that don't ask for neighbor IDs don't pay for it.
+(CASE WHEN $10::bool THEN
+    (SELECT COALESCE(array_agg(DISTINCT nn.neighbor_id), '{}'::uuid[]) FROM node_neighbors nn WHERE nn.node_id = n.id)
+  ELSE NULL END)::uuid[] AS neighbor_ids
 FROM nodes n
 LEFT JOIN node_iatas ni ON ni.node_id = n.id
 LEFT JOIN transport_scopes ts ON ts.id = n.default_scope_id
@@ -2066,15 +2071,16 @@ LIMIT $8
 `
 
 type ListNodesParams struct {
-	Column1 interface{}        `json:"column_1"`
-	Column2 string             `json:"column_2"`
-	Column3 string             `json:"column_3"`
-	Column4 string             `json:"column_4"`
-	Column5 []byte             `json:"column_5"`
-	Column6 interface{}        `json:"column_6"`
-	Column7 pgtype.Timestamptz `json:"column_7"`
-	Limit   int32              `json:"limit"`
-	Column9 string             `json:"column_9"`
+	Column1  interface{}        `json:"column_1"`
+	Column2  string             `json:"column_2"`
+	Column3  string             `json:"column_3"`
+	Column4  string             `json:"column_4"`
+	Column5  []byte             `json:"column_5"`
+	Column6  interface{}        `json:"column_6"`
+	Column7  pgtype.Timestamptz `json:"column_7"`
+	Limit    int32              `json:"limit"`
+	Column9  string             `json:"column_9"`
+	Column10 bool               `json:"column_10"`
 }
 
 type ListNodesRow struct {
@@ -2093,6 +2099,7 @@ type ListNodesRow struct {
 	IsObserver         bool               `json:"is_observer"`
 	ObserverID         uuid.UUID          `json:"observer_id"`
 	KnownNeighborCount int64              `json:"known_neighbor_count"`
+	NeighborIds        []uuid.UUID        `json:"neighbor_ids"`
 }
 
 func (q *Queries) ListNodes(ctx context.Context, arg ListNodesParams) ([]ListNodesRow, error) {
@@ -2106,6 +2113,7 @@ func (q *Queries) ListNodes(ctx context.Context, arg ListNodesParams) ([]ListNod
 		arg.Column7,
 		arg.Limit,
 		arg.Column9,
+		arg.Column10,
 	)
 	if err != nil {
 		return nil, err
@@ -2130,6 +2138,7 @@ func (q *Queries) ListNodes(ctx context.Context, arg ListNodesParams) ([]ListNod
 			&i.IsObserver,
 			&i.ObserverID,
 			&i.KnownNeighborCount,
+			&i.NeighborIds,
 		); err != nil {
 			return nil, err
 		}

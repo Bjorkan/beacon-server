@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
@@ -128,7 +129,7 @@ func TestListNodes_OK(t *testing.T) {
 	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	r := chi.NewRouter()
 	r.Get("/nodes", listNodes(stubReader{
-		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _ string, _ int64, _ int32) (api.Page[api.NodeSummary], error) {
+		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _ string, _ int64, _ int32, _ bool) (api.Page[api.NodeSummary], error) {
 			return api.Page[api.NodeSummary]{Items: []api.NodeSummary{{ID: nodeID}}}, nil
 		},
 	}))
@@ -137,6 +138,62 @@ func TestListNodes_OK(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestListNodes_NeighborsParam_PassedThrough(t *testing.T) {
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	neighborID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	var gotIncludeNeighbors bool
+	r := chi.NewRouter()
+	r.Get("/nodes", listNodes(stubReader{
+		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _ string, _ int64, _ int32, includeNeighbors bool) (api.Page[api.NodeSummary], error) {
+			gotIncludeNeighbors = includeNeighbors
+			return api.Page[api.NodeSummary]{Items: []api.NodeSummary{{ID: nodeID, NeighborIDs: []uuid.UUID{neighborID}}}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/nodes?neighbors=true", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if !gotIncludeNeighbors {
+		t.Error("expected neighbors=true query param to be passed through as includeNeighbors=true")
+	}
+	if !strings.Contains(w.Body.String(), "neighborIds") {
+		t.Errorf("expected response body to include neighborIds, got %s", w.Body.String())
+	}
+}
+
+func TestListNodes_NeighborsParam_InvalidValue(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/nodes", listNodes(stubReader{}))
+	req := httptest.NewRequest(http.MethodGet, "/nodes?neighbors=notabool", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestListNodes_NeighborsParam_BareFlagMeansTrue(t *testing.T) {
+	var gotIncludeNeighbors bool
+	r := chi.NewRouter()
+	r.Get("/nodes", listNodes(stubReader{
+		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _ string, _ int64, _ int32, includeNeighbors bool) (api.Page[api.NodeSummary], error) {
+			gotIncludeNeighbors = includeNeighbors
+			return api.Page[api.NodeSummary]{}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/nodes?neighbors", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if !gotIncludeNeighbors {
+		t.Error("expected bare ?neighbors (no value) to be treated as true")
 	}
 }
 

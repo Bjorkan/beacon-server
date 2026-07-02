@@ -80,22 +80,23 @@ func (s *Store) SetNodeDefaultScope(ctx context.Context, nodeID uuid.UUID, scope
 	})
 }
 
-func (s *Store) ListNodes(ctx context.Context, nodeType int16, iatas []string, supportsMultibytePaths, supportsMultibyteTraces *bool, pubkey []byte, name, scope string, cursor int64, limit int32) (api.Page[api.NodeSummary], error) {
+func (s *Store) ListNodes(ctx context.Context, nodeType int16, iatas []string, supportsMultibytePaths, supportsMultibyteTraces *bool, pubkey []byte, name, scope string, cursor int64, limit int32, includeNeighbors bool) (api.Page[api.NodeSummary], error) {
 	var cursorTS pgtype.Timestamptz
 	if cursor > 0 {
 		cursorTS = pgtype.Timestamptz{Time: time.UnixMilli(cursor), Valid: true}
 	}
 	iataFilter := strings.Join(iatas, ",")
 	rows, err := s.q.ListNodes(ctx, sqlc.ListNodesParams{
-		Column1: nodeType,
-		Column2: iataFilter,
-		Column3: tristate(supportsMultibytePaths),
-		Column4: tristate(supportsMultibyteTraces),
-		Column5: pubkey,
-		Column6: name,
-		Column7: cursorTS,
-		Limit:   limit + 1,
-		Column9: scope,
+		Column1:  nodeType,
+		Column2:  iataFilter,
+		Column3:  tristate(supportsMultibytePaths),
+		Column4:  tristate(supportsMultibyteTraces),
+		Column5:  pubkey,
+		Column6:  name,
+		Column7:  cursorTS,
+		Limit:    limit + 1,
+		Column9:  scope,
+		Column10: includeNeighbors,
 	})
 	if err != nil {
 		return api.Page[api.NodeSummary]{}, err
@@ -117,6 +118,7 @@ func (s *Store) ListNodes(ctx context.Context, nodeType int16, iatas []string, s
 			IsObserver:         v.IsObserver,
 			ObserverID:         nullableUUID(v.ObserverID),
 			KnownNeighborCount: v.KnownNeighborCount,
+			NeighborIDs:        v.NeighborIds,
 		}
 		if len(v.Iatas) > 0 {
 			if err := json.Unmarshal(v.Iatas, &node.IATAs); err != nil {

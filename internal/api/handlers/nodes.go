@@ -46,6 +46,7 @@ func NodesRouter(reader api.Reader) http.Handler {
 //	@Param		pubkey					query		string	false	"Exact public key match (hex)"
 //	@Param		supportsMultibytePaths	query		bool	false	"Filter by multibyte path support (true/false); omit for no filter"
 //	@Param		supportsMultibyteTraces	query		bool	false	"Filter by multibyte trace support (true/false); omit for no filter"
+//	@Param		neighbors				query		bool	false	"Include each node's known neighbor IDs (neighborIds field). Bare ?neighbors or ?neighbors=true enables it; omit/false for none"
 //	@Param		cursor					query		int		false	"last_seen epoch ms of last item for pagination"
 //	@Param		limit					query		int		false	"Max results (default 50)"
 //	@Success	200						{object}	api.Page[api.NodeSummary]
@@ -121,7 +122,21 @@ func listNodes(reader api.Reader) http.HandlerFunc {
 			}
 			supportsMultibyteTraces = &b
 		}
-		nodes, err := reader.ListNodes(r.Context(), nodeType, iatas, supportsMultibytePaths, supportsMultibyteTraces, pubkey, name, scope, cursor, limit)
+		var includeNeighbors bool
+		if vals, ok := r.URL.Query()["neighbors"]; ok {
+			v := vals[0] // bare `?neighbors` (no `=`) parses as ""
+			if v == "" {
+				includeNeighbors = true
+			} else {
+				b, err := strconv.ParseBool(v)
+				if err != nil {
+					respondError(w, http.StatusBadRequest, "invalid neighbors value")
+					return
+				}
+				includeNeighbors = b
+			}
+		}
+		nodes, err := reader.ListNodes(r.Context(), nodeType, iatas, supportsMultibytePaths, supportsMultibyteTraces, pubkey, name, scope, cursor, limit, includeNeighbors)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
