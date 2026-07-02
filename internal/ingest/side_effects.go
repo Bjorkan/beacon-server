@@ -176,13 +176,13 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 		}
 		channelHashBytes := []byte{grpTxt.ChannelHash}
 
-		// Always upsert a hash-only row so unknown channels are recorded.
-		_, _ = w.db.UpsertChannelHashOnly(ctx, channelHashBytes)
-
 		// Try each known key entry for this hash.
 		entries := w.keys.GetKey(channelHashBytes)
 		if len(entries) == 0 {
-			return // channel key unknown; message stored as encrypted blob only
+			// channel key unknown; record a hash-only row and store the
+			// message as an encrypted blob only.
+			_, _ = w.db.UpsertChannelHashOnly(ctx, channelHashBytes)
+			return
 		}
 		var payload *meshcore.GroupTextPayload
 		var usedEntry keystore.Entry
@@ -194,7 +194,10 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 			}
 		}
 		if payload == nil {
-			return // none of the keys worked
+			// none of the known keys worked for this hash; record a
+			// hash-only row so the channel is still visible.
+			_, _ = w.db.UpsertChannelHashOnly(ctx, channelHashBytes)
+			return
 		}
 
 		// Upsert the keyed channel row — messages are associated with this row.
