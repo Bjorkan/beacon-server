@@ -72,6 +72,10 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 			log.Printf("ingest[%s]: error decoding advert payload: %v", w.cfg.BrokerName, err)
 			return
 		}
+		if !advert.Verify() {
+			log.Printf("ingest[%s]: dropped advert with invalid signature from pubkey %s", w.cfg.BrokerName, hex.EncodeToString(advert.PublicKey.PublicKeyBytes()))
+			return
+		}
 		var lat, lon *float64
 		if advert.AppData().Lat != 0 || advert.AppData().Lon != 0 {
 			la := float64(advert.AppData().Lat) / 1e6

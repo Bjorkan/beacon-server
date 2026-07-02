@@ -173,6 +173,10 @@ func TestComputeTransportCode_NeverReturnsReservedValues(t *testing.T) {
 // stubDB implements only the methods needed for capability detection tests.
 type stubDB struct {
 	setCapabilityCalls []setCapabilityCall
+
+	upsertNodeCalls            int
+	upsertChannelCalls         int
+	upsertChannelHashOnlyCalls int
 }
 
 type setCapabilityCall struct {
@@ -201,6 +205,7 @@ func (s *stubDB) InsertObservation(_ context.Context, _ InsertObservationParams)
 }
 func (s *stubDB) SetNodeDefaultScope(_ context.Context, _ uuid.UUID, _ int32) error { return nil }
 func (s *stubDB) UpsertNode(_ context.Context, _ UpsertNodeParams, _ RadioSettings) (uuid.UUID, error) {
+	s.upsertNodeCalls++
 	return uuid.Nil, nil
 }
 func (s *stubDB) UpsertNodeIATA(_ context.Context, _ uuid.UUID, _ string) error { return nil }
@@ -239,9 +244,15 @@ func (s *stubDB) ResolvePathHashes(_ context.Context, _ string, _ [][]byte) (map
 }
 
 func (s *stubDB) UpsertChannel(_ context.Context, _ []byte, _ []byte, _, _ string) (int, error) {
+	s.upsertChannelCalls++
 	return 0, nil
 }
-func (s *stubDB) UpsertChannelHashOnly(_ context.Context, _ []byte) (int, error) { return 0, nil }
+
+func (s *stubDB) UpsertChannelHashOnly(_ context.Context, _ []byte) (int, error) {
+	s.upsertChannelHashOnlyCalls++
+	return 0, nil
+}
+
 func (s *stubDB) GetPacketObservationCount(_ context.Context, _ []byte) (int64, error) {
 	return 0, nil
 }

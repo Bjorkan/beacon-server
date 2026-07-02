@@ -369,7 +369,7 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 
 	case meshcore.PayloadTypeAdvert:
 		advert, err := meshcore.AdvertFromBytes(packet.Payload)
-		if err == nil {
+		if err == nil && advert.Verify() {
 			originPubkey = advert.PublicKey.PublicKeyBytes()
 			appData := advert.AppData()
 			flags := advert.Flags()
