@@ -61,6 +61,24 @@ func TestScopeMatches_ChannelHashFilter(t *testing.T) {
 	}
 }
 
+func TestScopeMatches_ChannelHashesOnlyAppliesToChannelMessage(t *testing.T) {
+	s := Scope{
+		Events:        []EventType{EventPacketObservation, EventChannelMessage},
+		ChannelHashes: []string{"11"},
+	}
+	// packetObservation has no channel hash — must still match despite the
+	// channelHashes filter, since that filter only applies to channelMessage.
+	if !scopeMatches(s, Event{Type: EventPacketObservation, ChannelHash: ""}) {
+		t.Error("expected packetObservation to match even with channelHashes set")
+	}
+	if !scopeMatches(s, Event{Type: EventChannelMessage, ChannelHash: "11"}) {
+		t.Error("expected channelMessage with matching hash to match")
+	}
+	if scopeMatches(s, Event{Type: EventChannelMessage, ChannelHash: "ff"}) {
+		t.Error("expected channelMessage with non-matching hash to be filtered")
+	}
+}
+
 func TestScopeMatches_AllFiltersPass(t *testing.T) {
 	s := Scope{
 		Events:       []EventType{EventPacketObservation},

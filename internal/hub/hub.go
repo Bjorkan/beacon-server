@@ -109,7 +109,7 @@ func scopeMatches(s Scope, e Event) bool {
 	if len(s.PayloadTypes) > 0 && !slices.Contains(s.PayloadTypes, e.PayloadType) {
 		return false
 	}
-	if len(s.ChannelHashes) > 0 && !slices.Contains(s.ChannelHashes, e.ChannelHash) {
+	if e.Type == EventChannelMessage && len(s.ChannelHashes) > 0 && !slices.Contains(s.ChannelHashes, e.ChannelHash) {
 		return false
 	}
 	return true
@@ -119,15 +119,26 @@ func scopeMatches(s Scope, e Event) bool {
 type Hub struct {
 	subscribe   chan subscribeMsg
 	unsubscribe chan unsubscribeMsg
-	configure   chan configureMsg
 	remove      chan *Client
 	broadcast   chan Event
 }
 
+// subscribeMsg carries a client registration, a scope subscription, or a
+// configure (resolvePath toggle) request — all three go through this single
+// channel, not separate ones, specifically so that Go's same-channel FIFO
+// guarantee orders them relative to NewClient's registration message. A
+// separate "configure" channel raced against registration: select() has no
+// cross-channel ordering guarantee, so a configure sent immediately after
+// NewClient could be (and empirically was, ~50% of the time) processed by
+// Run() before the registration message, silently no-oping since the client
+// wasn't in the clients map yet.
 type subscribeMsg struct {
 	client         *Client
 	scope          Scope
 	subscriptionID string
+
+	isConfigure bool
+	resolvePath bool
 }
 
 type unsubscribeMsg struct {
@@ -148,7 +159,6 @@ func New() *Hub {
 	return &Hub{
 		subscribe:   make(chan subscribeMsg, 64),
 		unsubscribe: make(chan unsubscribeMsg, 64),
-		configure:   make(chan configureMsg, 64),
 		remove:      make(chan *Client, 64),
 		broadcast:   make(chan Event, 512),
 	}
@@ -187,7 +197,7 @@ func (h *Hub) RemoveScope(c *Client, id string) {
 // the connection's lifetime — takes effect on the next broadcast after the
 // hub processes it.
 func (h *Hub) SetResolvePath(c *Client, enabled bool) {
-	h.configure <- configureMsg{client: c, resolvePath: enabled}
+	h.subscribe <- subscribeMsg{client: c, isConfigure: true, resolvePath: enabled}
 }
 
 // Remove deregisters a client and closes its Send channel.
@@ -220,10 +230,16 @@ func (h *Hub) Run() {
 		select {
 
 		case msg := <-h.subscribe:
-			if msg.subscriptionID == "" {
+			switch {
+			case msg.subscriptionID == "" && !msg.isConfigure:
 				// Registration with no scope yet (NewClient path).
 				clients[msg.client] = struct{}{}
-			} else {
+			case msg.isConfigure:
+				// SetResolvePath path — client must already be registered.
+				if _, ok := clients[msg.client]; ok {
+					msg.client.ResolvePath = msg.resolvePath
+				}
+			default:
 				// AddScope path — client must already be registered.
 				if _, ok := clients[msg.client]; ok {
 					msg.client.subscriptions[msg.subscriptionID] = msg.scope
@@ -233,11 +249,6 @@ func (h *Hub) Run() {
 		case msg := <-h.unsubscribe:
 			if _, ok := clients[msg.client]; ok {
 				delete(msg.client.subscriptions, msg.subscriptionID)
-			}
-
-		case msg := <-h.configure:
-			if _, ok := clients[msg.client]; ok {
-				msg.client.ResolvePath = msg.resolvePath
 			}
 
 		case c := <-h.remove:
