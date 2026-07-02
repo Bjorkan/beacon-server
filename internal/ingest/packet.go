@@ -707,7 +707,13 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 		heardAt, err = time.Parse("2006-01-02T15:04:05.000000", envelope.Timestamp)
 	}
 	if err != nil {
+		heardAt, err = time.Parse("2006-01-02T15:04:05.000000Z", envelope.Timestamp)
+	}
+	if err != nil {
 		heardAt, err = time.Parse("2006-01-02T15:04:05", envelope.Timestamp)
+	}
+	if err != nil {
+		heardAt, err = time.Parse("2006-01-02T15:04:05Z", envelope.Timestamp)
 	}
 	if err != nil {
 		log.Printf("ingest[%s]: failed to parse timestamp %q: %v", w.cfg.BrokerName, envelope.Timestamp, err)
