@@ -144,6 +144,80 @@ func TestGetStatsTopObservers_OK(t *testing.T) {
 	}
 }
 
+func TestGetStatsTopAdvertisers_InvalidSince(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/top-advertisers", getStatsTopAdvertisers(stubReader{}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/top-advertisers?since=notanint", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetStatsTopAdvertisers_InvalidLimit(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/top-advertisers", getStatsTopAdvertisers(stubReader{}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/top-advertisers?limit=notanint", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetStatsTopAdvertisers_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/top-advertisers", getStatsTopAdvertisers(stubReader{
+		getStatsTopAdvertisers: func(_ context.Context, _ []string, _ time.Time, _ int32) ([]api.TopAdvertiser, error) {
+			return []api.TopAdvertiser{{IATA: "YVR", AdvertCount: 5}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/top-advertisers", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetStatsTopTalkers_InvalidSince(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/top-talkers", getStatsTopTalkers(stubReader{}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/top-talkers?since=notanint", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetStatsTopTalkers_InvalidLimit(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/top-talkers", getStatsTopTalkers(stubReader{}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/top-talkers?limit=notanint", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetStatsTopTalkers_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/top-talkers", getStatsTopTalkers(stubReader{
+		getStatsTopTalkers: func(_ context.Context, _ []string, _ time.Time, _ int32) ([]api.TopTalker, error) {
+			return []api.TopTalker{{SenderName: "Robbie", MessageCount: 3}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/top-talkers", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
 func TestGetStatsRadioPresets_OK(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/stats/radio-presets", getStatsRadioPresets(stubReader{

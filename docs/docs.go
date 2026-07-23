@@ -1805,6 +1805,66 @@ const docTemplate = `{
                 }
             }
         },
+        "/stats/top-advertisers": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Stats"
+                ],
+                "summary": "Top N nodes by distinct ADVERT packet count (last 24h by default)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated IATA codes",
+                        "name": "iatas",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by region ID, expands to member IATAs",
+                        "name": "regionId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by region slug, expands to member IATAs",
+                        "name": "region",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Start of window epoch ms (default last 24h)",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max results (default 10)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.TopAdvertiser"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/stats/top-nodes": {
             "get": {
                 "produces": [
@@ -1907,6 +1967,66 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.TopObserver"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/stats/top-talkers": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Stats"
+                ],
+                "summary": "Top N companion names by decrypted channel message count (last 24h by default)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated IATA codes",
+                        "name": "iatas",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by region ID, expands to member IATAs",
+                        "name": "regionId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by region slug, expands to member IATAs",
+                        "name": "region",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Start of window epoch ms (default last 24h)",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max results (default 10)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.TopTalker"
                             }
                         }
                     },
@@ -3354,6 +3474,33 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_MeshCore-Beacon_beacon-server_internal_api.TopAdvertiser": {
+            "type": "object",
+            "properties": {
+                "advertCount": {
+                    "type": "integer"
+                },
+                "iata": {
+                    "type": "string"
+                },
+                "lastHeard": {
+                    "description": "epoch ms",
+                    "type": "integer"
+                },
+                "nodeId": {
+                    "type": "string"
+                },
+                "nodeName": {
+                    "type": "string"
+                },
+                "nodeType": {
+                    "type": "integer"
+                },
+                "nodeTypeName": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_MeshCore-Beacon_beacon-server_internal_api.TopNode": {
             "type": "object",
             "properties": {
@@ -3397,6 +3544,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "observerType": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_MeshCore-Beacon_beacon-server_internal_api.TopTalker": {
+            "type": "object",
+            "properties": {
+                "lastSent": {
+                    "description": "epoch ms",
+                    "type": "integer"
+                },
+                "messageCount": {
+                    "type": "integer"
+                },
+                "senderName": {
                     "type": "string"
                 }
             }

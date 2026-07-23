@@ -56,8 +56,19 @@ type Querier interface {
 	GetStatsOverview(ctx context.Context, dollar_1 []string) (GetStatsOverviewRow, error)
 	// Returns observation counts grouped by payload type for the given window and IATA.
 	GetStatsPayloadBreakdown(ctx context.Context, arg GetStatsPayloadBreakdownParams) ([]GetStatsPayloadBreakdownRow, error)
+	// Returns the top N nodes by distinct ADVERT packet count for the given window and IATA.
+	// COUNT(DISTINCT p.packet_hash) rather than COUNT(*): the same advert broadcast is commonly
+	// heard by more than one observer, and each hearing is its own packet_observations row --
+	// this counts adverts sent, not adverts heard.
+	GetStatsTopAdvertisers(ctx context.Context, arg GetStatsTopAdvertisersParams) ([]GetStatsTopAdvertisersRow, error)
 	// Returns the top N observers by observation count for the given window and IATA.
 	GetStatsTopObservers(ctx context.Context, arg GetStatsTopObserversParams) ([]GetStatsTopObserversRow, error)
+	// Returns the top N companion names by decrypted channel message count for the given
+	// window and IATA. Grouped by sender_name as decrypted from the message itself, not by
+	// node identity -- distinct pubkeys sharing a display name are counted together, and a
+	// pubkey that changes its display name is split across rows. COUNT(DISTINCT cm.id) guards
+	// against the same message being multiplied by the packet_observations join.
+	GetStatsTopTalkers(ctx context.Context, arg GetStatsTopTalkersParams) ([]GetStatsTopTalkersRow, error)
 	GetTopNodes(ctx context.Context, arg GetTopNodesParams) ([]MvTopNodesByIatum, error)
 	GetTransportScopeByName(ctx context.Context, name string) (int32, error)
 	GetTransportScopes(ctx context.Context) ([]GetTransportScopesRow, error)

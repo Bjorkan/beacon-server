@@ -72,6 +72,14 @@ func (s *stubReader) GetStatsTopObservers(_ context.Context, _ []string, _ time.
 	return nil, nil
 }
 
+func (s *stubReader) GetStatsTopAdvertisers(_ context.Context, _ []string, _ time.Time, _ int32) ([]api.TopAdvertiser, error) {
+	return nil, nil
+}
+
+func (s *stubReader) GetStatsTopTalkers(_ context.Context, _ []string, _ time.Time, _ int32) ([]api.TopTalker, error) {
+	return nil, nil
+}
+
 func (s *stubReader) GetStatsNodeTypes(_ context.Context, _ []string) ([]api.NodeTypeCount, error) {
 	return nil, nil
 }

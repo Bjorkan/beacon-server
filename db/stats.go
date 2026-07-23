@@ -126,6 +126,63 @@ func (s *Store) GetStatsTopObservers(ctx context.Context, iatas []string, since 
 	return items, nil
 }
 
+func (s *Store) GetStatsTopAdvertisers(ctx context.Context, iatas []string, since time.Time, limit int32) ([]api.TopAdvertiser, error) {
+	if since.IsZero() {
+		since = time.Now().Add(-24 * time.Hour)
+	}
+	rows, err := s.q.GetStatsTopAdvertisers(ctx, sqlc.GetStatsTopAdvertisersParams{
+		HeardAt: pgtype.Timestamptz{Time: since, Valid: true},
+		Column2: iatas,
+		Limit:   limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]api.TopAdvertiser, 0, len(rows))
+	for _, v := range rows {
+		iata, _ := v.Iata.(string)
+		lastHeard, _ := v.LastHeard.(pgtype.Timestamptz)
+		items = append(items, api.TopAdvertiser{
+			NodeID:       v.ID,
+			NodeName:     v.Name,
+			NodeType:     v.NodeType,
+			NodeTypeName: api.NodeTypeName(v.NodeType),
+			IATA:         iata,
+			AdvertCount:  v.AdvertCount,
+			LastHeard:    lastHeard.Time.UnixMilli(),
+		})
+	}
+	return items, nil
+}
+
+func (s *Store) GetStatsTopTalkers(ctx context.Context, iatas []string, since time.Time, limit int32) ([]api.TopTalker, error) {
+	if since.IsZero() {
+		since = time.Now().Add(-24 * time.Hour)
+	}
+	rows, err := s.q.GetStatsTopTalkers(ctx, sqlc.GetStatsTopTalkersParams{
+		SentAt:  pgtype.Timestamptz{Time: since, Valid: true},
+		Column2: iatas,
+		Limit:   limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]api.TopTalker, 0, len(rows))
+	for _, v := range rows {
+		var senderName string
+		if v.SenderName != nil {
+			senderName = *v.SenderName
+		}
+		lastSent, _ := v.LastSent.(pgtype.Timestamptz)
+		items = append(items, api.TopTalker{
+			SenderName:   senderName,
+			MessageCount: v.MessageCount,
+			LastSent:     lastSent.Time.UnixMilli(),
+		})
+	}
+	return items, nil
+}
+
 func (s *Store) GetRadioPresets(ctx context.Context, preset string, iatas []string) ([]api.RadioPreset, error) {
 	rows, err := s.q.GetRadioPresets(ctx, sqlc.GetRadioPresetsParams{
 		Column1: preset,

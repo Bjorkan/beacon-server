@@ -67,6 +67,27 @@ type TopObserver struct {
 	ObservationCount int64     `json:"observationCount"`
 }
 
+// TopAdvertiser is a node ranked by distinct ADVERT packet count within the requested
+// window. Count is per-advert, not per-hearing -- see GetStatsTopAdvertisers.
+type TopAdvertiser struct {
+	NodeID       uuid.UUID `json:"nodeId"`
+	NodeName     *string   `json:"nodeName,omitempty"`
+	NodeType     int16     `json:"nodeType"`
+	NodeTypeName string    `json:"nodeTypeName"`
+	IATA         string    `json:"iata"`
+	AdvertCount  int64     `json:"advertCount"`
+	LastHeard    int64     `json:"lastHeard"` // epoch ms
+}
+
+// TopTalker is a companion name ranked by decrypted channel message count within the
+// requested window. Grouped by sender name as decrypted from the message itself, not by
+// node identity -- see GetStatsTopTalkers.
+type TopTalker struct {
+	SenderName   string `json:"senderName"`
+	MessageCount int64  `json:"messageCount"`
+	LastSent     int64  `json:"lastSent"` // epoch ms
+}
+
 // NodeTypeCount shows the count of nodes of a given type with the type name
 type NodeTypeCount struct {
 	NodeType     int16  `json:"nodeType"`

@@ -155,6 +155,16 @@ type Reader interface {
 	// since defines the start of the window; pass zero time for default (last 24h).
 	GetStatsTopObservers(ctx context.Context, iatas []string, since time.Time, limit int32) ([]TopObserver, error)
 
+	// GetStatsTopAdvertisers returns the top N nodes by distinct ADVERT packet count.
+	// Pass nil for iatas to return stats across all IATAs.
+	// since defines the start of the window; pass zero time for default (last 24h).
+	GetStatsTopAdvertisers(ctx context.Context, iatas []string, since time.Time, limit int32) ([]TopAdvertiser, error)
+
+	// GetStatsTopTalkers returns the top N companion names by decrypted channel message count.
+	// Pass nil for iatas to return stats across all IATAs.
+	// since defines the start of the window; pass zero time for default (last 24h).
+	GetStatsTopTalkers(ctx context.Context, iatas []string, since time.Time, limit int32) ([]TopTalker, error)
+
 	// GetScopeStats returns aggregate packet, observer and node counts per transport scope.
 	GetScopeStats(ctx context.Context) ([]ScopeStats, error)
 

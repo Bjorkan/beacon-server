@@ -536,6 +536,21 @@ func (mr *MockQuerierMockRecorder) GetStatsPayloadBreakdown(ctx, arg any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatsPayloadBreakdown", reflect.TypeOf((*MockQuerier)(nil).GetStatsPayloadBreakdown), ctx, arg)
 }
 
+// GetStatsTopAdvertisers mocks base method.
+func (m *MockQuerier) GetStatsTopAdvertisers(ctx context.Context, arg db.GetStatsTopAdvertisersParams) ([]db.GetStatsTopAdvertisersRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetStatsTopAdvertisers", ctx, arg)
+	ret0, _ := ret[0].([]db.GetStatsTopAdvertisersRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetStatsTopAdvertisers indicates an expected call of GetStatsTopAdvertisers.
+func (mr *MockQuerierMockRecorder) GetStatsTopAdvertisers(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatsTopAdvertisers", reflect.TypeOf((*MockQuerier)(nil).GetStatsTopAdvertisers), ctx, arg)
+}
+
 // GetStatsTopObservers mocks base method.
 func (m *MockQuerier) GetStatsTopObservers(ctx context.Context, arg db.GetStatsTopObserversParams) ([]db.GetStatsTopObserversRow, error) {
 	m.ctrl.T.Helper()
@@ -549,6 +564,21 @@ func (m *MockQuerier) GetStatsTopObservers(ctx context.Context, arg db.GetStatsT
 func (mr *MockQuerierMockRecorder) GetStatsTopObservers(ctx, arg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatsTopObservers", reflect.TypeOf((*MockQuerier)(nil).GetStatsTopObservers), ctx, arg)
+}
+
+// GetStatsTopTalkers mocks base method.
+func (m *MockQuerier) GetStatsTopTalkers(ctx context.Context, arg db.GetStatsTopTalkersParams) ([]db.GetStatsTopTalkersRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetStatsTopTalkers", ctx, arg)
+	ret0, _ := ret[0].([]db.GetStatsTopTalkersRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetStatsTopTalkers indicates an expected call of GetStatsTopTalkers.
+func (mr *MockQuerierMockRecorder) GetStatsTopTalkers(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatsTopTalkers", reflect.TypeOf((*MockQuerier)(nil).GetStatsTopTalkers), ctx, arg)
 }
 
 // GetTopNodes mocks base method.

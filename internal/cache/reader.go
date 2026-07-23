@@ -29,6 +29,8 @@ const (
 	keyStatsBreakdownPrefix    = "beacon:stats:breakdown:"
 	keyStatsTopNodesPrefix     = "beacon:stats:top-nodes:"
 	keyStatsTopObsPrefix       = "beacon:stats:top-observers:"
+	keyStatsTopAdvPrefix       = "beacon:stats:top-advertisers:"
+	keyStatsTopTalkersPrefix   = "beacon:stats:top-talkers:"
 	keyStatsNodeTypes          = "beacon:stats:node-types:"
 	keyRadioPresetsPrefix      = "beacon:radio-presets:"
 	keyNodePrefix              = "beacon:node:"
@@ -230,6 +232,34 @@ func (cr *CachedReader) GetStatsTopObservers(ctx context.Context, iatas []string
 	key := fmt.Sprintf("%s%s:%d:%d", keyStatsTopObsPrefix, segment, since.UnixMilli(), limit)
 	return getOrSet(ctx, cr.c, key, cr.ttl.Stats, func() ([]api.TopObserver, error) {
 		return cr.inner.GetStatsTopObservers(ctx, iatas, since, limit)
+	})
+}
+
+// GetStatsTopAdvertisers implements [api.Reader].
+func (cr *CachedReader) GetStatsTopAdvertisers(ctx context.Context, iatas []string, since time.Time, limit int32) ([]api.TopAdvertiser, error) {
+	segment := "all"
+	if len(iatas) > 0 {
+		sorted := append([]string(nil), iatas...)
+		sort.Strings(sorted)
+		segment = strings.Join(sorted, ",")
+	}
+	key := fmt.Sprintf("%s%s:%d:%d", keyStatsTopAdvPrefix, segment, since.UnixMilli(), limit)
+	return getOrSet(ctx, cr.c, key, cr.ttl.Stats, func() ([]api.TopAdvertiser, error) {
+		return cr.inner.GetStatsTopAdvertisers(ctx, iatas, since, limit)
+	})
+}
+
+// GetStatsTopTalkers implements [api.Reader].
+func (cr *CachedReader) GetStatsTopTalkers(ctx context.Context, iatas []string, since time.Time, limit int32) ([]api.TopTalker, error) {
+	segment := "all"
+	if len(iatas) > 0 {
+		sorted := append([]string(nil), iatas...)
+		sort.Strings(sorted)
+		segment = strings.Join(sorted, ",")
+	}
+	key := fmt.Sprintf("%s%s:%d:%d", keyStatsTopTalkersPrefix, segment, since.UnixMilli(), limit)
+	return getOrSet(ctx, cr.c, key, cr.ttl.Stats, func() ([]api.TopTalker, error) {
+		return cr.inner.GetStatsTopTalkers(ctx, iatas, since, limit)
 	})
 }
 

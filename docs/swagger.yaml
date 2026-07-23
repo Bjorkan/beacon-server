@@ -903,6 +903,24 @@ definitions:
         description: always 24 for now
         type: integer
     type: object
+  github_com_MeshCore-Beacon_beacon-server_internal_api.TopAdvertiser:
+    properties:
+      advertCount:
+        type: integer
+      iata:
+        type: string
+      lastHeard:
+        description: epoch ms
+        type: integer
+      nodeId:
+        type: string
+      nodeName:
+        type: string
+      nodeType:
+        type: integer
+      nodeTypeName:
+        type: string
+    type: object
   github_com_MeshCore-Beacon_beacon-server_internal_api.TopNode:
     properties:
       iata:
@@ -932,6 +950,16 @@ definitions:
       observerId:
         type: string
       observerType:
+        type: string
+    type: object
+  github_com_MeshCore-Beacon_beacon-server_internal_api.TopTalker:
+    properties:
+      lastSent:
+        description: epoch ms
+        type: integer
+      messageCount:
+        type: integer
+      senderName:
         type: string
     type: object
   github_com_MeshCore-Beacon_beacon-server_internal_api.TraceDetail:
@@ -2208,6 +2236,45 @@ paths:
       summary: Scope statistics
       tags:
       - Stats
+  /stats/top-advertisers:
+    get:
+      parameters:
+      - description: Comma-separated IATA codes
+        in: query
+        name: iatas
+        type: string
+      - description: Filter by region ID, expands to member IATAs
+        in: query
+        name: regionId
+        type: integer
+      - description: Filter by region slug, expands to member IATAs
+        in: query
+        name: region
+        type: string
+      - description: Start of window epoch ms (default last 24h)
+        in: query
+        name: since
+        type: integer
+      - description: Max results (default 10)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.TopAdvertiser'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handlers.APIError'
+      summary: Top N nodes by distinct ADVERT packet count (last 24h by default)
+      tags:
+      - Stats
   /stats/top-nodes:
     get:
       parameters:
@@ -2280,6 +2347,46 @@ paths:
           schema:
             $ref: '#/definitions/internal_api_handlers.APIError'
       summary: Top N observers by observation count (last 24h by default)
+      tags:
+      - Stats
+  /stats/top-talkers:
+    get:
+      parameters:
+      - description: Comma-separated IATA codes
+        in: query
+        name: iatas
+        type: string
+      - description: Filter by region ID, expands to member IATAs
+        in: query
+        name: regionId
+        type: integer
+      - description: Filter by region slug, expands to member IATAs
+        in: query
+        name: region
+        type: string
+      - description: Start of window epoch ms (default last 24h)
+        in: query
+        name: since
+        type: integer
+      - description: Max results (default 10)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.TopTalker'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handlers.APIError'
+      summary: Top N companion names by decrypted channel message count (last 24h
+        by default)
       tags:
       - Stats
   /traces:

@@ -20,6 +20,8 @@ import (
 // GET  /stats/payload-breakdown → getStatsPayloadBreakdown
 // GET  /stats/top-nodes         → getStatsTopNodes
 // GET  /stats/top-observers     → getStatsTopObservers
+// GET  /stats/top-advertisers   → getStatsTopAdvertisers
+// GET  /stats/top-talkers       → getStatsTopTalkers
 // GET  /stats/radio-presets     → getStatsRadioPresets
 // GET  /stats/scopes            → GetStatsScopes
 //
@@ -31,6 +33,8 @@ func StatsRouter(reader api.Reader) http.Handler {
 	r.Get("/payload-breakdown", getStatsPayloadBreakdown(reader))
 	r.Get("/top-nodes", getStatsTopNodes(reader))
 	r.Get("/top-observers", getStatsTopObservers(reader))
+	r.Get("/top-advertisers", getStatsTopAdvertisers(reader))
+	r.Get("/top-talkers", getStatsTopTalkers(reader))
 	r.Get("/radio-presets", getStatsRadioPresets(reader))
 	r.Get("/scopes", getStatsScopes(reader))
 	r.Get("/node-types", getStatsNodeTypes(reader))
@@ -244,6 +248,110 @@ func getStatsTopObservers(reader api.Reader) http.HandlerFunc {
 			return
 		}
 		respond(w, http.StatusOK, observers)
+	}
+}
+
+// getStatsTopAdvertisers godoc
+//
+//	@Summary	Top N nodes by distinct ADVERT packet count (last 24h by default)
+//	@Tags		Stats
+//	@Produce	json
+//	@Param		iatas		query	string	false	"Comma-separated IATA codes"
+//	@Param		regionId	query	int		false	"Filter by region ID, expands to member IATAs"
+//	@Param		region		query	string	false	"Filter by region slug, expands to member IATAs"
+//	@Param		since	query		int		false	"Start of window epoch ms (default last 24h)"
+//	@Param		limit	query		int		false	"Max results (default 10)"
+//	@Success	200		{array}		api.TopAdvertiser
+//	@Failure	500		{object}	handlers.APIError
+//	@Router		/stats/top-advertisers [get]
+func getStatsTopAdvertisers(reader api.Reader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		iatas := parseIATAs(r)
+		if regionIDStr := r.URL.Query().Get("regionId"); regionIDStr != "" || r.URL.Query().Get("region") != "" {
+			regionIATAs, err := resolveRegionIATAs(r.Context(), regionIDStr, r.URL.Query().Get("region"), reader)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			iatas = append(iatas, regionIATAs...)
+		}
+		var since time.Time
+		if p := r.URL.Query().Get("since"); p != "" {
+			ms, err := strconv.ParseInt(p, 10, 64)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "since must be epoch milliseconds")
+				return
+			}
+			since = time.UnixMilli(ms)
+		}
+		var limit int32 = 10
+		if p := r.URL.Query().Get("limit"); p != "" {
+			l, err := strconv.ParseInt(p, 10, 32)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "limit must be an integer")
+				return
+			}
+			limit = int32(l)
+		}
+		advertisers, err := reader.GetStatsTopAdvertisers(r.Context(), iatas, since, limit)
+		if err != nil {
+			log.Printf("api: GetStatsTopAdvertisers failed: %v", err)
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+		respond(w, http.StatusOK, advertisers)
+	}
+}
+
+// getStatsTopTalkers godoc
+//
+//	@Summary	Top N companion names by decrypted channel message count (last 24h by default)
+//	@Tags		Stats
+//	@Produce	json
+//	@Param		iatas		query	string	false	"Comma-separated IATA codes"
+//	@Param		regionId	query	int		false	"Filter by region ID, expands to member IATAs"
+//	@Param		region		query	string	false	"Filter by region slug, expands to member IATAs"
+//	@Param		since	query		int		false	"Start of window epoch ms (default last 24h)"
+//	@Param		limit	query		int		false	"Max results (default 10)"
+//	@Success	200		{array}		api.TopTalker
+//	@Failure	500		{object}	handlers.APIError
+//	@Router		/stats/top-talkers [get]
+func getStatsTopTalkers(reader api.Reader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		iatas := parseIATAs(r)
+		if regionIDStr := r.URL.Query().Get("regionId"); regionIDStr != "" || r.URL.Query().Get("region") != "" {
+			regionIATAs, err := resolveRegionIATAs(r.Context(), regionIDStr, r.URL.Query().Get("region"), reader)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			iatas = append(iatas, regionIATAs...)
+		}
+		var since time.Time
+		if p := r.URL.Query().Get("since"); p != "" {
+			ms, err := strconv.ParseInt(p, 10, 64)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "since must be epoch milliseconds")
+				return
+			}
+			since = time.UnixMilli(ms)
+		}
+		var limit int32 = 10
+		if p := r.URL.Query().Get("limit"); p != "" {
+			l, err := strconv.ParseInt(p, 10, 32)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "limit must be an integer")
+				return
+			}
+			limit = int32(l)
+		}
+		talkers, err := reader.GetStatsTopTalkers(r.Context(), iatas, since, limit)
+		if err != nil {
+			log.Printf("api: GetStatsTopTalkers failed: %v", err)
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+		respond(w, http.StatusOK, talkers)
 	}
 }
 
