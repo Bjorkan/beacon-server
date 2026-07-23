@@ -336,6 +336,10 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 	originPubkey := []byte(nil)
 	var parsedPayload json.RawMessage
 	var traceTag []byte
+	// For PayloadTypeTrace, packet.Path holds one SNR byte per hop (not hashes -- see
+	// below), so the "physical route" hashes for resolvedPath/known-route purposes come
+	// instead from the TRACE payload's own embedded PathHashes (the path being probed).
+	var traceRawHashes [][]byte
 
 	switch packet.PayloadType() {
 	case meshcore.PayloadTypeGrpTxt:
@@ -515,6 +519,7 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 				hashes = append(hashes, hex.EncodeToString(h))
 				rawHashes = append(rawHashes, h)
 			}
+			traceRawHashes = rawHashes
 			// SNR values are in packet.Path, one signed int8 per consumed hop
 			snrValues := make([]float32, 0, len(packet.Path))
 			for _, b := range packet.Path {
@@ -761,7 +766,15 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 		}
 	}
 
-	resolved, err := w.db.ResolvePathHashes(ctx, iata, packet.PathHashes())
+	// packet.PathHashes() reads packet.Path as hash-sized chunks, which is only true for
+	// ordinary flood/direct-routed packets. TRACE repurposes packet.Path to carry one SNR
+	// byte per hop instead, so for TRACE we resolve against the trace payload's own
+	// PathHashes (the path being probed) rather than treating SNR bytes as hashes.
+	hashes := packet.PathHashes()
+	if packet.PayloadType() == meshcore.PayloadTypeTrace {
+		hashes = traceRawHashes
+	}
+	resolved, err := w.db.ResolvePathHashes(ctx, iata, hashes)
 	if err != nil {
 		log.Printf("ingest[%s]: path resolution failed: %v", w.cfg.BrokerName, err)
 	}
@@ -771,7 +784,6 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 			resolvedIDs = append(resolvedIDs, e.NodeID)
 		}
 	}
-	hashes := packet.PathHashes()
 	if len(hashes) > 0 && resolved != nil {
 		allHigh := true
 		nodeIDs := make([]uuid.UUID, 0, len(hashes))

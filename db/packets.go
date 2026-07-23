@@ -323,6 +323,20 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 		}
 		p.TransportCodes = tc
 	}
+	// TRACE payloads repurpose the per-observation Path field to carry per-hop SNR bytes
+	// rather than hashes (see internal/ingest/packet.go), so per-observation PathBytes
+	// can't be resolved the normal way for TRACE. The actual resolvable path is the
+	// trace payload's own embedded PathHashes -- constant for this packet hash, so
+	// compute it once rather than per observation.
+	var traceRawHashes [][]byte
+	if row.PayloadType == int16(meshcore.PayloadTypeTrace) {
+		if trace, err := meshcore.TraceFromBytes(row.RawPayload); err == nil {
+			hashSize := int(trace.PathHashSize())
+			for i := 0; i+hashSize <= len(trace.PathHashes); i += hashSize {
+				traceRawHashes = append(traceRawHashes, trace.PathHashes[i:i+hashSize])
+			}
+		}
+	}
 	for _, v := range obsRows {
 		obs := api.PacketObservationDetail{
 			ID:           v.ID,
@@ -342,7 +356,16 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 		prop := int32(v.HeardAt.Time.Sub(minHeardAt).Milliseconds())
 		obs.PropagationTimeMs = &prop
 		resolvedPath := []api.ResolvedHop{}
-		if v.PathBytes != nil && v.HashSize > 0 {
+		if row.PayloadType == int16(meshcore.PayloadTypeTrace) {
+			if len(traceRawHashes) > 0 {
+				resolved, err := s.ResolvePathHashes(ctx, v.Iata, traceRawHashes)
+				if err != nil {
+					log.Printf("store: path resolution failed for observation %d: %v", v.ID, err)
+				} else {
+					resolvedPath = api.BuildResolvedPath(traceRawHashes, resolved)
+				}
+			}
+		} else if v.PathBytes != nil && v.HashSize > 0 {
 			hashSize := int(v.HashSize)
 			hashes := make([][]byte, 0, len(v.PathBytes)/hashSize)
 			for i := 0; i+hashSize <= len(v.PathBytes); i += hashSize {
@@ -356,7 +379,19 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 			}
 		}
 		obs.ResolvedPath = resolvedPath
-		if v.PathBytes != nil {
+		if row.PayloadType == int16(meshcore.PayloadTypeTrace) && len(traceRawHashes) > 0 {
+			// Swap in the trace's own path hashes so PathData's hop-block split (driven by
+			// pathBytes + hashSize) lines up 1:1 with resolvedPath -- the raw SNR bytes
+			// from the physical Path field don't chunk into the same hop count.
+			var traceHashBytes []byte
+			for _, h := range traceRawHashes {
+				traceHashBytes = append(traceHashBytes, h...)
+			}
+			pb := hex.EncodeToString(traceHashBytes)
+			obs.PathBytes = &pb
+			obs.PathLength.HashSize = int16(len(traceRawHashes[0]))
+			obs.PathLength.HopCount = int16(len(traceRawHashes))
+		} else if v.PathBytes != nil {
 			pb := hex.EncodeToString(v.PathBytes)
 			obs.PathBytes = &pb
 		}
