@@ -95,6 +95,59 @@ func parseIATAs(r *http.Request) []string {
 	return iatas
 }
 
+// parseInt16CSVOrSingle reads a comma-separated list from pluralParam, falling back to a
+// single value from singularParam if pluralParam is absent -- same precedence as parseIATAs.
+func parseInt16CSVOrSingle(r *http.Request, pluralParam, singularParam string) ([]int16, error) {
+	raw := r.URL.Query().Get(pluralParam)
+	if raw == "" {
+		single := r.URL.Query().Get(singularParam)
+		if single == "" {
+			return nil, nil
+		}
+		v, err := strconv.ParseInt(single, 10, 16)
+		if err != nil {
+			return nil, err
+		}
+		return []int16{int16(v)}, nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]int16, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		v, err := strconv.ParseInt(p, 10, 16)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, int16(v))
+	}
+	return out, nil
+}
+
+// parseCSVOrSingle reads a comma-separated list from pluralParam, falling back to a single
+// value from singularParam if pluralParam is absent -- same precedence as parseIATAs, but
+// without the uppercasing (used for scope names, which are case-sensitive, e.g. "#bc").
+func parseCSVOrSingle(r *http.Request, pluralParam, singularParam string) []string {
+	raw := r.URL.Query().Get(pluralParam)
+	if raw == "" {
+		if single := r.URL.Query().Get(singularParam); single != "" {
+			return []string{single}
+		}
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // resolveRegionIATAs expands a regionId or region slug to a slice of IATA codes.
 func resolveRegionIATAs(ctx context.Context, regionID, regionSlug string, reader api.Reader) ([]string, error) {
 	var region *api.Region

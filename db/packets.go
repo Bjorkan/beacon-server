@@ -58,9 +58,9 @@ func (s *Store) SetPacketDecrypted(ctx context.Context, hash []byte) error {
 	return s.q.SetPacketDecrypted(ctx, hash)
 }
 
-func (s *Store) ListPackets(ctx context.Context, payloadType, routeType int16, iatas []string, scope string, since, until time.Time, cursor int64, limit int32) (api.Page[api.PacketSummary], error) {
+func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32) (api.Page[api.PacketSummary], error) {
 	if len(iatas) > 0 {
-		return s.listPacketsByIATAs(ctx, payloadType, routeType, iatas, scope, since, until, cursor, limit)
+		return s.listPacketsByIATAs(ctx, payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit)
 	}
 	var cursorTS pgtype.Timestamptz
 	if cursor > 0 {
@@ -75,13 +75,13 @@ func (s *Store) ListPackets(ctx context.Context, payloadType, routeType int16, i
 		untilTS = pgtype.Timestamptz{Time: until, Valid: true}
 	}
 	rows, err := s.q.ListPackets(ctx, sqlc.ListPacketsParams{
-		Column1: payloadType,
-		Column2: routeType,
+		Column1: payloadTypes,
+		Column2: routeTypes,
 		Column3: sinceTS,
 		Column4: untilTS,
 		Column5: cursorTS,
 		Limit:   limit + 1,
-		Column7: scope,
+		Column7: scopes,
 	})
 	if err != nil {
 		return api.Page[api.PacketSummary]{}, err
@@ -124,7 +124,7 @@ func (s *Store) ListPackets(ctx context.Context, payloadType, routeType int16, i
 	}, nil
 }
 
-func (s *Store) listPacketsByIATAs(ctx context.Context, payloadType, routeType int16, iatas []string, scope string, since, until time.Time, cursor int64, limit int32) (api.Page[api.PacketSummary], error) {
+func (s *Store) listPacketsByIATAs(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32) (api.Page[api.PacketSummary], error) {
 	var cursorTS pgtype.Timestamptz
 	if cursor > 0 {
 		cursorTS = pgtype.Timestamptz{Time: time.UnixMilli(cursor), Valid: true}
@@ -141,15 +141,15 @@ func (s *Store) listPacketsByIATAs(ctx context.Context, payloadType, routeType i
 	// ((packet_hash, observer_id) is unique), so scan deep enough per site
 	// to still fill the page after collapsing those duplicates.
 	rows, err := s.q.ListPacketsByIATAs(ctx, sqlc.ListPacketsByIATAsParams{
-		Iatas:       iatas,
-		ScanDepth:   (limit + 1) * 8,
-		CursorTs:    cursorTS,
-		PayloadType: payloadType,
-		RouteType:   routeType,
-		SinceTs:     sinceTS,
-		UntilTs:     untilTS,
-		ScopeName:   scope,
-		PageLimit:   limit + 1,
+		Iatas:        iatas,
+		ScanDepth:    (limit + 1) * 8,
+		CursorTs:     cursorTS,
+		PayloadTypes: payloadTypes,
+		RouteTypes:   routeTypes,
+		SinceTs:      sinceTS,
+		UntilTs:      untilTS,
+		ScopeNames:   scopes,
+		PageLimit:    limit + 1,
 	})
 	if err != nil {
 		return api.Page[api.PacketSummary]{}, err

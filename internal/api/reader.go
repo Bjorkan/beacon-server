@@ -119,7 +119,9 @@ type Reader interface {
 	// Unfiltered lists order by global last_heard_at; when iatas are set, ordering
 	// and the cursor are site-local (heard_at at the requested sites) instead.
 	// cursor is epoch ms in either case; pass 0 to start from the beginning.
-	ListPackets(ctx context.Context, payloadType, routeType int16, iatas []string, scope string, since, until time.Time, cursor int64, limit int32) (Page[PacketSummary], error)
+	// payloadTypes/routeTypes/scopes are OR'd within each filter, ANDed across filters; pass
+	// nil/empty to skip a filter.
+	ListPackets(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32) (Page[PacketSummary], error)
 
 	// ListPacketsAfterID returns packets with observations after the given observation ID,
 	// ordered oldest first. Used for WS reconnect backfill.

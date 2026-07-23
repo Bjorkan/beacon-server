@@ -970,6 +970,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Filter by multiple payload types, comma-separated e.g. 2,4",
+                        "name": "payloadTypes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "Filter by payload type name (advert, grp_txt, txt_msg, trace, anon_req)",
                         "name": "payloadTypeName",
                         "in": "query"
@@ -978,6 +984,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "Filter by route type (0=transport_flood, 1=flood, 2=direct, 3=transport_direct)",
                         "name": "routeType",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by multiple route types, comma-separated e.g. 0,1",
+                        "name": "routeTypes",
                         "in": "query"
                     },
                     {
@@ -996,6 +1008,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by transport scope name e.g. %23bc (URL-encoded #bc)",
                         "name": "scope",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by multiple transport scope names, comma-separated e.g. %23bc,%23west",
+                        "name": "scopes",
                         "in": "query"
                     },
                     {

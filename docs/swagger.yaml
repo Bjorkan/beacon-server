@@ -1695,6 +1695,10 @@ paths:
         in: query
         name: payloadType
         type: integer
+      - description: Filter by multiple payload types, comma-separated e.g. 2,4
+        in: query
+        name: payloadTypes
+        type: string
       - description: Filter by payload type name (advert, grp_txt, txt_msg, trace,
           anon_req)
         in: query
@@ -1704,6 +1708,10 @@ paths:
         in: query
         name: routeType
         type: integer
+      - description: Filter by multiple route types, comma-separated e.g. 0,1
+        in: query
+        name: routeTypes
+        type: string
       - description: Filter by single IATA code (case-insensitive)
         in: query
         name: iata
@@ -1715,6 +1723,11 @@ paths:
       - description: 'Filter by transport scope name e.g. %23bc (URL-encoded #bc)'
         in: query
         name: scope
+        type: string
+      - description: Filter by multiple transport scope names, comma-separated e.g.
+          %23bc,%23west
+        in: query
+        name: scopes
         type: string
       - description: Filter by region ID, expands to member IATAs
         in: query

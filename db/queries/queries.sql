@@ -390,12 +390,12 @@ LEFT JOIN LATERAL (
 LEFT JOIN observers o ON o.id = po.observer_id
 LEFT JOIN transport_scopes ts ON ts.id = p.scope_id
 WHERE
-  ($1::smallint = -1 OR p.payload_type = $1::smallint)
-  AND ($2::smallint = -1 OR p.route_type = $2::smallint)
+  (COALESCE(cardinality($1::smallint[]), 0) = 0 OR p.payload_type = ANY($1::smallint[]))
+  AND (COALESCE(cardinality($2::smallint[]), 0) = 0 OR p.route_type = ANY($2::smallint[]))
   AND ($3::timestamptz IS NULL OR p.first_heard_at >= $3)
   AND ($4::timestamptz IS NULL OR p.first_heard_at <= $4)
   AND ($5::timestamptz IS NULL OR p.last_heard_at < $5)
-  AND ($7::text = '' OR ts.name = $7::text)
+  AND (COALESCE(cardinality($7::text[]), 0) = 0 OR ts.name = ANY($7::text[]))
 ORDER BY p.last_heard_at DESC
 LIMIT $6;
 
@@ -431,13 +431,13 @@ FROM (
     JOIN packets p2 ON p2.packet_hash = po3.packet_hash
     WHERE po3.iata = req.iata
       AND po3.heard_at < COALESCE(@cursor_ts::timestamptz, 'infinity'::timestamptz)
-      AND (@payload_type::smallint = -1 OR p2.payload_type = @payload_type::smallint)
-      AND (@route_type::smallint = -1 OR p2.route_type = @route_type::smallint)
+      AND (COALESCE(cardinality(@payload_types::smallint[]), 0) = 0 OR p2.payload_type = ANY(@payload_types::smallint[]))
+      AND (COALESCE(cardinality(@route_types::smallint[]), 0) = 0 OR p2.route_type = ANY(@route_types::smallint[]))
       AND (@since_ts::timestamptz IS NULL OR p2.first_heard_at >= @since_ts)
       AND (@until_ts::timestamptz IS NULL OR p2.first_heard_at <= @until_ts)
-      AND (@scope_name::text = '' OR EXISTS (
+      AND (COALESCE(cardinality(@scope_names::text[]), 0) = 0 OR EXISTS (
         SELECT 1 FROM transport_scopes ts2
-        WHERE ts2.id = p2.scope_id AND ts2.name = @scope_name::text))
+        WHERE ts2.id = p2.scope_id AND ts2.name = ANY(@scope_names::text[])))
     ORDER BY po3.heard_at DESC
     LIMIT @scan_depth
   ) hits

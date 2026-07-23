@@ -80,7 +80,7 @@ func TestListPackets_Pagination(t *testing.T) {
 		Return(rows, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), 0, 0, nil, "", time.Time{}, time.Time{}, 0, 2)
+	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 2)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestListPackets_LatestObserverNil(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), 0, 0, nil, "", time.Time{}, time.Time{}, 0, 10)
+	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestListPackets_LatestObserverSet(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), 0, 0, nil, "", time.Time{}, time.Time{}, 0, 10)
+	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestListPackets_IATAFilterRoutesToObservationIndex(t *testing.T) {
 		})
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), -1, -1, []string{"ALF"}, "", time.Time{}, time.Time{}, 0, 1)
+	page, err := store.ListPackets(context.Background(), nil, nil, []string{"ALF"}, nil, time.Time{}, time.Time{}, 0, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestListPackets_UnfilteredKeepsGlobalQuery(t *testing.T) {
 		Return([]sqlc.ListPacketsRow{}, nil)
 
 	store := &Store{q: mock}
-	if _, err := store.ListPackets(context.Background(), -1, -1, nil, "", time.Time{}, time.Time{}, 0, 50); err != nil {
+	if _, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 50); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

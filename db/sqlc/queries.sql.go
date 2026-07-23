@@ -2558,24 +2558,24 @@ LEFT JOIN LATERAL (
 LEFT JOIN observers o ON o.id = po.observer_id
 LEFT JOIN transport_scopes ts ON ts.id = p.scope_id
 WHERE
-  ($1::smallint = -1 OR p.payload_type = $1::smallint)
-  AND ($2::smallint = -1 OR p.route_type = $2::smallint)
+  (COALESCE(cardinality($1::smallint[]), 0) = 0 OR p.payload_type = ANY($1::smallint[]))
+  AND (COALESCE(cardinality($2::smallint[]), 0) = 0 OR p.route_type = ANY($2::smallint[]))
   AND ($3::timestamptz IS NULL OR p.first_heard_at >= $3)
   AND ($4::timestamptz IS NULL OR p.first_heard_at <= $4)
   AND ($5::timestamptz IS NULL OR p.last_heard_at < $5)
-  AND ($7::text = '' OR ts.name = $7::text)
+  AND (COALESCE(cardinality($7::text[]), 0) = 0 OR ts.name = ANY($7::text[]))
 ORDER BY p.last_heard_at DESC
 LIMIT $6
 `
 
 type ListPacketsParams struct {
-	Column1 int16              `json:"column_1"`
-	Column2 int16              `json:"column_2"`
+	Column1 []int16            `json:"column_1"`
+	Column2 []int16            `json:"column_2"`
 	Column3 pgtype.Timestamptz `json:"column_3"`
 	Column4 pgtype.Timestamptz `json:"column_4"`
 	Column5 pgtype.Timestamptz `json:"column_5"`
 	Limit   int32              `json:"limit"`
-	Column7 string             `json:"column_7"`
+	Column7 []string           `json:"column_7"`
 }
 
 type ListPacketsRow struct {
@@ -2745,13 +2745,13 @@ FROM (
     JOIN packets p2 ON p2.packet_hash = po3.packet_hash
     WHERE po3.iata = req.iata
       AND po3.heard_at < COALESCE($2::timestamptz, 'infinity'::timestamptz)
-      AND ($3::smallint = -1 OR p2.payload_type = $3::smallint)
-      AND ($4::smallint = -1 OR p2.route_type = $4::smallint)
+      AND (COALESCE(cardinality($3::smallint[]), 0) = 0 OR p2.payload_type = ANY($3::smallint[]))
+      AND (COALESCE(cardinality($4::smallint[]), 0) = 0 OR p2.route_type = ANY($4::smallint[]))
       AND ($5::timestamptz IS NULL OR p2.first_heard_at >= $5)
       AND ($6::timestamptz IS NULL OR p2.first_heard_at <= $6)
-      AND ($7::text = '' OR EXISTS (
+      AND (COALESCE(cardinality($7::text[]), 0) = 0 OR EXISTS (
         SELECT 1 FROM transport_scopes ts2
-        WHERE ts2.id = p2.scope_id AND ts2.name = $7::text))
+        WHERE ts2.id = p2.scope_id AND ts2.name = ANY($7::text[])))
     ORDER BY po3.heard_at DESC
     LIMIT $8
   ) hits
@@ -2778,15 +2778,15 @@ ORDER BY sh.site_heard_at DESC
 `
 
 type ListPacketsByIATAsParams struct {
-	Iatas       []string           `json:"iatas"`
-	CursorTs    pgtype.Timestamptz `json:"cursor_ts"`
-	PayloadType int16              `json:"payload_type"`
-	RouteType   int16              `json:"route_type"`
-	SinceTs     pgtype.Timestamptz `json:"since_ts"`
-	UntilTs     pgtype.Timestamptz `json:"until_ts"`
-	ScopeName   string             `json:"scope_name"`
-	ScanDepth   int32              `json:"scan_depth"`
-	PageLimit   int32              `json:"page_limit"`
+	Iatas        []string           `json:"iatas"`
+	CursorTs     pgtype.Timestamptz `json:"cursor_ts"`
+	PayloadTypes []int16            `json:"payload_types"`
+	RouteTypes   []int16            `json:"route_types"`
+	SinceTs      pgtype.Timestamptz `json:"since_ts"`
+	UntilTs      pgtype.Timestamptz `json:"until_ts"`
+	ScopeNames   []string           `json:"scope_names"`
+	ScanDepth    int32              `json:"scan_depth"`
+	PageLimit    int32              `json:"page_limit"`
 }
 
 type ListPacketsByIATAsRow struct {
@@ -2817,11 +2817,11 @@ func (q *Queries) ListPacketsByIATAs(ctx context.Context, arg ListPacketsByIATAs
 	rows, err := q.db.Query(ctx, listPacketsByIATAs,
 		arg.Iatas,
 		arg.CursorTs,
-		arg.PayloadType,
-		arg.RouteType,
+		arg.PayloadTypes,
+		arg.RouteTypes,
 		arg.SinceTs,
 		arg.UntilTs,
-		arg.ScopeName,
+		arg.ScopeNames,
 		arg.ScanDepth,
 		arg.PageLimit,
 	)

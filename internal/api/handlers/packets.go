@@ -32,11 +32,14 @@ func PacketsRouter(reader api.Reader) http.Handler {
 //	@Tags		Packets
 //	@Produce	json
 //	@Param		payloadType		query		int		false	"Filter by payload type integer"
+//	@Param		payloadTypes	query		string	false	"Filter by multiple payload types, comma-separated e.g. 2,4"
 //	@Param		payloadTypeName	query		string	false	"Filter by payload type name (advert, grp_txt, txt_msg, trace, anon_req)"
 //	@Param		routeType		query		int		false	"Filter by route type (0=transport_flood, 1=flood, 2=direct, 3=transport_direct)"
+//	@Param		routeTypes		query		string	false	"Filter by multiple route types, comma-separated e.g. 0,1"
 //	@Param		iata			query		string	false	"Filter by single IATA code (case-insensitive)"
 //	@Param		iatas			query		string	false	"Filter by multiple IATA codes, comma-separated e.g. YVR,YYJ"
 //	@Param		scope	query		string	false	"Filter by transport scope name e.g. %23bc (URL-encoded #bc)"
+//	@Param		scopes	query		string	false	"Filter by multiple transport scope names, comma-separated e.g. %23bc,%23west"
 //	@Param		regionId		query		int		false	"Filter by region ID, expands to member IATAs"
 //	@Param		region			query		string	false	"Filter by region slug, expands to member IATAs"
 //	@Param		since			query		int		false	"Filter by first_heard_at >= since (epoch ms)"
@@ -49,28 +52,20 @@ func PacketsRouter(reader api.Reader) http.Handler {
 //	@Router		/packets [get]
 func listPackets(reader api.Reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var payloadType int16 = -1
-		if p := r.URL.Query().Get("payloadType"); p != "" {
-			t, err := strconv.ParseInt(p, 10, 16)
-			if err != nil {
-				respondError(w, http.StatusBadRequest, "payloadType must be an integer")
-				return
-			}
-			payloadType = int16(t)
+		payloadTypes, err := parseInt16CSVOrSingle(r, "payloadTypes", "payloadType")
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "payloadType/payloadTypes must be integers")
+			return
 		}
-		if payloadType == -1 {
+		if len(payloadTypes) == 0 {
 			if p := r.URL.Query().Get("payloadTypeName"); p != "" {
-				payloadType = api.PayloadTypeFromString(p)
+				payloadTypes = []int16{api.PayloadTypeFromString(p)}
 			}
 		}
-		var routeType int16 = -1
-		if p := r.URL.Query().Get("routeType"); p != "" {
-			t, err := strconv.ParseInt(p, 10, 16)
-			if err != nil {
-				respondError(w, http.StatusBadRequest, "routeType must be an integer")
-				return
-			}
-			routeType = int16(t)
+		routeTypes, err := parseInt16CSVOrSingle(r, "routeTypes", "routeType")
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "routeType/routeTypes must be integers")
+			return
 		}
 		var since, until time.Time
 		if p := r.URL.Query().Get("since"); p != "" {
@@ -116,8 +111,8 @@ func listPackets(reader api.Reader) http.HandlerFunc {
 			}
 			iatas = append(iatas, regionIATAs...)
 		}
-		scope := r.URL.Query().Get("scope")
-		packets, err := reader.ListPackets(r.Context(), payloadType, routeType, iatas, scope, since, until, cursor, limit)
+		scopes := parseCSVOrSingle(r, "scopes", "scope")
+		packets, err := reader.ListPackets(r.Context(), payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
