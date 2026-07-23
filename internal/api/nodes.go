@@ -43,7 +43,7 @@ type NodeSummary struct {
 	ObserverID         *uuid.UUID  `json:"observerId,omitempty"`   // UUID of the associated observer row, if any
 	Latitude           *float64    `json:"lat,omitempty"`          // decimal degrees, from advert AppData
 	Longitude          *float64    `json:"lng,omitempty"`          // decimal degrees, from advert AppData
-	Radio              *string     `json:"radio,omitempty"`        // shorthand: "freqMhz,bwKhz,sf" e.g. "910.5,62.5,7"
+	Radio              *string     `json:"radio,omitempty"`        // shorthand: "freqMhz,bwKhz,sf" e.g. "910.525,62.5,7"
 	IATAs              []NodeIATA  `json:"iatas"`                  // IATAs where this node has been heard, with last heard timestamps
 	DefaultScope       *string     `json:"defaultScope,omitempty"` // most recently matched transport scope name e.g. "#bc"
 	KnownNeighborCount int64       `json:"knownNeighborCount"`

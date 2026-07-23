@@ -195,7 +195,7 @@ func (w *Worker) handleStatus(ctx context.Context, pubkeyHex string, raw []byte)
 	}
 	var radioStr *string
 	if params.RadioFreqMHz != 0 {
-		s := fmt.Sprintf("%.1f,%g,%d", params.RadioFreqMHz, params.RadioBWKHz, params.RadioSF)
+		s := fmt.Sprintf("%g,%g,%d", params.RadioFreqMHz, params.RadioBWKHz, params.RadioSF)
 		radioStr = &s
 	}
 	var observerType *string

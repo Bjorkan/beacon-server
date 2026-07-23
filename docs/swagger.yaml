@@ -233,7 +233,7 @@ definitions:
         description: hex-encoded Ed25519 public key
         type: string
       radio:
-        description: 'shorthand: "freqMhz,bwKhz,sf" e.g. "910.5,62.5,7"'
+        description: 'shorthand: "freqMhz,bwKhz,sf" e.g. "910.525,62.5,7"'
         type: string
       supportsMultibytePaths:
         description: firmware >= 1.14.0; detected via path hash size
@@ -321,7 +321,7 @@ definitions:
         description: hex-encoded Ed25519 public key
         type: string
       radio:
-        description: 'shorthand: "freqMhz,bwKhz,sf" e.g. "910.5,62.5,7"'
+        description: 'shorthand: "freqMhz,bwKhz,sf" e.g. "910.525,62.5,7"'
         type: string
     type: object
   github_com_MeshCore-Beacon_beacon-server_internal_api.NodeTypeCount:
@@ -389,7 +389,7 @@ definitions:
         description: hex-encoded public key
         type: string
       radio:
-        description: 'friendly radio param string: freqMhz,BwKhz,SF'
+        description: 'friendly radio param string: freqMhz,BwKhz,SF e.g. "910.525,62.5,7"'
         type: string
       radioBwKhz:
         description: bandwidth in kHz
@@ -444,7 +444,7 @@ definitions:
         description: e.g. "meshcoretomqtt", "meshcoreha"
         type: string
       radio:
-        description: 'friendly radio param string: freqMhz,BwKhz,SF'
+        description: 'friendly radio param string: freqMhz,BwKhz,SF e.g. "910.525,62.5,7"'
         type: string
       scopes:
         description: list of observer forwarded scopes matched to config

@@ -152,7 +152,7 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 		}
 		var radioStr *string
 		if radio.FreqMHz != 0 {
-			s := fmt.Sprintf("%.1f,%g,%d", radio.FreqMHz, radio.BWKHz, radio.SF)
+			s := fmt.Sprintf("%g,%g,%d", radio.FreqMHz, radio.BWKHz, radio.SF)
 			radioStr = &s
 		}
 		evt := nodeUpdateEvent{

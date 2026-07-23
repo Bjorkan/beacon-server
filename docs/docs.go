@@ -2376,7 +2376,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "radio": {
-                    "description": "shorthand: \"freqMhz,bwKhz,sf\" e.g. \"910.5,62.5,7\"",
+                    "description": "shorthand: \"freqMhz,bwKhz,sf\" e.g. \"910.525,62.5,7\"",
                     "type": "string"
                 },
                 "supportsMultibytePaths": {
@@ -2502,7 +2502,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "radio": {
-                    "description": "shorthand: \"freqMhz,bwKhz,sf\" e.g. \"910.5,62.5,7\"",
+                    "description": "shorthand: \"freqMhz,bwKhz,sf\" e.g. \"910.525,62.5,7\"",
                     "type": "string"
                 }
             }
@@ -2600,7 +2600,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "radio": {
-                    "description": "friendly radio param string: freqMhz,BwKhz,SF",
+                    "description": "friendly radio param string: freqMhz,BwKhz,SF e.g. \"910.525,62.5,7\"",
                     "type": "string"
                 },
                 "radioBwKhz": {
@@ -2677,7 +2677,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "radio": {
-                    "description": "friendly radio param string: freqMhz,BwKhz,SF",
+                    "description": "friendly radio param string: freqMhz,BwKhz,SF e.g. \"910.525,62.5,7\"",
                     "type": "string"
                 },
                 "scopes": {

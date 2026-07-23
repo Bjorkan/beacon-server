@@ -12,7 +12,7 @@ type ObserverSummary struct {
 	ObserverType *string   `json:"observerType,omitempty"` // e.g. "meshcoretomqtt", "meshcoreha"
 	IATA         string    `json:"iata"`                   // most recently heard IATA
 	Status       string    `json:"status"`                 // "online" or "offline" derived from last_status_at
-	Radio        *string   `json:"radio,omitempty"`        // friendly radio param string: freqMhz,BwKhz,SF
+	Radio        *string   `json:"radio,omitempty"`        // friendly radio param string: freqMhz,BwKhz,SF e.g. "910.525,62.5,7"
 	Scopes       []string  `json:"scopes,omitempty"`       // list of observer forwarded scopes matched to config
 }
 
