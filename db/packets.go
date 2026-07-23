@@ -337,6 +337,48 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 			}
 		}
 	}
+	// 1-byte source/destination hashes for the payload types that carry a resolvable
+	// endpoint (REQUEST, RESPONSE, TEXT_MESSAGE, PATH, ANON_REQ's destination). Constant
+	// for this packet hash, so parsed once; resolution itself still happens per-observation
+	// below since candidates depend on the observation's IATA, same as the intermediate
+	// hop resolution already does.
+	var sourceHashByte, destHashByte []byte
+	switch row.PayloadType {
+	case int16(meshcore.PayloadTypeAnonReq):
+		if anonReq, err := meshcore.AnonReqFromBytes(row.RawPayload); err == nil {
+			destHashByte = []byte{anonReq.Destination}
+		}
+	case int16(meshcore.PayloadTypeReq):
+		if req, err := meshcore.RequestFromBytes(row.RawPayload); err == nil {
+			sourceHashByte = []byte{req.Source}
+			destHashByte = []byte{req.Destination}
+		}
+	case int16(meshcore.PayloadTypeResponse):
+		if resp, err := meshcore.ResponseFromBytes(row.RawPayload); err == nil {
+			sourceHashByte = []byte{resp.Source}
+			destHashByte = []byte{resp.Destination}
+		}
+	case int16(meshcore.PayloadTypeTxtMsg):
+		if txt, err := meshcore.TextMessageFromBytes(row.RawPayload); err == nil {
+			sourceHashByte = []byte{txt.Source}
+			destHashByte = []byte{txt.Destination}
+		}
+	case int16(meshcore.PayloadTypePath):
+		if path, err := meshcore.PathFromBytes(row.RawPayload); err == nil {
+			sourceHashByte = []byte{path.Source}
+			destHashByte = []byte{path.Destination}
+		}
+	}
+	// ADVERT's source is an exact pubkey match, not ambiguous like the above -- and unlike
+	// them it doesn't depend on IATA, so resolve it once here rather than per observation.
+	var resolvedAdvertSource *api.ResolvedNode
+	if row.PayloadType == int16(meshcore.PayloadTypeAdvert) && row.OriginPubkey != nil {
+		if nodeID, err := s.GetNodeByPubkey(ctx, row.OriginPubkey); err == nil {
+			if nodes, err := s.GetNodesByIDs(ctx, []uuid.UUID{nodeID}); err == nil {
+				resolvedAdvertSource = nodes[nodeID]
+			}
+		}
+	}
 	for _, v := range obsRows {
 		obs := api.PacketObservationDetail{
 			ID:           v.ID,
@@ -379,6 +421,25 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 			}
 		}
 		obs.ResolvedPath = resolvedPath
+		if row.PayloadType == int16(meshcore.PayloadTypeAdvert) {
+			hop := api.ResolveExactNode(resolvedAdvertSource)
+			obs.ResolvedSource = &hop
+		} else if len(sourceHashByte) == 1 {
+			if r, err := s.ResolvePathHashes(ctx, v.Iata, [][]byte{sourceHashByte}); err != nil {
+				log.Printf("store: source resolution failed for observation %d: %v", v.ID, err)
+			} else {
+				hop := api.BuildResolvedPath([][]byte{sourceHashByte}, r)[0]
+				obs.ResolvedSource = &hop
+			}
+		}
+		if len(destHashByte) == 1 {
+			if r, err := s.ResolvePathHashes(ctx, v.Iata, [][]byte{destHashByte}); err != nil {
+				log.Printf("store: destination resolution failed for observation %d: %v", v.ID, err)
+			} else {
+				hop := api.BuildResolvedPath([][]byte{destHashByte}, r)[0]
+				obs.ResolvedDestination = &hop
+			}
+		}
 		if row.PayloadType == int16(meshcore.PayloadTypeTrace) && len(traceRawHashes) > 0 {
 			// Swap in the trace's own path hashes so PathData's hop-block split (driven by
 			// pathBytes + hashSize) lines up 1:1 with resolvedPath -- the raw SNR bytes

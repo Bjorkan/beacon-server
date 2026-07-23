@@ -105,6 +105,10 @@ type DB interface {
 	// the observer's own node may not exist until it has advertised.
 	GetNodeByPubkey(ctx context.Context, pubkey []byte) (uuid.UUID, error)
 
+	// GetNodesByIDs returns resolved node details (name, pubkey, coords) for a set of node
+	// IDs. Used with GetNodeByPubkey to resolve an ADVERT's exact-match source endpoint.
+	GetNodesByIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*api.ResolvedNode, error)
+
 	// UpsertNodeIATA upserts a node_iatas row.
 	UpsertNodeIATA(ctx context.Context, nodeID uuid.UUID, iata string) error
 

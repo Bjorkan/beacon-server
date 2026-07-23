@@ -94,6 +94,10 @@ type packetObservationEvent struct {
 		} `json:"pathLength"`
 		PropagationTimeMs int32             `json:"propagationTimeMs"`
 		ResolvedPath      []api.ResolvedHop `json:"resolvedPath"` // only present in the resolvePath-opted-in variant; see hub.Event.PayloadResolved
+		// ResolvedSource/ResolvedDestination mirror api.PacketObservationDetail's fields of
+		// the same name -- nil when this payload type has no resolvable endpoint.
+		ResolvedSource      *api.ResolvedHop `json:"resolvedSource,omitempty"`
+		ResolvedDestination *api.ResolvedHop `json:"resolvedDestination,omitempty"`
 	} `json:"observation"`
 }
 
@@ -340,6 +344,10 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 	// below), so the "physical route" hashes for resolvedPath/known-route purposes come
 	// instead from the TRACE payload's own embedded PathHashes (the path being probed).
 	var traceRawHashes [][]byte
+	// 1-byte source/destination hashes for ambiguous prefix resolution (REQUEST, RESPONSE,
+	// TEXT_MESSAGE, PATH, ANON_REQ's destination). GRP_TXT/GRP_DATA/TRACE have no such
+	// fields and are left nil.
+	var sourceHashByte, destHashByte []byte
 
 	switch packet.PayloadType() {
 	case meshcore.PayloadTypeGrpTxt:
@@ -438,6 +446,7 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 		anonReq, err := meshcore.AnonReqFromBytes(packet.Payload)
 		if err == nil {
 			originPubkey = anonReq.EphemeralPubKey[:]
+			destHashByte = []byte{anonReq.Destination}
 			par := parsedAnonReq{
 				Raw:             hex.EncodeToString(packet.Payload),
 				Type:            "ANON_REQUEST",
@@ -450,6 +459,8 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 	case meshcore.PayloadTypeReq:
 		req, err := meshcore.RequestFromBytes(packet.Payload)
 		if err == nil {
+			sourceHashByte = []byte{req.Source}
+			destHashByte = []byte{req.Destination}
 			pe := parsedEnvelope{
 				Raw:              hex.EncodeToString(packet.Payload),
 				Type:             "REQUEST",
@@ -465,6 +476,8 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 	case meshcore.PayloadTypeResponse:
 		resp, err := meshcore.ResponseFromBytes(packet.Payload)
 		if err == nil {
+			sourceHashByte = []byte{resp.Source}
+			destHashByte = []byte{resp.Destination}
 			pe := parsedEnvelope{
 				Raw:              hex.EncodeToString(packet.Payload),
 				Type:             "RESPONSE",
@@ -480,6 +493,8 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 	case meshcore.PayloadTypeTxtMsg:
 		txt, err := meshcore.TextMessageFromBytes(packet.Payload)
 		if err == nil {
+			sourceHashByte = []byte{txt.Source}
+			destHashByte = []byte{txt.Destination}
 			pe := parsedEnvelope{
 				Raw:              hex.EncodeToString(packet.Payload),
 				Type:             "TEXT_MESSAGE",
@@ -495,6 +510,8 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 	case meshcore.PayloadTypePath:
 		path, err := meshcore.PathFromBytes(packet.Payload)
 		if err == nil {
+			sourceHashByte = []byte{path.Source}
+			destHashByte = []byte{path.Destination}
 			pe := parsedEnvelope{
 				Raw:              hex.EncodeToString(packet.Payload),
 				Type:             "PATH",
@@ -805,6 +822,30 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 		}
 	}
 	w.runCapabilityDetection(ctx, packet.PayloadType(), packet.PathHashSize(), resolvedIDs)
+
+	var resolvedSource, resolvedDestination *api.ResolvedHop
+	if packet.PayloadType() == meshcore.PayloadTypeAdvert && originPubkey != nil {
+		// Exact match: ADVERT carries the sender's real identity pubkey, not a
+		// short ambiguous hash prefix like the other resolvable payload types.
+		if nodeID, err := w.db.GetNodeByPubkey(ctx, originPubkey); err == nil {
+			if nodes, err := w.db.GetNodesByIDs(ctx, []uuid.UUID{nodeID}); err == nil {
+				hop := api.ResolveExactNode(nodes[nodeID])
+				resolvedSource = &hop
+			}
+		}
+	} else if len(sourceHashByte) == 1 {
+		if r, err := w.db.ResolvePathHashes(ctx, iata, [][]byte{sourceHashByte}); err == nil {
+			hop := api.BuildResolvedPath([][]byte{sourceHashByte}, r)[0]
+			resolvedSource = &hop
+		}
+	}
+	if len(destHashByte) == 1 {
+		if r, err := w.db.ResolvePathHashes(ctx, iata, [][]byte{destHashByte}); err == nil {
+			hop := api.BuildResolvedPath([][]byte{destHashByte}, r)[0]
+			resolvedDestination = &hop
+		}
+	}
+
 	if inserted {
 		w.handlePayloadTypeSideEffects(ctx, packet, iata, packetHash[:], radio, scopeID, matchedScope, pubkeyBytes, float32(parseNumber(envelope.SNR)))
 		evt := packetObservationEvent{}
@@ -836,6 +877,8 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 			evt.Packet.Scope = matchedScope
 		}
 		resolvedPath := api.BuildResolvedPath(hashes, resolved)
+		evt.Observation.ResolvedSource = resolvedSource
+		evt.Observation.ResolvedDestination = resolvedDestination
 		w.broadcastPacketObservation(iata, packet.PayloadType(), evt, resolvedPath)
 	}
 }
