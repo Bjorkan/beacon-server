@@ -217,6 +217,10 @@ func (s *stubDB) GetNodeByPubkey(_ context.Context, _ []byte) (uuid.UUID, error)
 	return uuid.Nil, errors.New("not found")
 }
 
+func (s *stubDB) GetNodesByIDs(_ context.Context, _ []uuid.UUID) (map[uuid.UUID]*api.ResolvedNode, error) {
+	return nil, nil
+}
+
 func (s *stubDB) InsertChannelMessage(_ context.Context, _ InsertChannelMessageParams) (bool, error) {
 	return false, nil
 }
