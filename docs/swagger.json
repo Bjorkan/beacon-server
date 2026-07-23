@@ -2882,12 +2882,23 @@
                 "radio": {
                     "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.PacketRadio"
                 },
+                "resolvedDestination": {
+                    "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ResolvedHop"
+                },
                 "resolvedPath": {
                     "description": "per-observation resolved path hashes",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ResolvedHop"
                     }
+                },
+                "resolvedSource": {
+                    "description": "ResolvedSource/ResolvedDestination are the packet's endpoints, when the payload type\ncarries a resolvable one: an exact match for ADVERT's full pubkey, an ambiguous\nhash-prefix match (like intermediate hops) for TEXT_MESSAGE/PATH/ANON_REQ's 1-byte\nsource/destination hashes. Nil when the payload type doesn't carry one at all (e.g.\nGRP_TXT/GRP_DATA/TRACE aren't node-to-node addressed) -- see BuildResolvedPath and\nResolveExactNode for how each is built.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ResolvedHop"
+                        }
+                    ]
                 },
                 "rssi": {
                     "type": "integer"
