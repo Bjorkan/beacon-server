@@ -1353,6 +1353,10 @@ paths:
         in: query
         name: pubkey
         type: string
+      - description: 'Partial public key match: hex prefix, case-insensitive'
+        in: query
+        name: pubkeyPrefix
+        type: string
       - description: Filter by multibyte path support (true/false); omit for no filter
         in: query
         name: supportsMultibytePaths

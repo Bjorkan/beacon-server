@@ -100,7 +100,7 @@ type Reader interface {
 	// When includeNeighbors is true, each NodeSummary's NeighborIDs field is
 	// populated with the distinct set of neighbor node IDs (across all
 	// IATAs); otherwise it's left nil to avoid the extra aggregation.
-	ListNodes(ctx context.Context, nodeType int16, iatas []string, supportsMultibytePaths, supportsMultibyteTraces *bool, pubkey []byte, name, scope string, cursor int64, limit int32, includeNeighbors bool) (Page[NodeSummary], error)
+	ListNodes(ctx context.Context, nodeType int16, iatas []string, supportsMultibytePaths, supportsMultibyteTraces *bool, pubkey []byte, pubkeyPrefix, name, scope string, cursor int64, limit int32, includeNeighbors bool) (Page[NodeSummary], error)
 
 	// GetNode returns full detail for a single node by UUID.
 	// Returns nil, pgx.ErrNoRows if the node is not found.

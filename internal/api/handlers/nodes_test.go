@@ -129,7 +129,7 @@ func TestListNodes_OK(t *testing.T) {
 	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	r := chi.NewRouter()
 	r.Get("/nodes", listNodes(stubReader{
-		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _ string, _ int64, _ int32, _ bool) (api.Page[api.NodeSummary], error) {
+		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _, _ string, _ int64, _ int32, _ bool) (api.Page[api.NodeSummary], error) {
 			return api.Page[api.NodeSummary]{Items: []api.NodeSummary{{ID: nodeID}}}, nil
 		},
 	}))
@@ -147,7 +147,7 @@ func TestListNodes_NeighborsParam_PassedThrough(t *testing.T) {
 	var gotIncludeNeighbors bool
 	r := chi.NewRouter()
 	r.Get("/nodes", listNodes(stubReader{
-		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _ string, _ int64, _ int32, includeNeighbors bool) (api.Page[api.NodeSummary], error) {
+		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _, _ string, _ int64, _ int32, includeNeighbors bool) (api.Page[api.NodeSummary], error) {
 			gotIncludeNeighbors = includeNeighbors
 			return api.Page[api.NodeSummary]{Items: []api.NodeSummary{{ID: nodeID, NeighborIDs: []uuid.UUID{neighborID}}}}, nil
 		},
@@ -181,7 +181,7 @@ func TestListNodes_NeighborsParam_BareFlagMeansTrue(t *testing.T) {
 	var gotIncludeNeighbors bool
 	r := chi.NewRouter()
 	r.Get("/nodes", listNodes(stubReader{
-		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _ string, _ int64, _ int32, includeNeighbors bool) (api.Page[api.NodeSummary], error) {
+		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _, _ string, _ int64, _ int32, includeNeighbors bool) (api.Page[api.NodeSummary], error) {
 			gotIncludeNeighbors = includeNeighbors
 			return api.Page[api.NodeSummary]{}, nil
 		},
@@ -194,6 +194,51 @@ func TestListNodes_NeighborsParam_BareFlagMeansTrue(t *testing.T) {
 	}
 	if !gotIncludeNeighbors {
 		t.Error("expected bare ?neighbors (no value) to be treated as true")
+	}
+}
+
+func TestListNodes_PubkeyPrefixParam_PassedThrough(t *testing.T) {
+	var gotPubkeyPrefix string
+	r := chi.NewRouter()
+	r.Get("/nodes", listNodes(stubReader{
+		listNodes: func(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, pubkeyPrefix, _, _ string, _ int64, _ int32, _ bool) (api.Page[api.NodeSummary], error) {
+			gotPubkeyPrefix = pubkeyPrefix
+			return api.Page[api.NodeSummary]{}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/nodes?pubkeyPrefix=AB12", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if gotPubkeyPrefix != "ab12" {
+		t.Errorf("expected pubkeyPrefix to be lowercased and passed through, got %q", gotPubkeyPrefix)
+	}
+}
+
+func TestListNodes_PubkeyPrefixParam_InvalidHex(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/nodes", listNodes(stubReader{}))
+	req := httptest.NewRequest(http.MethodGet, "/nodes?pubkeyPrefix=zz", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestListNodes_PubkeyPrefixParam_RejectsWildcards(t *testing.T) {
+	// isHexString should reject ILIKE wildcard characters, since pubkeyPrefix is matched as
+	// raw text rather than decoded to bytes -- % or _ getting through would let a caller
+	// widen the match pattern beyond a literal prefix.
+	r := chi.NewRouter()
+	r.Get("/nodes", listNodes(stubReader{}))
+	req := httptest.NewRequest(http.MethodGet, "/nodes?pubkeyPrefix=ab%25", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
 

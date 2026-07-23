@@ -510,6 +510,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "Partial public key match: hex prefix, case-insensitive",
+                        "name": "pubkeyPrefix",
+                        "in": "query"
+                    },
+                    {
                         "type": "boolean",
                         "description": "Filter by multibyte path support (true/false); omit for no filter",
                         "name": "supportsMultibytePaths",

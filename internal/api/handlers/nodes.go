@@ -44,6 +44,7 @@ func NodesRouter(reader api.Reader) http.Handler {
 //	@Param		name					query		string	false	"Partial case-insensitive name match"
 //	@Param		scope	query		string	false	"Filter by transport scope name e.g. %23bc (URL-encoded #bc)"
 //	@Param		pubkey					query		string	false	"Exact public key match (hex)"
+//	@Param		pubkeyPrefix			query		string	false	"Partial public key match: hex prefix, case-insensitive"
 //	@Param		supportsMultibytePaths	query		bool	false	"Filter by multibyte path support (true/false); omit for no filter"
 //	@Param		supportsMultibyteTraces	query		bool	false	"Filter by multibyte trace support (true/false); omit for no filter"
 //	@Param		neighbors				query		bool	false	"Include each node's known neighbor IDs (neighborIds field). Bare ?neighbors or ?neighbors=true enables it; omit/false for none"
@@ -93,6 +94,11 @@ func listNodes(reader api.Reader) http.HandlerFunc {
 			}
 			pubkey = b
 		}
+		pubkeyPrefix := strings.ToLower(r.URL.Query().Get("pubkeyPrefix"))
+		if pubkeyPrefix != "" && !isHexString(pubkeyPrefix) {
+			respondError(w, http.StatusBadRequest, "pubkeyPrefix must be a hex string")
+			return
+		}
 		iatas := parseIATAs(r)
 		if regionIDStr := r.URL.Query().Get("regionId"); regionIDStr != "" || r.URL.Query().Get("region") != "" {
 			regionIATAs, err := resolveRegionIATAs(r.Context(), regionIDStr, r.URL.Query().Get("region"), reader)
@@ -136,7 +142,7 @@ func listNodes(reader api.Reader) http.HandlerFunc {
 				includeNeighbors = b
 			}
 		}
-		nodes, err := reader.ListNodes(r.Context(), nodeType, iatas, supportsMultibytePaths, supportsMultibyteTraces, pubkey, name, scope, cursor, limit, includeNeighbors)
+		nodes, err := reader.ListNodes(r.Context(), nodeType, iatas, supportsMultibytePaths, supportsMultibyteTraces, pubkey, pubkeyPrefix, name, scope, cursor, limit, includeNeighbors)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -241,4 +247,17 @@ func listNodeNeighbors(reader api.Reader) http.HandlerFunc {
 		}
 		respond(w, http.StatusOK, neighbors)
 	}
+}
+
+// isHexString reports whether s consists only of hex digits (any case). Used to validate
+// pubkeyPrefix, which is matched as text (not decoded to bytes, since a prefix can be an odd
+// number of nibbles) directly against a SQL ILIKE pattern -- restricting the charset to hex
+// digits keeps that safe from ILIKE wildcard injection (%, _) as a side effect.
+func isHexString(s string) bool {
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }

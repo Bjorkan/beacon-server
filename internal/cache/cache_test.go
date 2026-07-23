@@ -136,7 +136,7 @@ func (s *stubReader) ListMessagesAfterID(_ context.Context, _ int64, _ []string,
 	return nil, nil
 }
 
-func (s *stubReader) ListNodes(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _ string, _ int64, _ int32, _ bool) (api.Page[api.NodeSummary], error) {
+func (s *stubReader) ListNodes(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _, _ string, _ int64, _ int32, _ bool) (api.Page[api.NodeSummary], error) {
 	return api.Page[api.NodeSummary]{}, nil
 }
 

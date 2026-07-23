@@ -612,6 +612,7 @@ WHERE
   AND ($6 = '' OR n.name ILIKE '%' || $6 || '%')
   AND ($7::timestamptz IS NULL OR n.last_seen < $7)
   AND ($9::text = '' OR ts.name = $9::text)
+  AND ($11::text = '' OR encode(n.public_key, 'hex') ILIKE $11 || '%')
 GROUP BY n.id, ts.name
 ORDER BY n.last_seen DESC
 LIMIT $8;

@@ -134,7 +134,7 @@ func TestListNodes_Pagination(t *testing.T) {
 		Return(rows, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, []string{"YVR"}, nil, nil, nil, "", "", 0, 2, false)
+	page, err := store.ListNodes(context.Background(), 0, []string{"YVR"}, nil, nil, nil, "", "", "", 0, 2, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestListNodes_IATAsUnmarshal(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", 0, 10, false)
+	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", "", 0, 10, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestListNodes_RadioStringFormatting(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", 0, 10, false)
+	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", "", 0, 10, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestListNodes_IncludeNeighbors_PassesFlagAndMapsIDs(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", 0, 10, true)
+	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", "", 0, 10, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestListNodes_ExcludeNeighbors_LeavesIDsNil(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", 0, 10, false)
+	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", "", 0, 10, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

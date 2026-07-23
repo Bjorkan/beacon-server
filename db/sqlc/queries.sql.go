@@ -2065,6 +2065,7 @@ WHERE
   AND ($6 = '' OR n.name ILIKE '%' || $6 || '%')
   AND ($7::timestamptz IS NULL OR n.last_seen < $7)
   AND ($9::text = '' OR ts.name = $9::text)
+  AND ($11::text = '' OR encode(n.public_key, 'hex') ILIKE $11 || '%')
 GROUP BY n.id, ts.name
 ORDER BY n.last_seen DESC
 LIMIT $8
@@ -2081,6 +2082,7 @@ type ListNodesParams struct {
 	Limit    int32              `json:"limit"`
 	Column9  string             `json:"column_9"`
 	Column10 bool               `json:"column_10"`
+	Column11 string             `json:"column_11"`
 }
 
 type ListNodesRow struct {
@@ -2114,6 +2116,7 @@ func (q *Queries) ListNodes(ctx context.Context, arg ListNodesParams) ([]ListNod
 		arg.Limit,
 		arg.Column9,
 		arg.Column10,
+		arg.Column11,
 	)
 	if err != nil {
 		return nil, err
