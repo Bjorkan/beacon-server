@@ -172,6 +172,19 @@ definitions:
     type: object
   github_com_MeshCore-Beacon_beacon-server_internal_api.Node:
     properties:
+      clockCheckedAt:
+        type: integer
+      clockDriftSeconds:
+        description: |-
+          Clock drift, repeaters/room servers only (nodeType 2/3); omitted entirely for other
+          node types or when no qualifying advert has been measured yet. Device minus server
+          time, in seconds, from the advert's self-reported timestamp: +ve = device ahead.
+          clockCheckedAt is the server receive time of the advert this was measured from (same
+          moment as lastAdvertAt). clockOutOfSync is |clockDriftSeconds| exceeding a configured
+          threshold (default 5m) -- see internal/config.ResolvedConfig.ClockDriftThreshold.
+        type: integer
+      clockOutOfSync:
+        type: boolean
       defaultScope:
         description: most recently matched transport scope name e.g. "#bc"
         type: string

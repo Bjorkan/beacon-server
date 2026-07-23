@@ -534,8 +534,8 @@ ORDER BY po.heard_at ASC;
 -- ============================================================
 
 -- name: UpsertNode :one
-INSERT INTO nodes (public_key, node_type, name, latitude, longitude, location_source, last_advert_at, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz)
-VALUES ($1, $2, $3, $4, $5, 'advert', NOW(), NOW(), $6, $7, $8)
+INSERT INTO nodes (public_key, node_type, name, latitude, longitude, location_source, last_advert_at, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz, device_clock_drift_seconds)
+VALUES ($1, $2, $3, $4, $5, 'advert', NOW(), NOW(), $6, $7, $8, $9)
 ON CONFLICT (public_key) DO UPDATE SET
   node_type       = EXCLUDED.node_type,
   name            = COALESCE(EXCLUDED.name, nodes.name),
@@ -546,7 +546,8 @@ ON CONFLICT (public_key) DO UPDATE SET
   last_seen       = NOW(),
   radio_freq_mhz  = EXCLUDED.radio_freq_mhz,
   radio_sf        = EXCLUDED.radio_sf,
-  radio_bw_khz    = EXCLUDED.radio_bw_khz
+  radio_bw_khz    = EXCLUDED.radio_bw_khz,
+  device_clock_drift_seconds = EXCLUDED.device_clock_drift_seconds
 RETURNING *;
 
 -- name: SetNodeMultibytePaths :exec

@@ -2418,6 +2418,16 @@ const docTemplate = `{
         "github_com_MeshCore-Beacon_beacon-server_internal_api.Node": {
             "type": "object",
             "properties": {
+                "clockCheckedAt": {
+                    "type": "integer"
+                },
+                "clockDriftSeconds": {
+                    "description": "Clock drift, repeaters/room servers only (nodeType 2/3); omitted entirely for other\nnode types or when no qualifying advert has been measured yet. Device minus server\ntime, in seconds, from the advert's self-reported timestamp: +ve = device ahead.\nclockCheckedAt is the server receive time of the advert this was measured from (same\nmoment as lastAdvertAt). clockOutOfSync is |clockDriftSeconds| exceeding a configured\nthreshold (default 5m) -- see internal/config.ResolvedConfig.ClockDriftThreshold.",
+                    "type": "integer"
+                },
+                "clockOutOfSync": {
+                    "type": "boolean"
+                },
                 "defaultScope": {
                     "description": "most recently matched transport scope name e.g. \"#bc\"",
                     "type": "string"

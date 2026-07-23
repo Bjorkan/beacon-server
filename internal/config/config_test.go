@@ -95,6 +95,9 @@ func TestResolve_Defaults(t *testing.T) {
 	if r.CleanupInterval != time.Hour {
 		t.Errorf("expected CleanupInterval 1h, got %v", r.CleanupInterval)
 	}
+	if r.ClockDriftThreshold != 5*time.Minute {
+		t.Errorf("expected ClockDriftThreshold 5m, got %v", r.ClockDriftThreshold)
+	}
 }
 
 func TestResolve_ExplicitValues(t *testing.T) {

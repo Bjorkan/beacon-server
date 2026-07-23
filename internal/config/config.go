@@ -27,6 +27,7 @@ type Config struct {
 	CORS        CORSConfig            `yaml:"cors"`
 	Background  BackgroundConfig      `yaml:"background"`
 	Presence    PresenceConfig        `yaml:"presence"`
+	Nodes       NodesConfig           `yaml:"nodes"`
 }
 
 // ResolvedConfig holds all runtime configuration with defaults applied.
@@ -41,6 +42,11 @@ type ResolvedConfig struct {
 
 	PresenceFlushInterval time.Duration
 	PresencePacketTTL     time.Duration
+
+	// ClockDriftThreshold is the |device clock - server clock| magnitude, measured from a
+	// node's ADVERT timestamp, above which the node API reports clockOutOfSync=true for
+	// that node. Only meaningful for repeaters/room servers (nodeType 2/3).
+	ClockDriftThreshold time.Duration
 }
 
 // PresenceConfig controls coalescing of presence bookkeeping writes
@@ -165,6 +171,14 @@ type PacketsConfig struct {
 	Retention duration `yaml:"retention"`
 }
 
+// NodesConfig controls node-derived signal thresholds.
+type NodesConfig struct {
+	// ClockDriftThreshold is the |device clock - server clock| magnitude, measured from a
+	// repeater/room server's ADVERT timestamp, above which the node API reports
+	// clockOutOfSync=true for that node. Defaults to 5m if not set.
+	ClockDriftThreshold duration `yaml:"clock_drift_threshold"`
+}
+
 // duration is a wrapper around time.Duration that supports YAML unmarshalling
 // from human-readable strings like "24h", "7d", "30d".
 type duration struct {
@@ -270,6 +284,8 @@ func Resolve(cfg *Config) ResolvedConfig {
 
 		PresenceFlushInterval: cfg.Presence.FlushInterval.Duration,
 		PresencePacketTTL:     cfg.Presence.PacketTTL.Duration,
+
+		ClockDriftThreshold: cfg.Nodes.ClockDriftThreshold.Duration,
 	}
 	if r.TelemetryResolution == 0 {
 		r.TelemetryResolution = time.Hour
@@ -298,14 +314,17 @@ func Resolve(cfg *Config) ResolvedConfig {
 	if r.PresencePacketTTL == 0 {
 		r.PresencePacketTTL = 30 * time.Second
 	}
+	if r.ClockDriftThreshold == 0 {
+		r.ClockDriftThreshold = 5 * time.Minute
+	}
 	return r
 }
 
 func (r ResolvedConfig) String() string {
 	return fmt.Sprintf(
-		"telemetryResolution=%s telemetryRetention=%s packetRetention=%s maxConnsPerIP=%d viewRefresh=%s reconfirm=%s cleanup=%s presenceFlush=%s presencePacketTTL=%s",
+		"telemetryResolution=%s telemetryRetention=%s packetRetention=%s maxConnsPerIP=%d viewRefresh=%s reconfirm=%s cleanup=%s presenceFlush=%s presencePacketTTL=%s clockDriftThreshold=%s",
 		r.TelemetryResolution, r.TelemetryRetention, r.PacketRetention,
 		r.MaxConnsPerIP, r.ViewRefreshInterval, r.ReconfirmInterval, r.CleanupInterval,
-		r.PresenceFlushInterval, r.PresencePacketTTL,
+		r.PresenceFlushInterval, r.PresencePacketTTL, r.ClockDriftThreshold,
 	)
 }

@@ -44,6 +44,69 @@ func TestUpsertNode_WithRadio(t *testing.T) {
 	}
 }
 
+func TestUpsertNode_ComputesClockDrift(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	deviceTime := uint32(time.Now().Add(-10 * time.Minute).Unix())
+
+	var captured sqlc.UpsertNodeParams
+	mock.EXPECT().
+		UpsertNode(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, p sqlc.UpsertNodeParams) (sqlc.Node, error) {
+			captured = p
+			return sqlc.Node{ID: nodeID}, nil
+		})
+
+	store := &Store{q: mock}
+	_, err := store.UpsertNode(context.Background(), ingest.UpsertNodeParams{
+		PublicKey:       []byte{0x01},
+		NodeType:        2, // repeater
+		Name:            "test-repeater",
+		AdvertTimestamp: deviceTime,
+	}, ingest.RadioSettings{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if captured.DeviceClockDriftSeconds == nil {
+		t.Fatal("expected DeviceClockDriftSeconds to be set")
+	}
+	// device clock is ~10 minutes (600s) behind; allow a few seconds of test-runtime slop
+	got := *captured.DeviceClockDriftSeconds
+	if got > -595 || got < -605 {
+		t.Errorf("expected drift near -600s, got %d", got)
+	}
+}
+
+func TestUpsertNode_NoAdvertTimestamp_OmitsDrift(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+	var captured sqlc.UpsertNodeParams
+	mock.EXPECT().
+		UpsertNode(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, p sqlc.UpsertNodeParams) (sqlc.Node, error) {
+			captured = p
+			return sqlc.Node{ID: nodeID}, nil
+		})
+
+	store := &Store{q: mock}
+	_, err := store.UpsertNode(context.Background(), ingest.UpsertNodeParams{
+		PublicKey: []byte{0x01},
+		NodeType:  2, // repeater, but AdvertTimestamp left zero (e.g. decode failed upstream)
+		Name:      "test-repeater",
+	}, ingest.RadioSettings{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if captured.DeviceClockDriftSeconds != nil {
+		t.Error("expected DeviceClockDriftSeconds to remain nil when AdvertTimestamp is zero")
+	}
+}
+
 func TestUpsertNode_WithoutRadio(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := mockdb.NewMockQuerier(ctrl)
@@ -273,6 +336,141 @@ func TestGetNode_LastAdvertAtNil(t *testing.T) {
 	}
 	if node.LastAdvertAt != nil {
 		t.Errorf("expected nil LastAdvertAt, got %d", *node.LastAdvertAt)
+	}
+}
+
+func TestGetNode_ClockDrift_OutOfSync(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	drift := int32(-600) // 10 minutes behind, beyond a 5m threshold
+
+	mock.EXPECT().
+		GetNodeByID(gomock.Any(), nodeID).
+		Return(sqlc.GetNodeByIDRow{
+			ID:                      nodeID,
+			PublicKey:               []byte{0x01},
+			NodeType:                2, // repeater
+			FirstSeen:               pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
+			LastSeen:                pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			LastAdvertAt:            pgtype.Timestamptz{Time: time.UnixMilli(1700000000000), Valid: true},
+			DeviceClockDriftSeconds: &drift,
+		}, nil)
+
+	mock.EXPECT().
+		GetNodeNeighbors(gomock.Any(), nodeID).
+		Return([]sqlc.GetNodeNeighborsRow{}, nil)
+
+	store := &Store{q: mock, clockDriftThreshold: 5 * time.Minute}
+	node, err := store.GetNode(context.Background(), nodeID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if node.ClockDriftSeconds == nil || *node.ClockDriftSeconds != -600 {
+		t.Fatalf("expected ClockDriftSeconds -600, got %v", node.ClockDriftSeconds)
+	}
+	if node.ClockOutOfSync == nil || !*node.ClockOutOfSync {
+		t.Errorf("expected ClockOutOfSync true, got %v", node.ClockOutOfSync)
+	}
+	if node.ClockCheckedAt == nil || *node.ClockCheckedAt != 1700000000000 {
+		t.Errorf("expected ClockCheckedAt 1700000000000, got %v", node.ClockCheckedAt)
+	}
+}
+
+func TestGetNode_ClockDrift_InSync(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	drift := int32(30) // well within a 5m threshold
+
+	mock.EXPECT().
+		GetNodeByID(gomock.Any(), nodeID).
+		Return(sqlc.GetNodeByIDRow{
+			ID:                      nodeID,
+			PublicKey:               []byte{0x01},
+			NodeType:                3, // room server
+			FirstSeen:               pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
+			LastSeen:                pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			LastAdvertAt:            pgtype.Timestamptz{Time: time.UnixMilli(1700000000000), Valid: true},
+			DeviceClockDriftSeconds: &drift,
+		}, nil)
+
+	mock.EXPECT().
+		GetNodeNeighbors(gomock.Any(), nodeID).
+		Return([]sqlc.GetNodeNeighborsRow{}, nil)
+
+	store := &Store{q: mock, clockDriftThreshold: 5 * time.Minute}
+	node, err := store.GetNode(context.Background(), nodeID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if node.ClockOutOfSync == nil || *node.ClockOutOfSync {
+		t.Errorf("expected ClockOutOfSync false, got %v", node.ClockOutOfSync)
+	}
+}
+
+func TestGetNode_ClockDrift_OmittedForCompanion(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	drift := int32(-600)
+
+	mock.EXPECT().
+		GetNodeByID(gomock.Any(), nodeID).
+		Return(sqlc.GetNodeByIDRow{
+			ID:                      nodeID,
+			PublicKey:               []byte{0x01},
+			NodeType:                1, // companion -- clock drift only applies to 2/3
+			FirstSeen:               pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
+			LastSeen:                pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			LastAdvertAt:            pgtype.Timestamptz{Time: time.UnixMilli(1700000000000), Valid: true},
+			DeviceClockDriftSeconds: &drift,
+		}, nil)
+
+	mock.EXPECT().
+		GetNodeNeighbors(gomock.Any(), nodeID).
+		Return([]sqlc.GetNodeNeighborsRow{}, nil)
+
+	store := &Store{q: mock, clockDriftThreshold: 5 * time.Minute}
+	node, err := store.GetNode(context.Background(), nodeID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if node.ClockDriftSeconds != nil || node.ClockOutOfSync != nil || node.ClockCheckedAt != nil {
+		t.Error("expected all three clock fields nil for a companion node")
+	}
+}
+
+func TestGetNode_ClockDrift_OmittedWhenUnmeasured(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+	mock.EXPECT().
+		GetNodeByID(gomock.Any(), nodeID).
+		Return(sqlc.GetNodeByIDRow{
+			ID:        nodeID,
+			PublicKey: []byte{0x01},
+			NodeType:  2, // repeater, but no advert-derived drift yet
+			FirstSeen: pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
+			LastSeen:  pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		}, nil)
+
+	mock.EXPECT().
+		GetNodeNeighbors(gomock.Any(), nodeID).
+		Return([]sqlc.GetNodeNeighborsRow{}, nil)
+
+	store := &Store{q: mock, clockDriftThreshold: 5 * time.Minute}
+	node, err := store.GetNode(context.Background(), nodeID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if node.ClockDriftSeconds != nil || node.ClockOutOfSync != nil || node.ClockCheckedAt != nil {
+		t.Error("expected all three clock fields nil when no advert has been measured yet")
 	}
 }
 

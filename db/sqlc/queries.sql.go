@@ -214,7 +214,7 @@ func (q *Queries) GetKnownRoutesByNode(ctx context.Context, arg GetKnownRoutesBy
 }
 
 const getNodeByID = `-- name: GetNodeByID :one
-SELECT n.id, n.public_key, n.node_type, n.name, n.latitude, n.longitude, n.location_source, n.last_advert_at, n.supports_multibyte_paths, n.supports_multibyte_traces, n.default_scope_id, n.min_firmware_version, n.first_seen, n.last_seen, n.radio_freq_mhz, n.radio_sf, n.radio_bw_khz, n.metadata, ts.name AS default_scope_name,
+SELECT n.id, n.public_key, n.node_type, n.name, n.latitude, n.longitude, n.location_source, n.last_advert_at, n.supports_multibyte_paths, n.supports_multibyte_traces, n.default_scope_id, n.min_firmware_version, n.first_seen, n.last_seen, n.radio_freq_mhz, n.radio_sf, n.radio_bw_khz, n.metadata, n.device_clock_drift_seconds, ts.name AS default_scope_name,
   EXISTS (SELECT 1 FROM observers o WHERE o.public_key = n.public_key) AS is_observer,
   (SELECT o.id FROM observers o WHERE o.public_key = n.public_key LIMIT 1) AS observer_id,
   (SELECT json_agg(json_build_object('iata', ni.iata, 'lastHeard', (extract(epoch from ni.last_heard) * 1000)::bigint) ORDER BY ni.last_heard DESC)
@@ -244,6 +244,7 @@ type GetNodeByIDRow struct {
 	RadioSf                 *int16             `json:"radio_sf"`
 	RadioBwKhz              *float32           `json:"radio_bw_khz"`
 	Metadata                []byte             `json:"metadata"`
+	DeviceClockDriftSeconds *int32             `json:"device_clock_drift_seconds"`
 	DefaultScopeName        *string            `json:"default_scope_name"`
 	IsObserver              bool               `json:"is_observer"`
 	ObserverID              uuid.UUID          `json:"observer_id"`
@@ -273,6 +274,7 @@ func (q *Queries) GetNodeByID(ctx context.Context, id uuid.UUID) (GetNodeByIDRow
 		&i.RadioSf,
 		&i.RadioBwKhz,
 		&i.Metadata,
+		&i.DeviceClockDriftSeconds,
 		&i.DefaultScopeName,
 		&i.IsObserver,
 		&i.ObserverID,
@@ -3632,8 +3634,8 @@ func (q *Queries) UpsertKnownRoute(ctx context.Context, arg UpsertKnownRoutePara
 
 const upsertNode = `-- name: UpsertNode :one
 
-INSERT INTO nodes (public_key, node_type, name, latitude, longitude, location_source, last_advert_at, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz)
-VALUES ($1, $2, $3, $4, $5, 'advert', NOW(), NOW(), $6, $7, $8)
+INSERT INTO nodes (public_key, node_type, name, latitude, longitude, location_source, last_advert_at, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz, device_clock_drift_seconds)
+VALUES ($1, $2, $3, $4, $5, 'advert', NOW(), NOW(), $6, $7, $8, $9)
 ON CONFLICT (public_key) DO UPDATE SET
   node_type       = EXCLUDED.node_type,
   name            = COALESCE(EXCLUDED.name, nodes.name),
@@ -3644,19 +3646,21 @@ ON CONFLICT (public_key) DO UPDATE SET
   last_seen       = NOW(),
   radio_freq_mhz  = EXCLUDED.radio_freq_mhz,
   radio_sf        = EXCLUDED.radio_sf,
-  radio_bw_khz    = EXCLUDED.radio_bw_khz
-RETURNING id, public_key, node_type, name, latitude, longitude, location_source, last_advert_at, supports_multibyte_paths, supports_multibyte_traces, default_scope_id, min_firmware_version, first_seen, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz, metadata
+  radio_bw_khz    = EXCLUDED.radio_bw_khz,
+  device_clock_drift_seconds = EXCLUDED.device_clock_drift_seconds
+RETURNING id, public_key, node_type, name, latitude, longitude, location_source, last_advert_at, supports_multibyte_paths, supports_multibyte_traces, default_scope_id, min_firmware_version, first_seen, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz, metadata, device_clock_drift_seconds
 `
 
 type UpsertNodeParams struct {
-	PublicKey    []byte   `json:"public_key"`
-	NodeType     int16    `json:"node_type"`
-	Name         *string  `json:"name"`
-	Latitude     *float64 `json:"latitude"`
-	Longitude    *float64 `json:"longitude"`
-	RadioFreqMhz *float32 `json:"radio_freq_mhz"`
-	RadioSf      *int16   `json:"radio_sf"`
-	RadioBwKhz   *float32 `json:"radio_bw_khz"`
+	PublicKey               []byte   `json:"public_key"`
+	NodeType                int16    `json:"node_type"`
+	Name                    *string  `json:"name"`
+	Latitude                *float64 `json:"latitude"`
+	Longitude               *float64 `json:"longitude"`
+	RadioFreqMhz            *float32 `json:"radio_freq_mhz"`
+	RadioSf                 *int16   `json:"radio_sf"`
+	RadioBwKhz              *float32 `json:"radio_bw_khz"`
+	DeviceClockDriftSeconds *int32   `json:"device_clock_drift_seconds"`
 }
 
 // ============================================================
@@ -3672,6 +3676,7 @@ func (q *Queries) UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, e
 		arg.RadioFreqMhz,
 		arg.RadioSf,
 		arg.RadioBwKhz,
+		arg.DeviceClockDriftSeconds,
 	)
 	var i Node
 	err := row.Scan(
@@ -3693,6 +3698,7 @@ func (q *Queries) UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, e
 		&i.RadioSf,
 		&i.RadioBwKhz,
 		&i.Metadata,
+		&i.DeviceClockDriftSeconds,
 	)
 	return i, err
 }

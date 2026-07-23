@@ -103,6 +103,7 @@ type Node struct {
 	RadioSf                 *int16             `json:"radio_sf"`
 	RadioBwKhz              *float32           `json:"radio_bw_khz"`
 	Metadata                []byte             `json:"metadata"`
+	DeviceClockDriftSeconds *int32             `json:"device_clock_drift_seconds"`
 }
 
 type NodeIata struct {

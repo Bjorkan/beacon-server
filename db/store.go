@@ -9,6 +9,7 @@ package db
 import (
 	"context"
 	"encoding/hex"
+	"time"
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
@@ -20,12 +21,15 @@ import (
 
 // Store wraps the sqlc-generated Queries and implements both ingest.DB and api.Reader.
 type Store struct {
-	q sqlc.Querier
+	q                   sqlc.Querier
+	clockDriftThreshold time.Duration // see api.Node.ClockOutOfSync
 }
 
-// New creates a Store backed by the given pgxpool connection pool.
-func New(pool *pgxpool.Pool) *Store {
-	return &Store{q: sqlc.New(pool)}
+// New creates a Store backed by the given pgxpool connection pool. clockDriftThreshold is
+// the |device clock - server clock| magnitude above which a repeater/room server's
+// clockOutOfSync is reported true; see internal/config.ResolvedConfig.ClockDriftThreshold.
+func New(pool *pgxpool.Pool, clockDriftThreshold time.Duration) *Store {
+	return &Store{q: sqlc.New(pool), clockDriftThreshold: clockDriftThreshold}
 }
 
 func (s *Store) ResolvePathHashes(ctx context.Context, iata string, hashes [][]byte) (map[string][]api.ResolvedPathEntry, error) {

@@ -63,6 +63,15 @@ type Node struct {
 	LastSeen                int64          `json:"lastSeen"`                     // epoch ms
 	Metadata                any            `json:"metadata,omitempty"`           // raw JSONB metadata
 	Neighbors               []NodeNeighbor `json:"neighbors"`
+	// Clock drift, repeaters/room servers only (nodeType 2/3); omitted entirely for other
+	// node types or when no qualifying advert has been measured yet. Device minus server
+	// time, in seconds, from the advert's self-reported timestamp: +ve = device ahead.
+	// clockCheckedAt is the server receive time of the advert this was measured from (same
+	// moment as lastAdvertAt). clockOutOfSync is |clockDriftSeconds| exceeding a configured
+	// threshold (default 5m) -- see internal/config.ResolvedConfig.ClockDriftThreshold.
+	ClockDriftSeconds *int   `json:"clockDriftSeconds,omitempty"`
+	ClockOutOfSync    *bool  `json:"clockOutOfSync,omitempty"`
+	ClockCheckedAt    *int64 `json:"clockCheckedAt,omitempty"`
 }
 
 // NodeTypeName returns a human-readable name for a node type integer.

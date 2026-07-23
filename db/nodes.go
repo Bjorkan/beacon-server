@@ -20,12 +20,21 @@ import (
 )
 
 func (s *Store) UpsertNode(ctx context.Context, n ingest.UpsertNodeParams, radio ingest.RadioSettings) (uuid.UUID, error) {
+	// advert.Timestamp is only meaningful when the advert actually decoded (AdvertTimestamp
+	// is left at its zero value otherwise); a zero epoch timestamp would misreport as ~55
+	// years of drift, so only compute/store a delta when it's non-zero.
+	var driftSeconds *int32
+	if n.AdvertTimestamp != 0 {
+		d := int32(int64(n.AdvertTimestamp) - time.Now().Unix())
+		driftSeconds = &d
+	}
 	params := sqlc.UpsertNodeParams{
-		PublicKey: n.PublicKey,
-		NodeType:  int16(n.NodeType),
-		Name:      &n.Name,
-		Latitude:  n.Latitude,
-		Longitude: n.Longitude,
+		PublicKey:               n.PublicKey,
+		NodeType:                int16(n.NodeType),
+		Name:                    &n.Name,
+		Latitude:                n.Latitude,
+		Longitude:               n.Longitude,
+		DeviceClockDriftSeconds: driftSeconds,
 	}
 	if radio.FreqMHz != 0 {
 		params.RadioFreqMhz = &radio.FreqMHz
@@ -190,7 +199,29 @@ func (s *Store) GetNode(ctx context.Context, nodeID uuid.UUID) (*api.Node, error
 		ms := row.LastAdvertAt.Time.UnixMilli()
 		node.LastAdvertAt = &ms
 	}
+	// Only repeaters (2) and room servers (3) sign adverts with a device clock worth
+	// checking; omit entirely (not just zero) for other node types or an unmeasured node
+	// per the API contract, so the frontend can distinguish "unknown" from "in sync".
+	if (row.NodeType == 2 || row.NodeType == 3) && row.DeviceClockDriftSeconds != nil && row.LastAdvertAt.Valid {
+		drift := int(*row.DeviceClockDriftSeconds)
+		node.ClockDriftSeconds = &drift
+		checkedAt := row.LastAdvertAt.Time.UnixMilli()
+		node.ClockCheckedAt = &checkedAt
+		outOfSync := time.Duration(abs(*row.DeviceClockDriftSeconds))*time.Second > s.clockDriftThreshold
+		node.ClockOutOfSync = &outOfSync
+	}
 	return node, nil
+}
+
+// abs returns the absolute value of an int32 without overflowing on math.MinInt32.
+func abs(n int32) int32 {
+	if n < 0 {
+		if n == -2147483648 { // math.MinInt32; -n would overflow
+			return 2147483647
+		}
+		return -n
+	}
+	return n
 }
 
 func (s *Store) GetNodesByIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*api.ResolvedNode, error) {

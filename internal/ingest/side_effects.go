@@ -24,6 +24,10 @@ type UpsertNodeParams struct {
 	NodeType  uint8 // 1=companion, 2=repeater, 3=room server
 	Latitude  *float64
 	Longitude *float64
+	// AdvertTimestamp is the device's self-reported wall-clock time (epoch seconds) from the
+	// signed advert body. Used to derive clock drift for repeaters/room servers; see
+	// api.Node.ClockDriftSeconds.
+	AdvertTimestamp uint32
 }
 
 // InsertChannelMessageParams carries a decrypted group text message.
@@ -84,11 +88,12 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 			lon = &lo
 		}
 		params := UpsertNodeParams{
-			PublicKey: advert.PublicKey.PublicKeyBytes(),
-			Name:      strings.ToValidUTF8(advert.AppData().Name, "\uFFFD"),
-			NodeType:  advert.Type(),
-			Latitude:  lat,
-			Longitude: lon,
+			PublicKey:       advert.PublicKey.PublicKeyBytes(),
+			Name:            strings.ToValidUTF8(advert.AppData().Name, "\uFFFD"),
+			NodeType:        advert.Type(),
+			Latitude:        lat,
+			Longitude:       lon,
+			AdvertTimestamp: advert.Timestamp,
 		}
 		var nodeRadio RadioSettings
 		if packet.PathHashCount() == 0 {
