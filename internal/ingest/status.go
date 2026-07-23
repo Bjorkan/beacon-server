@@ -96,7 +96,12 @@ func (w *Worker) handleStatus(ctx context.Context, pubkeyHex string, raw []byte)
 		StatusMetadata: raw,
 		LastStatusAt:   time.Now(),
 	}
-	params.UptimeSeconds = &envelope.Stats.UptimeSeconds
+	// A running observer never reports 0, so treat this the same as a missing
+	// stats object and leave the existing value alone (COALESCE in the SQL)
+	// rather than stomping it with a zero.
+	if envelope.Stats.UptimeSeconds != 0 {
+		params.UptimeSeconds = &envelope.Stats.UptimeSeconds
+	}
 	if envelope.Stats.BatteryMV != 0 {
 		batteryLevel := float32(envelope.Stats.BatteryMV) / 1000
 		params.BatteryLevel = &batteryLevel
@@ -151,32 +156,32 @@ func (w *Worker) handleStatus(ctx context.Context, pubkeyHex string, raw []byte)
 		return
 	}
 	// Store a telemetry snapshot at the configured resolution.
-	resolution := w.cfg.TelemetryResolution
-	if resolution == 0 {
-		resolution = time.Hour
-	}
-	reportedAt := time.Now().Truncate(resolution)
-	batteryMV := int32(envelope.Stats.BatteryMV)
-	txAirSecs := float32(envelope.Stats.TxAirSecs)
-	rxAirSecs := float32(envelope.Stats.RxAirSecs)
-	queueLen := int32(envelope.Stats.QueueLen)
-	debugFlags := int32(envelope.Stats.DebugFlags)
-	recvErrors := int32(envelope.Stats.RecvErrors)
+	// A running observer never reports uptime_secs == 0, so its absence (or a
+	// missing/renamed "stats" object entirely) means this payload has no usable
+	// stats — skip the insert rather than writing an all-zero row that would win
+	// the hourly dedup and pollute the telemetry aggregates.
+	if envelope.Stats.UptimeSeconds == 0 {
+		log.Printf("ingest[%s]: status from %s has no usable stats (uptime_secs missing or zero), skipping telemetry insert", w.cfg.BrokerName, pubkeyHex)
+	} else {
+		resolution := w.cfg.TelemetryResolution
+		if resolution == 0 {
+			resolution = time.Hour
+		}
+		reportedAt := time.Now().Truncate(resolution)
+		batteryMV := int32(envelope.Stats.BatteryMV)
+		txAirSecs := float32(envelope.Stats.TxAirSecs)
+		rxAirSecs := float32(envelope.Stats.RxAirSecs)
+		queueLen := int32(envelope.Stats.QueueLen)
+		debugFlags := int32(envelope.Stats.DebugFlags)
+		recvErrors := int32(envelope.Stats.RecvErrors)
 
-	if err := w.db.InsertObserverTelemetry(
-		ctx,
-		observerID,
-		reportedAt,
-		&batteryMV,
-		&txAirSecs,
-		&rxAirSecs,
-		envelope.Stats.NoiseFloor,
-		envelope.Stats.UptimeSeconds,
-		&queueLen,
-		&debugFlags,
-		&recvErrors,
-	); err != nil {
-		log.Printf("ingest[%s]: db: insert telemetry failed for %s: %v", w.cfg.BrokerName, pubkeyHex, err)
+		if err := w.db.InsertObserverTelemetry(
+			ctx, observerID, reportedAt, &batteryMV, &txAirSecs, &rxAirSecs,
+			envelope.Stats.NoiseFloor, envelope.Stats.UptimeSeconds,
+			&queueLen, &debugFlags, &recvErrors,
+		); err != nil {
+			log.Printf("ingest[%s]: db: insert telemetry failed for %s: %v", w.cfg.BrokerName, pubkeyHex, err)
+		}
 	}
 
 	iata, err := w.db.GetObserverLastIATA(ctx, observerID)
