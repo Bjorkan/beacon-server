@@ -5,6 +5,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
@@ -47,6 +48,30 @@ func (s *Store) GetIATA(ctx context.Context, iata string) (*api.IATA, error) {
 		Lat:         i.ApproxLat,
 		Lng:         i.ApproxLng,
 	}, nil
+}
+
+// GetIATABorder returns the raw GeoJSON Feature JSON for the given IATA's border, or nil if
+// the IATA exists but has no border configured. Returns an error (sql.ErrNoRows-equivalent)
+// if the IATA itself doesn't exist -- same not-found distinction GetIATA makes.
+func (s *Store) GetIATABorder(ctx context.Context, iata string) (json.RawMessage, error) {
+	border, err := s.q.GetIATABorder(ctx, iata)
+	if err != nil {
+		return nil, err
+	}
+	if border == nil {
+		return nil, nil
+	}
+	return json.RawMessage(border), nil
+}
+
+// UpsertIATABorder stores a pre-validated GeoJSON Feature (with bbox already computed) as an
+// IATA's border. Called only from the config-file-driven seeder; see internal/config/seed.go
+// and internal/config/border.go.
+func (s *Store) UpsertIATABorder(ctx context.Context, iata string, border json.RawMessage) error {
+	return s.q.UpsertIATABorder(ctx, sqlc.UpsertIATABorderParams{
+		Iata:   iata,
+		Border: border,
+	})
 }
 
 func (s *Store) UpsertRegion(ctx context.Context, slug, name, description string, displayOrder int, centerLat, centerLng *float64, zoomLevel *int) (int32, error) {

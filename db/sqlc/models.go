@@ -53,6 +53,7 @@ type IataCode struct {
 	ApproxLat   *float64           `json:"approx_lat"`
 	ApproxLng   *float64           `json:"approx_lng"`
 	AddedAt     pgtype.Timestamptz `json:"added_at"`
+	Border      []byte             `json:"border"`
 }
 
 type KnownRoute struct {

@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,6 +30,11 @@ type Reader interface {
 	// GetIATA returns a single IATA code by its 3-letter identifier.
 	// Returns nil, error if the IATA code is not found.
 	GetIATA(ctx context.Context, iata string) (*IATA, error)
+
+	// GetIATABorder returns the raw GeoJSON Feature JSON for the given IATA's border. Returns
+	// nil (no error) if the IATA exists but has no border configured -- the client renders
+	// that as "nothing to draw", not an error. Returns an error if the IATA itself is unknown.
+	GetIATABorder(ctx context.Context, iata string) (json.RawMessage, error)
 
 	// ListRegions returns a summary list of all regions ordered by display_order then name.
 	// Use GetRegion for full detail including associated IATAs.

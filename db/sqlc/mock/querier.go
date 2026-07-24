@@ -159,6 +159,21 @@ func (mr *MockQuerierMockRecorder) GetIATA(ctx, iata any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIATA", reflect.TypeOf((*MockQuerier)(nil).GetIATA), ctx, iata)
 }
 
+// GetIATABorder mocks base method.
+func (m *MockQuerier) GetIATABorder(ctx context.Context, iata string) ([]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetIATABorder", ctx, iata)
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetIATABorder indicates an expected call of GetIATABorder.
+func (mr *MockQuerierMockRecorder) GetIATABorder(ctx, iata any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIATABorder", reflect.TypeOf((*MockQuerier)(nil).GetIATABorder), ctx, iata)
+}
+
 // GetKnownRoutesByNode mocks base method.
 func (m *MockQuerier) GetKnownRoutesByNode(ctx context.Context, arg db.GetKnownRoutesByNodeParams) ([]db.KnownRoute, error) {
 	m.ctrl.T.Helper()
@@ -1323,6 +1338,20 @@ func (m *MockQuerier) UpsertIATA(ctx context.Context, iata string) error {
 func (mr *MockQuerierMockRecorder) UpsertIATA(ctx, iata any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertIATA", reflect.TypeOf((*MockQuerier)(nil).UpsertIATA), ctx, iata)
+}
+
+// UpsertIATABorder mocks base method.
+func (m *MockQuerier) UpsertIATABorder(ctx context.Context, arg db.UpsertIATABorderParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpsertIATABorder", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpsertIATABorder indicates an expected call of UpsertIATABorder.
+func (mr *MockQuerierMockRecorder) UpsertIATABorder(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertIATABorder", reflect.TypeOf((*MockQuerier)(nil).UpsertIATABorder), ctx, arg)
 }
 
 // UpsertIATADetails mocks base method.

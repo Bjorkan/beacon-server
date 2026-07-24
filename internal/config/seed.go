@@ -6,7 +6,10 @@ package config
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"log"
+	"os"
 	"strings"
 )
 
@@ -14,6 +17,7 @@ import (
 type Seeder interface {
 	UpsertIATA(ctx context.Context, iata string) error
 	UpsertIATADetails(ctx context.Context, iata string, name string, lat, lng *float64) error
+	UpsertIATABorder(ctx context.Context, iata string, border json.RawMessage) error
 	UpsertRegion(ctx context.Context, slug, name, description string, displayOrder int, centerLat, centerLng *float64, zoomLevel *int) (int32, error)
 	UpsertRegionIATA(ctx context.Context, regionID int32, iata string) error
 	UpsertTransportScope(ctx context.Context, name, displayName string, transportKey, keyFingerprint []byte) error
@@ -27,6 +31,19 @@ func Seed(ctx context.Context, cfg *Config, db Seeder) error {
 	for iata, details := range cfg.IATAs {
 		if err := db.UpsertIATADetails(ctx, iata, details.Name, details.Lat, details.Lng); err != nil {
 			return err
+		}
+		if details.BorderFile != "" {
+			raw, err := os.ReadFile(details.BorderFile)
+			if err != nil {
+				return fmt.Errorf("iata %s: reading border file %s: %w", iata, details.BorderFile, err)
+			}
+			border, err := ValidateBorder(raw)
+			if err != nil {
+				return fmt.Errorf("iata %s: invalid border in %s: %w", iata, details.BorderFile, err)
+			}
+			if err := db.UpsertIATABorder(ctx, iata, border); err != nil {
+				return err
+			}
 		}
 	}
 	// Regions

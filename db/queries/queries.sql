@@ -24,6 +24,21 @@ ON CONFLICT (iata) DO UPDATE SET
     approx_lat   = EXCLUDED.approx_lat,
     approx_lng   = EXCLUDED.approx_lng;
 
+-- name: GetIATABorder :one
+-- border is NULL when the IATA exists but has no border configured; a
+-- missing row (unknown IATA) is sql.ErrNoRows, same not-found distinction
+-- GetIATA already makes.
+SELECT border FROM iata_codes WHERE iata = $1;
+
+-- name: UpsertIATABorder :exec
+-- Written by the config-file-driven seeder (internal/config/seed.go), not a
+-- runtime HTTP path. border is a full, pre-validated GeoJSON Feature with
+-- bbox already computed -- see internal/config/border.go.
+INSERT INTO iata_codes (iata, border)
+VALUES ($1, $2)
+ON CONFLICT (iata) DO UPDATE SET
+    border = EXCLUDED.border;
+
 -- ============================================================
 -- TRANSPORT CODES
 -- ============================================================

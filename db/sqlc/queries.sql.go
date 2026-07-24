@@ -175,7 +175,7 @@ func (q *Queries) GetHourlyStats(ctx context.Context, arg GetHourlyStatsParams) 
 }
 
 const getIATA = `-- name: GetIATA :one
-SELECT iata, display_name, approx_lat, approx_lng, added_at FROM iata_codes WHERE iata = $1
+SELECT iata, display_name, approx_lat, approx_lng, added_at, border FROM iata_codes WHERE iata = $1
 `
 
 func (q *Queries) GetIATA(ctx context.Context, iata string) (IataCode, error) {
@@ -187,8 +187,23 @@ func (q *Queries) GetIATA(ctx context.Context, iata string) (IataCode, error) {
 		&i.ApproxLat,
 		&i.ApproxLng,
 		&i.AddedAt,
+		&i.Border,
 	)
 	return i, err
+}
+
+const getIATABorder = `-- name: GetIATABorder :one
+SELECT border FROM iata_codes WHERE iata = $1
+`
+
+// border is NULL when the IATA exists but has no border configured; a
+// missing row (unknown IATA) is sql.ErrNoRows, same not-found distinction
+// GetIATA already makes.
+func (q *Queries) GetIATABorder(ctx context.Context, iata string) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getIATABorder, iata)
+	var border []byte
+	err := row.Scan(&border)
+	return border, err
 }
 
 const getKnownRoutesByNode = `-- name: GetKnownRoutesByNode :many
@@ -1943,7 +1958,7 @@ func (q *Queries) ListChannels(ctx context.Context, arg ListChannelsParams) ([]C
 }
 
 const listIATAs = `-- name: ListIATAs :many
-SELECT iata, display_name, approx_lat, approx_lng, added_at FROM iata_codes ORDER BY iata
+SELECT iata, display_name, approx_lat, approx_lng, added_at, border FROM iata_codes ORDER BY iata
 `
 
 func (q *Queries) ListIATAs(ctx context.Context) ([]IataCode, error) {
@@ -1961,6 +1976,7 @@ func (q *Queries) ListIATAs(ctx context.Context) ([]IataCode, error) {
 			&i.ApproxLat,
 			&i.ApproxLng,
 			&i.AddedAt,
+			&i.Border,
 		); err != nil {
 			return nil, err
 		}
@@ -3639,6 +3655,26 @@ ON CONFLICT (iata) DO NOTHING
 // ============================================================
 func (q *Queries) UpsertIATA(ctx context.Context, iata string) error {
 	_, err := q.db.Exec(ctx, upsertIATA, iata)
+	return err
+}
+
+const upsertIATABorder = `-- name: UpsertIATABorder :exec
+INSERT INTO iata_codes (iata, border)
+VALUES ($1, $2)
+ON CONFLICT (iata) DO UPDATE SET
+    border = EXCLUDED.border
+`
+
+type UpsertIATABorderParams struct {
+	Iata   string `json:"iata"`
+	Border []byte `json:"border"`
+}
+
+// Written by the config-file-driven seeder (internal/config/seed.go), not a
+// runtime HTTP path. border is a full, pre-validated GeoJSON Feature with
+// bbox already computed -- see internal/config/border.go.
+func (q *Queries) UpsertIATABorder(ctx context.Context, arg UpsertIATABorderParams) error {
+	_, err := q.db.Exec(ctx, upsertIATABorder, arg.Iata, arg.Border)
 	return err
 }
 

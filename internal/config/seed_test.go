@@ -6,7 +6,9 @@ package config
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"os"
 	"testing"
 )
 
@@ -15,6 +17,7 @@ type stubSeeder struct {
 	iatas       []string
 	regionIATAs map[int32][]string
 	scopes      []string
+	borders     map[string]json.RawMessage
 	upsertErr   error
 }
 
@@ -22,6 +25,7 @@ func newStubSeeder() *stubSeeder {
 	return &stubSeeder{
 		regions:     make(map[string]int32),
 		regionIATAs: make(map[int32][]string),
+		borders:     make(map[string]json.RawMessage),
 	}
 }
 
@@ -32,6 +36,11 @@ func (s *stubSeeder) UpsertIATA(_ context.Context, iata string) error {
 
 func (s *stubSeeder) UpsertIATADetails(_ context.Context, iata, _ string, _, _ *float64) error {
 	s.iatas = append(s.iatas, iata)
+	return s.upsertErr
+}
+
+func (s *stubSeeder) UpsertIATABorder(_ context.Context, iata string, border json.RawMessage) error {
+	s.borders[iata] = border
 	return s.upsertErr
 }
 
@@ -70,6 +79,83 @@ func TestSeed_IATAsAndRegions(t *testing.T) {
 	}
 	if len(db.regionIATAs[1]) != 2 {
 		t.Errorf("expected 2 IATAs for region 1, got %d", len(db.regionIATAs[1]))
+	}
+}
+
+func TestSeed_BorderFile_ValidatesAndUpserts(t *testing.T) {
+	dir := t.TempDir()
+	borderPath := dir + "/yow.geojson"
+	if err := os.WriteFile(borderPath, []byte(`{
+		"type": "Feature",
+		"properties": {"name": "Ottawa"},
+		"geometry": {
+			"type": "Polygon",
+			"coordinates": [[[-76.4,45.0],[-75.2,45.0],[-75.2,45.6],[-76.4,45.6],[-76.4,45.0]]]
+		}
+	}`), 0o644); err != nil {
+		t.Fatalf("failed to write test border file: %v", err)
+	}
+
+	cfg := &Config{
+		IATAs: map[string]IATAConfig{
+			"YOW": {Name: "Ottawa", BorderFile: borderPath},
+		},
+	}
+	db := newStubSeeder()
+	if err := Seed(context.Background(), cfg, db); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	border, ok := db.borders["YOW"]
+	if !ok {
+		t.Fatal("expected a border to be upserted for YOW")
+	}
+	var feat map[string]any
+	if err := json.Unmarshal(border, &feat); err != nil {
+		t.Fatalf("stored border is not valid JSON: %v", err)
+	}
+	if _, ok := feat["bbox"]; !ok {
+		t.Error("expected stored border to have a computed bbox")
+	}
+}
+
+func TestSeed_BorderFile_InvalidGeometryFailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	borderPath := dir + "/bad.geojson"
+	// unclosed ring
+	if err := os.WriteFile(borderPath, []byte(`{
+		"type": "Feature",
+		"properties": {},
+		"geometry": {
+			"type": "Polygon",
+			"coordinates": [[[-76.4,45.0],[-75.2,45.0],[-75.2,45.6]]]
+		}
+	}`), 0o644); err != nil {
+		t.Fatalf("failed to write test border file: %v", err)
+	}
+
+	cfg := &Config{
+		IATAs: map[string]IATAConfig{
+			"YOW": {Name: "Ottawa", BorderFile: borderPath},
+		},
+	}
+	db := newStubSeeder()
+	if err := Seed(context.Background(), cfg, db); err == nil {
+		t.Fatal("expected Seed to fail on an invalid border file")
+	}
+	if _, ok := db.borders["YOW"]; ok {
+		t.Error("expected no border to be upserted when validation fails")
+	}
+}
+
+func TestSeed_BorderFile_MissingFileFailsClosed(t *testing.T) {
+	cfg := &Config{
+		IATAs: map[string]IATAConfig{
+			"YOW": {Name: "Ottawa", BorderFile: "/nonexistent/path/border.geojson"},
+		},
+	}
+	db := newStubSeeder()
+	if err := Seed(context.Background(), cfg, db); err == nil {
+		t.Fatal("expected Seed to fail when the border file doesn't exist")
 	}
 }
 

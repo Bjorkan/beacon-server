@@ -8,6 +8,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -222,6 +223,11 @@ type IATAConfig struct {
 	Name string   `yaml:"name"`
 	Lat  *float64 `yaml:"lat"`
 	Lng  *float64 `yaml:"lng"`
+	// BorderFile is a path to a GeoJSON Feature file (Polygon or MultiPolygon geometry) for
+	// this IATA's region border map. Relative paths are resolved against the directory
+	// containing the main config file (see Load). Validated and bbox-computed at seed time --
+	// see border.go.
+	BorderFile string `yaml:"borderFile"`
 }
 
 // RegionConfig defines a super-region and its member IATAs.
@@ -267,6 +273,13 @@ func Load(path string) (*Config, error) {
 	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
+	}
+	configDir := filepath.Dir(path)
+	for iata, details := range cfg.IATAs {
+		if details.BorderFile != "" && !filepath.IsAbs(details.BorderFile) {
+			details.BorderFile = filepath.Join(configDir, details.BorderFile)
+			cfg.IATAs[iata] = details
+		}
 	}
 	return cfg, nil
 }

@@ -5,6 +5,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
@@ -17,6 +18,7 @@ import (
 type stubReader struct {
 	listIATAs                    func(ctx context.Context) ([]api.IATA, error)
 	getIATA                      func(ctx context.Context, iata string) (*api.IATA, error)
+	getIATABorder                func(ctx context.Context, iata string) (json.RawMessage, error)
 	listRegions                  func(ctx context.Context) ([]api.RegionSummary, error)
 	getRegion                    func(ctx context.Context, regionID int32) (*api.Region, error)
 	getRegionBySlug              func(ctx context.Context, slug string) (*api.Region, error)
@@ -71,6 +73,13 @@ func (s stubReader) ListIATAs(ctx context.Context) ([]api.IATA, error) {
 func (s stubReader) GetIATA(ctx context.Context, iata string) (*api.IATA, error) {
 	if s.getIATA != nil {
 		return s.getIATA(ctx, iata)
+	}
+	return nil, nil
+}
+
+func (s stubReader) GetIATABorder(ctx context.Context, iata string) (json.RawMessage, error) {
+	if s.getIATABorder != nil {
+		return s.getIATABorder(ctx, iata)
 	}
 	return nil, nil
 }

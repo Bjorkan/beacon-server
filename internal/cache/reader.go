@@ -5,6 +5,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 const (
 	keyIATAs                   = "beacon:iatas"
 	keyIATAPrefix              = "beacon:iata:"
+	keyIATABorderPrefix        = "beacon:iata:border:"
 	keyRegions                 = "beacon:regions"
 	keyRegionPrefix            = "beacon:region:"
 	keyRegionSlugPrefix        = "beacon:region:slug:"
@@ -95,6 +97,13 @@ func (cr *CachedReader) ListIATAs(ctx context.Context) ([]api.IATA, error) {
 func (cr *CachedReader) GetIATA(ctx context.Context, iata string) (*api.IATA, error) {
 	return getOrSet(ctx, cr.c, keyIATAPrefix+iata, cr.ttl.Reference, func() (*api.IATA, error) {
 		return cr.inner.GetIATA(ctx, iata)
+	})
+}
+
+// GetIATABorder implements [api.Reader].
+func (cr *CachedReader) GetIATABorder(ctx context.Context, iata string) (json.RawMessage, error) {
+	return getOrSet(ctx, cr.c, keyIATABorderPrefix+iata, cr.ttl.Reference, func() (json.RawMessage, error) {
+		return cr.inner.GetIATABorder(ctx, iata)
 	})
 }
 

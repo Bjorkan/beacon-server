@@ -26,6 +26,10 @@ type Querier interface {
 	GetCrossIATANeighbors(ctx context.Context, arg GetCrossIATANeighborsParams) ([]GetCrossIATANeighborsRow, error)
 	GetHourlyStats(ctx context.Context, arg GetHourlyStatsParams) ([]MvHourlyIataStat, error)
 	GetIATA(ctx context.Context, iata string) (IataCode, error)
+	// border is NULL when the IATA exists but has no border configured; a
+	// missing row (unknown IATA) is sql.ErrNoRows, same not-found distinction
+	// GetIATA already makes.
+	GetIATABorder(ctx context.Context, iata string) ([]byte, error)
 	GetKnownRoutesByNode(ctx context.Context, arg GetKnownRoutesByNodeParams) ([]KnownRoute, error)
 	GetNodeByID(ctx context.Context, id uuid.UUID) (GetNodeByIDRow, error)
 	GetNodeByPubkey(ctx context.Context, publicKey []byte) (uuid.UUID, error)
@@ -195,6 +199,10 @@ type Querier interface {
 	// IATA CODES
 	// ============================================================
 	UpsertIATA(ctx context.Context, iata string) error
+	// Written by the config-file-driven seeder (internal/config/seed.go), not a
+	// runtime HTTP path. border is a full, pre-validated GeoJSON Feature with
+	// bbox already computed -- see internal/config/border.go.
+	UpsertIATABorder(ctx context.Context, arg UpsertIATABorderParams) error
 	UpsertIATADetails(ctx context.Context, arg UpsertIATADetailsParams) error
 	// ============================================================
 	// ROUTES
