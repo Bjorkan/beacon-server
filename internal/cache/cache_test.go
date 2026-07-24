@@ -37,7 +37,8 @@ func (s *stubReader) ListIATAs(_ context.Context) ([]api.IATA, error) {
 }
 
 // implement remaining api.Reader methods as no-ops
-func (s *stubReader) GetIATA(_ context.Context, _ string) (*api.IATA, error)     { return nil, nil }
+func (s *stubReader) GetIATA(_ context.Context, _ string) (*api.IATA, error) { return nil, nil }
+
 func (s *stubReader) GetIATABorder(_ context.Context, _ string) (json.RawMessage, error) {
 	return nil, nil
 }
