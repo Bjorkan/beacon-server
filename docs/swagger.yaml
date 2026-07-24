@@ -101,6 +101,28 @@ definitions:
         description: display name from config or nil
         type: string
     type: object
+  github_com_MeshCore-Beacon_beacon-server_internal_api.ClockDriftEntry:
+    properties:
+      clockCheckedAt:
+        description: epoch ms
+        type: integer
+      clockDriftSeconds:
+        description: signed; +ve = device ahead of server
+        type: integer
+      iatas:
+        description: IATAs this node has been heard in
+        items:
+          $ref: '#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.NodeIATA'
+        type: array
+      nodeId:
+        type: string
+      nodeName:
+        type: string
+      nodeType:
+        type: integer
+      nodeTypeName:
+        type: string
+    type: object
   github_com_MeshCore-Beacon_beacon-server_internal_api.CrossIATAHop:
     properties:
       fromIata:
@@ -2130,6 +2152,42 @@ paths:
       summary: Get scope detail by name
       tags:
       - Scopes
+  /stats/clock-drift:
+    get:
+      parameters:
+      - description: Comma-separated IATA codes
+        in: query
+        name: iatas
+        type: string
+      - description: Filter by region ID, expands to member IATAs
+        in: query
+        name: regionId
+        type: integer
+      - description: Filter by region slug, expands to member IATAs
+        in: query
+        name: region
+        type: string
+      - description: Max results (default 10)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ClockDriftEntry'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handlers.APIError'
+      summary: Repeaters/room servers whose clock has drifted beyond the configured
+        threshold, worst first
+      tags:
+      - Stats
   /stats/node-types:
     get:
       parameters:

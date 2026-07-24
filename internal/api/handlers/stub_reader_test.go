@@ -47,6 +47,7 @@ type stubReader struct {
 	getStatsTopNodes             func(ctx context.Context, iatas []string, limit int32) ([]api.TopNode, error)
 	getStatsTopObservers         func(ctx context.Context, iatas []string, since time.Time, limit int32) ([]api.TopObserver, error)
 	getStatsTopAdvertisers       func(ctx context.Context, iatas []string, since time.Time, limit int32) ([]api.TopAdvertiser, error)
+	getStatsClockDrift           func(ctx context.Context, iatas []string, limit int32) ([]api.ClockDriftEntry, error)
 	getStatsTopTalkers           func(ctx context.Context, iatas []string, since time.Time, limit int32) ([]api.TopTalker, error)
 	getScopeStats                func(ctx context.Context) ([]api.ScopeStats, error)
 	getStatsNodeTypes            func(ctx context.Context, iatas []string) ([]api.NodeTypeCount, error)
@@ -276,6 +277,13 @@ func (s stubReader) GetStatsTopObservers(ctx context.Context, iatas []string, si
 func (s stubReader) GetStatsTopAdvertisers(ctx context.Context, iatas []string, since time.Time, limit int32) ([]api.TopAdvertiser, error) {
 	if s.getStatsTopAdvertisers != nil {
 		return s.getStatsTopAdvertisers(ctx, iatas, since, limit)
+	}
+	return nil, nil
+}
+
+func (s stubReader) GetStatsClockDrift(ctx context.Context, iatas []string, limit int32) ([]api.ClockDriftEntry, error) {
+	if s.getStatsClockDrift != nil {
+		return s.getStatsClockDrift(ctx, iatas, limit)
 	}
 	return nil, nil
 }

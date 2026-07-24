@@ -5,6 +5,8 @@ package db
 
 import (
 	"context"
+	"encoding/json"
+	"log"
 	"time"
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
@@ -156,6 +158,39 @@ func (s *Store) GetStatsTopAdvertisers(ctx context.Context, iatas []string, sinc
 			DirectAdvertCount: v.DirectAdvertCount,
 			LastHeard:         v.LastHeard.Time.UnixMilli(),
 		})
+	}
+	return items, nil
+}
+
+// GetStatsClockDrift returns repeaters/room servers whose current advert-derived clock
+// drift exceeds the Store's configured threshold, worst first.
+func (s *Store) GetStatsClockDrift(ctx context.Context, iatas []string, limit int32) ([]api.ClockDriftEntry, error) {
+	thresholdSeconds := int32(s.clockDriftThreshold / time.Second)
+	rows, err := s.q.GetStatsClockDrift(ctx, sqlc.GetStatsClockDriftParams{
+		Column1: thresholdSeconds,
+		Column2: iatas,
+		Limit:   limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]api.ClockDriftEntry, 0, len(rows))
+	for _, v := range rows {
+		entry := api.ClockDriftEntry{
+			NodeID:            v.ID,
+			NodeName:          v.Name,
+			NodeType:          v.NodeType,
+			NodeTypeName:      api.NodeTypeName(v.NodeType),
+			ClockDriftSeconds: int(*v.DeviceClockDriftSeconds),
+			ClockCheckedAt:    v.LastAdvertAt.Time.UnixMilli(),
+		}
+		if len(v.Iatas) > 0 {
+			if err := json.Unmarshal(v.Iatas, &entry.IATAs); err != nil {
+				log.Printf("store: failed to unmarshal clock drift node iatas: %v", err)
+				entry.IATAs = []api.NodeIATA{}
+			}
+		}
+		items = append(items, entry)
 	}
 	return items, nil
 }

@@ -66,6 +66,10 @@ type Querier interface {
 	// before COUNT(DISTINCT) (~10s).
 	GetScopeStats(ctx context.Context) ([]GetScopeStatsRow, error)
 	GetScopesByIATAs(ctx context.Context, dollar_1 []string) ([]GetScopesByIATAsRow, error)
+	// Repeaters/room servers (node_type 2/3) whose current advert-derived clock drift exceeds
+	// the given threshold in magnitude, worst first. Not time-windowed -- reflects each node's
+	// latest measured drift, not an aggregate over a period.
+	GetStatsClockDrift(ctx context.Context, arg GetStatsClockDriftParams) ([]GetStatsClockDriftRow, error)
 	// Returns node counts grouped by type, optionally filtered by IATA.
 	GetStatsNodeTypes(ctx context.Context, dollar_1 []string) ([]GetStatsNodeTypesRow, error)
 	// ============================================================

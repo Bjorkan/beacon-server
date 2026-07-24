@@ -100,3 +100,18 @@ type NodeTypeCount struct {
 	NodeTypeName string `json:"nodeTypeName"`
 	Count        int64  `json:"count"`
 }
+
+// ClockDriftEntry is a repeater or room server whose most recent advert-derived clock drift
+// exceeds the configured threshold (nodes.clock_drift_threshold, default 5m) -- see
+// GetStatsClockDrift. Ordered worst-drift-first. ClockDriftSeconds/ClockCheckedAt mirror the
+// same-named fields on Node; unlike Node this list only ever contains out-of-sync nodes, so
+// there's no ClockOutOfSync bool here -- being in the list already means true.
+type ClockDriftEntry struct {
+	NodeID            uuid.UUID  `json:"nodeId"`
+	NodeName          *string    `json:"nodeName,omitempty"`
+	NodeType          int16      `json:"nodeType"`
+	NodeTypeName      string     `json:"nodeTypeName"`
+	ClockDriftSeconds int        `json:"clockDriftSeconds"` // signed; +ve = device ahead of server
+	ClockCheckedAt    int64      `json:"clockCheckedAt"`    // epoch ms
+	IATAs             []NodeIATA `json:"iatas,omitempty"`   // IATAs this node has been heard in
+}

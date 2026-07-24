@@ -913,6 +913,27 @@ GROUP BY node_id, name, node_type
 ORDER BY advert_count DESC
 LIMIT $3;
 
+-- name: GetStatsClockDrift :many
+-- Repeaters/room servers (node_type 2/3) whose current advert-derived clock drift exceeds
+-- the given threshold in magnitude, worst first. Not time-windowed -- reflects each node's
+-- latest measured drift, not an aggregate over a period.
+SELECT
+  n.id,
+  n.name,
+  n.node_type,
+  n.device_clock_drift_seconds,
+  n.last_advert_at,
+  json_agg(json_build_object('iata', ni.iata, 'lastHeard', (extract(epoch from ni.last_heard) * 1000)::bigint) ORDER BY ni.last_heard DESC) FILTER (WHERE ni.iata IS NOT NULL) AS iatas
+FROM nodes n
+LEFT JOIN node_iatas ni ON ni.node_id = n.id
+WHERE n.node_type IN (2, 3)
+  AND n.device_clock_drift_seconds IS NOT NULL
+  AND ABS(n.device_clock_drift_seconds) > $1::int
+  AND (COALESCE(cardinality($2::bpchar[]), 0) = 0 OR n.id IN (SELECT node_id FROM node_iatas WHERE iata = ANY($2::bpchar[])))
+GROUP BY n.id, n.name, n.node_type, n.device_clock_drift_seconds, n.last_advert_at
+ORDER BY ABS(n.device_clock_drift_seconds) DESC
+LIMIT $3;
+
 -- name: GetStatsTopTalkers :many
 -- Top N talkers (by decrypted sender_name) in the window, summed from the hourly buckets.
 SELECT

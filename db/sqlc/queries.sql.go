@@ -1157,6 +1157,70 @@ func (q *Queries) GetScopesByIATAs(ctx context.Context, dollar_1 []string) ([]Ge
 	return items, nil
 }
 
+const getStatsClockDrift = `-- name: GetStatsClockDrift :many
+SELECT
+  n.id,
+  n.name,
+  n.node_type,
+  n.device_clock_drift_seconds,
+  n.last_advert_at,
+  json_agg(json_build_object('iata', ni.iata, 'lastHeard', (extract(epoch from ni.last_heard) * 1000)::bigint) ORDER BY ni.last_heard DESC) FILTER (WHERE ni.iata IS NOT NULL) AS iatas
+FROM nodes n
+LEFT JOIN node_iatas ni ON ni.node_id = n.id
+WHERE n.node_type IN (2, 3)
+  AND n.device_clock_drift_seconds IS NOT NULL
+  AND ABS(n.device_clock_drift_seconds) > $1::int
+  AND (COALESCE(cardinality($2::bpchar[]), 0) = 0 OR n.id IN (SELECT node_id FROM node_iatas WHERE iata = ANY($2::bpchar[])))
+GROUP BY n.id, n.name, n.node_type, n.device_clock_drift_seconds, n.last_advert_at
+ORDER BY ABS(n.device_clock_drift_seconds) DESC
+LIMIT $3
+`
+
+type GetStatsClockDriftParams struct {
+	Column1 int32    `json:"column_1"`
+	Column2 []string `json:"column_2"`
+	Limit   int32    `json:"limit"`
+}
+
+type GetStatsClockDriftRow struct {
+	ID                      uuid.UUID          `json:"id"`
+	Name                    *string            `json:"name"`
+	NodeType                int16              `json:"node_type"`
+	DeviceClockDriftSeconds *int32             `json:"device_clock_drift_seconds"`
+	LastAdvertAt            pgtype.Timestamptz `json:"last_advert_at"`
+	Iatas                   []byte             `json:"iatas"`
+}
+
+// Repeaters/room servers (node_type 2/3) whose current advert-derived clock drift exceeds
+// the given threshold in magnitude, worst first. Not time-windowed -- reflects each node's
+// latest measured drift, not an aggregate over a period.
+func (q *Queries) GetStatsClockDrift(ctx context.Context, arg GetStatsClockDriftParams) ([]GetStatsClockDriftRow, error) {
+	rows, err := q.db.Query(ctx, getStatsClockDrift, arg.Column1, arg.Column2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetStatsClockDriftRow{}
+	for rows.Next() {
+		var i GetStatsClockDriftRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.NodeType,
+			&i.DeviceClockDriftSeconds,
+			&i.LastAdvertAt,
+			&i.Iatas,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getStatsNodeTypes = `-- name: GetStatsNodeTypes :many
 SELECT
   n.node_type,

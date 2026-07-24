@@ -32,6 +32,7 @@ const (
 	keyStatsTopNodesPrefix     = "beacon:stats:top-nodes:"
 	keyStatsTopObsPrefix       = "beacon:stats:top-observers:"
 	keyStatsTopAdvPrefix       = "beacon:stats:top-advertisers:"
+	keyStatsClockDriftPrefix   = "beacon:stats:clock-drift:"
 	keyStatsTopTalkersPrefix   = "beacon:stats:top-talkers:"
 	keyStatsNodeTypes          = "beacon:stats:node-types:"
 	keyRadioPresetsPrefix      = "beacon:radio-presets:"
@@ -255,6 +256,20 @@ func (cr *CachedReader) GetStatsTopAdvertisers(ctx context.Context, iatas []stri
 	key := fmt.Sprintf("%s%s:%d:%d", keyStatsTopAdvPrefix, segment, since.UnixMilli(), limit)
 	return getOrSet(ctx, cr.c, key, cr.ttl.Stats, func() ([]api.TopAdvertiser, error) {
 		return cr.inner.GetStatsTopAdvertisers(ctx, iatas, since, limit)
+	})
+}
+
+// GetStatsClockDrift implements [api.Reader].
+func (cr *CachedReader) GetStatsClockDrift(ctx context.Context, iatas []string, limit int32) ([]api.ClockDriftEntry, error) {
+	segment := "all"
+	if len(iatas) > 0 {
+		sorted := append([]string(nil), iatas...)
+		sort.Strings(sorted)
+		segment = strings.Join(sorted, ",")
+	}
+	key := fmt.Sprintf("%s%s:%d", keyStatsClockDriftPrefix, segment, limit)
+	return getOrSet(ctx, cr.c, key, cr.ttl.Stats, func() ([]api.ClockDriftEntry, error) {
+		return cr.inner.GetStatsClockDrift(ctx, iatas, limit)
 	})
 }
 

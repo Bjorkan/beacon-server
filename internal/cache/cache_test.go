@@ -81,6 +81,10 @@ func (s *stubReader) GetStatsTopAdvertisers(_ context.Context, _ []string, _ tim
 	return nil, nil
 }
 
+func (s *stubReader) GetStatsClockDrift(_ context.Context, _ []string, _ int32) ([]api.ClockDriftEntry, error) {
+	return nil, nil
+}
+
 func (s *stubReader) GetStatsTopTalkers(_ context.Context, _ []string, _ time.Time, _ int32) ([]api.TopTalker, error) {
 	return nil, nil
 }

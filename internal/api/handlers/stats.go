@@ -34,6 +34,7 @@ func StatsRouter(reader api.Reader) http.Handler {
 	r.Get("/top-nodes", getStatsTopNodes(reader))
 	r.Get("/top-observers", getStatsTopObservers(reader))
 	r.Get("/top-advertisers", getStatsTopAdvertisers(reader))
+	r.Get("/clock-drift", getStatsClockDrift(reader))
 	r.Get("/top-talkers", getStatsTopTalkers(reader))
 	r.Get("/radio-presets", getStatsRadioPresets(reader))
 	r.Get("/scopes", getStatsScopes(reader))
@@ -300,6 +301,48 @@ func getStatsTopAdvertisers(reader api.Reader) http.HandlerFunc {
 			return
 		}
 		respond(w, http.StatusOK, advertisers)
+	}
+}
+
+// getStatsClockDrift godoc
+//
+//	@Summary	Repeaters/room servers whose clock has drifted beyond the configured threshold, worst first
+//	@Tags		Stats
+//	@Produce	json
+//	@Param		iatas		query	string	false	"Comma-separated IATA codes"
+//	@Param		regionId	query	int		false	"Filter by region ID, expands to member IATAs"
+//	@Param		region		query	string	false	"Filter by region slug, expands to member IATAs"
+//	@Param		limit	query		int		false	"Max results (default 10)"
+//	@Success	200		{array}		api.ClockDriftEntry
+//	@Failure	500		{object}	handlers.APIError
+//	@Router		/stats/clock-drift [get]
+func getStatsClockDrift(reader api.Reader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		iatas := parseIATAs(r)
+		if regionIDStr := r.URL.Query().Get("regionId"); regionIDStr != "" || r.URL.Query().Get("region") != "" {
+			regionIATAs, err := resolveRegionIATAs(r.Context(), regionIDStr, r.URL.Query().Get("region"), reader)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			iatas = append(iatas, regionIATAs...)
+		}
+		var limit int32 = 10
+		if p := r.URL.Query().Get("limit"); p != "" {
+			l, err := strconv.ParseInt(p, 10, 32)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "limit must be an integer")
+				return
+			}
+			limit = int32(l)
+		}
+		entries, err := reader.GetStatsClockDrift(r.Context(), iatas, limit)
+		if err != nil {
+			log.Printf("api: GetStatsClockDrift failed: %v", err)
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+		respond(w, http.StatusOK, entries)
 	}
 }
 

@@ -159,6 +159,45 @@ func TestGetStatsTopAdvertisers_FloodDirectSplit(t *testing.T) {
 	}
 }
 
+func TestGetStatsClockDrift_Mapping(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000004")
+	name := "drifty-repeater"
+	drift := int32(-600)
+	checkedAt := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	iatasJSON := []byte(`[{"iata":"YVR","lastHeard":1700000000000}]`)
+
+	mock.EXPECT().
+		GetStatsClockDrift(gomock.Any(), gomock.Any()).
+		Return([]sqlc.GetStatsClockDriftRow{
+			{
+				ID:                      nodeID,
+				Name:                    &name,
+				NodeType:                2, // repeater
+				DeviceClockDriftSeconds: &drift,
+				LastAdvertAt:            checkedAt,
+				Iatas:                   iatasJSON,
+			},
+		}, nil)
+
+	store := &Store{q: mock, clockDriftThreshold: 5 * time.Minute}
+	items, err := store.GetStatsClockDrift(context.Background(), []string{"YVR"}, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].ClockDriftSeconds != -600 {
+		t.Errorf("expected ClockDriftSeconds -600, got %d", items[0].ClockDriftSeconds)
+	}
+	if len(items[0].IATAs) != 1 || items[0].IATAs[0].IATA != "YVR" {
+		t.Errorf("expected 1 IATA entry for YVR, got %v", items[0].IATAs)
+	}
+}
+
 func TestGetStatsNodeTypes_Mapping(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := mockdb.NewMockQuerier(ctrl)

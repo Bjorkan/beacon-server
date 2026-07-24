@@ -169,6 +169,12 @@ type Reader interface {
 	// since defines the start of the window; pass zero time for default (last 24h).
 	GetStatsTopAdvertisers(ctx context.Context, iatas []string, since time.Time, limit int32) ([]TopAdvertiser, error)
 
+	// GetStatsClockDrift returns repeaters/room servers whose most recent advert-derived
+	// clock drift exceeds the configured threshold (nodes.clock_drift_threshold), worst
+	// drift first. Pass nil for iatas to return across all IATAs. Unlike the other stats
+	// endpoints this isn't time-windowed -- it reflects each node's current drift state.
+	GetStatsClockDrift(ctx context.Context, iatas []string, limit int32) ([]ClockDriftEntry, error)
+
 	// GetStatsTopTalkers returns the top N companion names by decrypted channel message count.
 	// Pass nil for iatas to return stats across all IATAs.
 	// since defines the start of the window; pass zero time for default (last 24h).
