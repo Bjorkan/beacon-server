@@ -146,13 +146,15 @@ func (s *Store) GetStatsTopAdvertisers(ctx context.Context, iatas []string, sinc
 	items := make([]api.TopAdvertiser, 0, len(rows))
 	for _, v := range rows {
 		items = append(items, api.TopAdvertiser{
-			NodeID:       v.ID,
-			NodeName:     v.Name,
-			NodeType:     v.NodeType,
-			NodeTypeName: api.NodeTypeName(v.NodeType),
-			IATA:         v.Iata,
-			AdvertCount:  v.AdvertCount,
-			LastHeard:    v.LastHeard.Time.UnixMilli(),
+			NodeID:            v.ID,
+			NodeName:          v.Name,
+			NodeType:          v.NodeType,
+			NodeTypeName:      api.NodeTypeName(v.NodeType),
+			IATA:              v.Iata,
+			AdvertCount:       v.AdvertCount,
+			FloodAdvertCount:  v.FloodAdvertCount,
+			DirectAdvertCount: v.DirectAdvertCount,
+			LastHeard:         v.LastHeard.Time.UnixMilli(),
 		})
 	}
 	return items, nil

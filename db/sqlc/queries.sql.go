@@ -1277,6 +1277,8 @@ SELECT
   name,
   node_type,
   COALESCE(SUM(advert_count), 0)::bigint AS advert_count,
+  COALESCE(SUM(flood_advert_count), 0)::bigint AS flood_advert_count,
+  COALESCE(SUM(direct_advert_count), 0)::bigint AS direct_advert_count,
   MAX(last_heard)::timestamptz AS last_heard,
   COALESCE(MAX(iata), '')::bpchar AS iata
 FROM mv_top_advertisers_by_iata
@@ -1294,12 +1296,14 @@ type GetStatsTopAdvertisersParams struct {
 }
 
 type GetStatsTopAdvertisersRow struct {
-	ID          uuid.UUID          `json:"id"`
-	Name        *string            `json:"name"`
-	NodeType    int16              `json:"node_type"`
-	AdvertCount int64              `json:"advert_count"`
-	LastHeard   pgtype.Timestamptz `json:"last_heard"`
-	Iata        string             `json:"iata"`
+	ID                uuid.UUID          `json:"id"`
+	Name              *string            `json:"name"`
+	NodeType          int16              `json:"node_type"`
+	AdvertCount       int64              `json:"advert_count"`
+	FloodAdvertCount  int64              `json:"flood_advert_count"`
+	DirectAdvertCount int64              `json:"direct_advert_count"`
+	LastHeard         pgtype.Timestamptz `json:"last_heard"`
+	Iata              string             `json:"iata"`
 }
 
 // Top N advertisers in the window, summed from the hourly buckets.
@@ -1317,6 +1321,8 @@ func (q *Queries) GetStatsTopAdvertisers(ctx context.Context, arg GetStatsTopAdv
 			&i.Name,
 			&i.NodeType,
 			&i.AdvertCount,
+			&i.FloodAdvertCount,
+			&i.DirectAdvertCount,
 			&i.LastHeard,
 			&i.Iata,
 		); err != nil {

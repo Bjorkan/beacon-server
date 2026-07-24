@@ -114,6 +114,51 @@ func TestGetStatsTopObservers_IATATypeAssertion(t *testing.T) {
 	}
 }
 
+func TestGetStatsTopAdvertisers_FloodDirectSplit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000003")
+	name := "test-node"
+	heardAt := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+
+	mock.EXPECT().
+		GetStatsTopAdvertisers(gomock.Any(), gomock.Any()).
+		Return([]sqlc.GetStatsTopAdvertisersRow{
+			{
+				ID:                nodeID,
+				Name:              &name,
+				NodeType:          2, // repeater
+				AdvertCount:       10,
+				FloodAdvertCount:  7,
+				DirectAdvertCount: 3,
+				LastHeard:         heardAt,
+				Iata:              "YVR",
+			},
+		}, nil)
+
+	store := &Store{q: mock}
+	items, err := store.GetStatsTopAdvertisers(context.Background(), []string{"YVR"}, time.Now().Add(-time.Hour), 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].AdvertCount != 10 {
+		t.Errorf("expected AdvertCount 10, got %d", items[0].AdvertCount)
+	}
+	if items[0].FloodAdvertCount != 7 {
+		t.Errorf("expected FloodAdvertCount 7, got %d", items[0].FloodAdvertCount)
+	}
+	if items[0].DirectAdvertCount != 3 {
+		t.Errorf("expected DirectAdvertCount 3, got %d", items[0].DirectAdvertCount)
+	}
+	if items[0].FloodAdvertCount+items[0].DirectAdvertCount != items[0].AdvertCount {
+		t.Error("expected FloodAdvertCount + DirectAdvertCount to equal AdvertCount")
+	}
+}
+
 func TestGetStatsNodeTypes_Mapping(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := mockdb.NewMockQuerier(ctrl)

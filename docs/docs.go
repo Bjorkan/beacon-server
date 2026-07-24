@@ -3559,6 +3559,13 @@ const docTemplate = `{
                 "advertCount": {
                     "type": "integer"
                 },
+                "directAdvertCount": {
+                    "type": "integer"
+                },
+                "floodAdvertCount": {
+                    "description": "FloodAdvertCount/DirectAdvertCount split AdvertCount by how the advert was routed:\nflood = route type 0 (transport_flood) or 1 (flood), broadcast with no known path;\ndirect = route type 2 (direct) or 3 (transport_direct), routed along a known path.\nFloodAdvertCount + DirectAdvertCount == AdvertCount.",
+                    "type": "integer"
+                },
                 "iata": {
                     "type": "string"
                 },

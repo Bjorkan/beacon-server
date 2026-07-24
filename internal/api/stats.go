@@ -76,7 +76,13 @@ type TopAdvertiser struct {
 	NodeTypeName string    `json:"nodeTypeName"`
 	IATA         string    `json:"iata"`
 	AdvertCount  int64     `json:"advertCount"`
-	LastHeard    int64     `json:"lastHeard"` // epoch ms
+	// FloodAdvertCount/DirectAdvertCount split AdvertCount by how the advert was routed:
+	// flood = route type 0 (transport_flood) or 1 (flood), broadcast with no known path;
+	// direct = route type 2 (direct) or 3 (transport_direct), routed along a known path.
+	// FloodAdvertCount + DirectAdvertCount == AdvertCount.
+	FloodAdvertCount  int64 `json:"floodAdvertCount"`
+	DirectAdvertCount int64 `json:"directAdvertCount"`
+	LastHeard         int64 `json:"lastHeard"` // epoch ms
 }
 
 // TopTalker is a companion name ranked by decrypted channel message count within the

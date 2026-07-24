@@ -902,6 +902,8 @@ SELECT
   name,
   node_type,
   COALESCE(SUM(advert_count), 0)::bigint AS advert_count,
+  COALESCE(SUM(flood_advert_count), 0)::bigint AS flood_advert_count,
+  COALESCE(SUM(direct_advert_count), 0)::bigint AS direct_advert_count,
   MAX(last_heard)::timestamptz AS last_heard,
   COALESCE(MAX(iata), '')::bpchar AS iata
 FROM mv_top_advertisers_by_iata
