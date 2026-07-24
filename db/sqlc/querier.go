@@ -156,6 +156,11 @@ type Querier interface {
 	// IATA membership comes from trace_iatas (joining observations here spilled the
 	// hash join). Per-tag details filled in only for the returned page.
 	ListTraceTags(ctx context.Context, arg ListTraceTagsParams) ([]ListTraceTagsRow, error)
+	// Returns GRP_TXT packets (payload_type=5) never successfully decrypted. Used at boot to
+	// retry decryption against the current keystore for packets whose channel key was only added
+	// to the config after they'd already been ingested -- see
+	// internal/ingest.BackfillChannelMessages.
+	ListUndecryptedGroupTextPackets(ctx context.Context) ([]ListUndecryptedGroupTextPacketsRow, error)
 	// Delete node_neighbors where the neighbor has departed from node_short_ids
 	// for that IATA, or where its prefix_4 is now ambiguous.
 	ReconfirmNeighbors(ctx context.Context) error

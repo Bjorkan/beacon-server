@@ -982,6 +982,21 @@ func (mr *MockQuerierMockRecorder) ListTraceTags(ctx, arg any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTraceTags", reflect.TypeOf((*MockQuerier)(nil).ListTraceTags), ctx, arg)
 }
 
+// ListUndecryptedGroupTextPackets mocks base method.
+func (m *MockQuerier) ListUndecryptedGroupTextPackets(ctx context.Context) ([]db.ListUndecryptedGroupTextPacketsRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListUndecryptedGroupTextPackets", ctx)
+	ret0, _ := ret[0].([]db.ListUndecryptedGroupTextPacketsRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListUndecryptedGroupTextPackets indicates an expected call of ListUndecryptedGroupTextPackets.
+func (mr *MockQuerierMockRecorder) ListUndecryptedGroupTextPackets(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUndecryptedGroupTextPackets", reflect.TypeOf((*MockQuerier)(nil).ListUndecryptedGroupTextPackets), ctx)
+}
+
 // ReconfirmNeighbors mocks base method.
 func (m *MockQuerier) ReconfirmNeighbors(ctx context.Context) error {
 	m.ctrl.T.Helper()

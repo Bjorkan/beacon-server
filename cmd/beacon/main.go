@@ -197,6 +197,17 @@ func main() {
 
 	keys := keystore.NewMapKeyStore(entries)
 
+	// ── Backfill channel messages ────────────────────────────────────────────
+	// Packets whose channel key wasn't yet configured at ingest time were stored as
+	// hash-only channels and never decrypted. Retry them now against the keystore we just
+	// built, so adding a channel key to the config surfaces its history on the next boot
+	// instead of leaving it stranded in the DB indefinitely.
+	if n, err := ingest.BackfillChannelMessages(ctx, store, keys); err != nil {
+		log.Printf("config: channel message backfill failed: %v", err)
+	} else if n > 0 {
+		log.Printf("config: backfilled %d previously-undecrypted channel message(s)", n)
+	}
+
 	// ── Build geographic ingest filter ───────────────────────────────────────────────────────────
 	allowedIATAs := iatadb.BuildAllowedSet(cfg.Ingest.AllowCountries, cfg.Ingest.AllowContinents)
 	if allowedIATAs != nil {

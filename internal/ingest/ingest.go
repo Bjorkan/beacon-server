@@ -151,6 +151,10 @@ type DB interface {
 	// but can be safely ignored since unknown-key channels have no messages.
 	UpsertChannelHashOnly(ctx context.Context, channelHash []byte) (int, error)
 
+	// ListUndecryptedGroupTextPackets returns GRP_TXT packets never successfully decrypted --
+	// used by BackfillChannelMessages to retry them against the current keystore at boot.
+	ListUndecryptedGroupTextPackets(ctx context.Context) ([]UndecryptedPacket, error)
+
 	// UpsertChannelIATA upserts a channel_iatas row.
 	UpsertChannelIATA(ctx context.Context, channelHash []byte, iata string, heardAt time.Time) error
 

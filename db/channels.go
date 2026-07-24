@@ -47,6 +47,24 @@ func (s *Store) UpsertChannelHashOnly(ctx context.Context, channelHash []byte) (
 	return int(rowID), nil
 }
 
+// ListUndecryptedGroupTextPackets returns GRP_TXT packets never successfully decrypted --
+// see internal/ingest.BackfillChannelMessages, which retries these against the current
+// keystore at boot.
+func (s *Store) ListUndecryptedGroupTextPackets(ctx context.Context) ([]ingest.UndecryptedPacket, error) {
+	rows, err := s.q.ListUndecryptedGroupTextPackets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	packets := make([]ingest.UndecryptedPacket, 0, len(rows))
+	for _, v := range rows {
+		packets = append(packets, ingest.UndecryptedPacket{
+			PacketHash: v.PacketHash,
+			RawPayload: v.RawPayload,
+		})
+	}
+	return packets, nil
+}
+
 func (s *Store) UpsertChannelIATA(ctx context.Context, channelHash []byte, iata string, heardAt time.Time) error {
 	return s.q.UpsertChannelIATA(ctx, sqlc.UpsertChannelIATAParams{
 		ChannelHash: channelHash,

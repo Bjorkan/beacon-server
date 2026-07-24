@@ -703,6 +703,14 @@ ON CONFLICT (channel_hash) WHERE key_fingerprint IS NULL DO UPDATE SET
   last_seen = NOW()
 RETURNING id;
 
+-- name: ListUndecryptedGroupTextPackets :many
+-- Returns GRP_TXT packets (payload_type=5) never successfully decrypted. Used at boot to
+-- retry decryption against the current keystore for packets whose channel key was only added
+-- to the config after they'd already been ingested -- see
+-- internal/ingest.BackfillChannelMessages.
+SELECT packet_hash, raw_payload FROM packets
+WHERE payload_type = 5 AND decrypted IS NOT TRUE;
+
 -- name: UpsertChannelIATA :exec
 -- Refreshes at most hourly so repeat hears don't churn the row.
 INSERT INTO channel_iatas (channel_hash, iata, last_heard)

@@ -180,6 +180,8 @@ type stubDB struct {
 	upsertChannelIATACalls     int
 	upsertTraceIATACalls       int
 	observationInserted        bool
+	insertChannelMessageResult bool // configurable return for InsertChannelMessage; default false
+	undecryptedPackets         []UndecryptedPacket
 }
 
 type setCapabilityCall struct {
@@ -225,7 +227,7 @@ func (s *stubDB) GetNodesByIDs(_ context.Context, _ []uuid.UUID) (map[uuid.UUID]
 }
 
 func (s *stubDB) InsertChannelMessage(_ context.Context, _ InsertChannelMessageParams) (bool, error) {
-	return false, nil
+	return s.insertChannelMessageResult, nil
 }
 
 func (s *stubDB) UpdateObserverStatus(_ context.Context, _ UpdateObserverStatusParams) (uuid.UUID, error) {
@@ -258,6 +260,10 @@ func (s *stubDB) UpsertChannel(_ context.Context, _ []byte, _ []byte, _, _ strin
 func (s *stubDB) UpsertChannelHashOnly(_ context.Context, _ []byte) (int, error) {
 	s.upsertChannelHashOnlyCalls++
 	return 0, nil
+}
+
+func (s *stubDB) ListUndecryptedGroupTextPackets(_ context.Context) ([]UndecryptedPacket, error) {
+	return s.undecryptedPackets, nil
 }
 
 func (s *stubDB) UpsertChannelIATA(_ context.Context, _ []byte, _ string, _ time.Time) error {

@@ -3029,6 +3029,40 @@ func (q *Queries) ListTraceTags(ctx context.Context, arg ListTraceTagsParams) ([
 	return items, nil
 }
 
+const listUndecryptedGroupTextPackets = `-- name: ListUndecryptedGroupTextPackets :many
+SELECT packet_hash, raw_payload FROM packets
+WHERE payload_type = 5 AND decrypted IS NOT TRUE
+`
+
+type ListUndecryptedGroupTextPacketsRow struct {
+	PacketHash []byte `json:"packet_hash"`
+	RawPayload []byte `json:"raw_payload"`
+}
+
+// Returns GRP_TXT packets (payload_type=5) never successfully decrypted. Used at boot to
+// retry decryption against the current keystore for packets whose channel key was only added
+// to the config after they'd already been ingested -- see
+// internal/ingest.BackfillChannelMessages.
+func (q *Queries) ListUndecryptedGroupTextPackets(ctx context.Context) ([]ListUndecryptedGroupTextPacketsRow, error) {
+	rows, err := q.db.Query(ctx, listUndecryptedGroupTextPackets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUndecryptedGroupTextPacketsRow{}
+	for rows.Next() {
+		var i ListUndecryptedGroupTextPacketsRow
+		if err := rows.Scan(&i.PacketHash, &i.RawPayload); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const reconfirmNeighbors = `-- name: ReconfirmNeighbors :exec
 DELETE FROM node_neighbors nn
 WHERE NOT EXISTS (
