@@ -6,6 +6,9 @@ iatas:
     name: Vancouver International
     lat: 49.1967
     lng: -123.1815
+    # borderFile: borders/yvr.geojson   # optional GeoJSON Feature (Polygon/MultiPolygon)
+    #                                    # for the region border map; path is relative to
+    #                                    # this file's directory; validated at boot.
   YYJ:
     name: Victoria International
     lat: 48.6469
@@ -74,6 +77,12 @@ packets:
 
 websocket:
   max_connections_per_ip: 5 # default: 5
+
+# Node staleness, deletion, and clock-drift thresholds.
+#nodes:
+#  stale_threshold: 24h          # default: 24h
+#  delete_after: 720h            # default: 30 days, same default as packets.retention
+#  clock_drift_threshold: 5m     # default: 5m
 
 # CORS configuration.
 # Controls which origins, methods and headers are allowed for cross-origin requests.
