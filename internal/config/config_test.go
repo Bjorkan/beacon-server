@@ -98,6 +98,12 @@ func TestResolve_Defaults(t *testing.T) {
 	if r.ClockDriftThreshold != 5*time.Minute {
 		t.Errorf("expected ClockDriftThreshold 5m, got %v", r.ClockDriftThreshold)
 	}
+	if r.NodeStaleThreshold != 24*time.Hour {
+		t.Errorf("expected NodeStaleThreshold 24h, got %v", r.NodeStaleThreshold)
+	}
+	if r.NodeDeleteAfter != 30*24*time.Hour {
+		t.Errorf("expected NodeDeleteAfter 720h (same default as PacketRetention), got %v", r.NodeDeleteAfter)
+	}
 }
 
 func TestResolve_ExplicitValues(t *testing.T) {

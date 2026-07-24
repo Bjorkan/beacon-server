@@ -128,8 +128,8 @@ func TestListObservers_RadioStringFormatting(t *testing.T) {
 	if page.Items[0].Radio == nil {
 		t.Fatal("expected Radio to be set")
 	}
-	if *page.Items[0].Radio != "915.0,125,7" {
-		t.Errorf("expected Radio 915.0,125,7, got %s", *page.Items[0].Radio)
+	if *page.Items[0].Radio != "915,125,7" {
+		t.Errorf("expected Radio 915,125,7, got %s", *page.Items[0].Radio)
 	}
 }
 

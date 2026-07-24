@@ -14,6 +14,14 @@ import (
 type Querier interface {
 	// Keeps the channel IATA filter in step with packet retention.
 	DeleteOldChannelIATAs(ctx context.Context, lastHeard pgtype.Timestamptz) error
+	// Deletes nodes not seen since the given cutoff. node_iatas and node_neighbors cascade-
+	// delete via FK. Excludes nodes referenced by observer_owners.owner_node_id -- that FK has
+	// no ON DELETE action, so deleting one directly would fail the whole statement anyway, and
+	// an operator manually recorded ownership for that node, so leave it alone even if stale.
+	// known_routes.node_ids is a plain UUID[] with no FK; a deleted node's id can be left
+	// dangling in old routes there, but ReconfirmTask already prunes stale/ambiguous routes
+	// periodically and will clean those up on its own schedule.
+	DeleteOldNodes(ctx context.Context, lastSeen pgtype.Timestamptz) error
 	// Deletes packets and their observations older than the given cutoff.
 	// packet_observations cascade-delete via FK.
 	DeleteOldPackets(ctx context.Context, lastHeardAt pgtype.Timestamptz) error

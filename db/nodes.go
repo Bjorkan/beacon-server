@@ -127,6 +127,7 @@ func (s *Store) ListNodes(ctx context.Context, nodeType int16, iatas []string, s
 			ObserverID:         nullableUUID(v.ObserverID),
 			KnownNeighborCount: v.KnownNeighborCount,
 			NeighborIDs:        v.NeighborIds,
+			Stale:              v.LastSeen.Valid && v.LastSeen.Time.Before(time.Now().Add(-s.staleThreshold)),
 		}
 		if len(v.Iatas) > 0 {
 			if err := json.Unmarshal(v.Iatas, &node.IATAs); err != nil {
@@ -135,7 +136,7 @@ func (s *Store) ListNodes(ctx context.Context, nodeType int16, iatas []string, s
 			}
 		}
 		if v.RadioFreqMhz != nil && v.RadioSf != nil && v.RadioBwKhz != nil {
-			s := fmt.Sprintf("%.1f,%g,%d", *v.RadioFreqMhz, *v.RadioBwKhz, *v.RadioSf)
+			s := fmt.Sprintf("%g,%g,%d", *v.RadioFreqMhz, *v.RadioBwKhz, *v.RadioSf)
 			node.Radio = &s
 		}
 		items = append(items, node)
@@ -170,6 +171,7 @@ func (s *Store) GetNode(ctx context.Context, nodeID uuid.UUID) (*api.Node, error
 			ObserverID:         nullableUUID(row.ObserverID),
 			DefaultScope:       row.DefaultScopeName,
 			KnownNeighborCount: row.KnownNeighborCount,
+			Stale:              row.LastSeen.Valid && row.LastSeen.Time.Before(time.Now().Add(-s.staleThreshold)),
 		},
 		LocationSource:          row.LocationSource,
 		SupportsMultibytePaths:  row.SupportsMultibytePaths,
@@ -192,7 +194,7 @@ func (s *Store) GetNode(ctx context.Context, nodeID uuid.UUID) (*api.Node, error
 		}
 	}
 	if row.RadioFreqMhz != nil && row.RadioSf != nil && row.RadioBwKhz != nil {
-		s := fmt.Sprintf("%.1f,%g,%d", *row.RadioFreqMhz, *row.RadioBwKhz, *row.RadioSf)
+		s := fmt.Sprintf("%g,%g,%d", *row.RadioFreqMhz, *row.RadioBwKhz, *row.RadioSf)
 		node.Radio = &s
 	}
 	if row.LastAdvertAt.Valid {
@@ -287,4 +289,10 @@ func (s *Store) GetNodeNeighbors(ctx context.Context, nodeID uuid.UUID) ([]api.N
 
 func (s *Store) ReconfirmNeighbors(ctx context.Context) error {
 	return s.q.ReconfirmNeighbors(ctx)
+}
+
+// DeleteOldNodes deletes nodes not seen since the given cutoff. See the DeleteOldNodes SQL
+// query for the observer_owners exclusion and known_routes caveat.
+func (s *Store) DeleteOldNodes(ctx context.Context, cutoff time.Time) error {
+	return s.q.DeleteOldNodes(ctx, pgtype.Timestamptz{Time: cutoff, Valid: true})
 }

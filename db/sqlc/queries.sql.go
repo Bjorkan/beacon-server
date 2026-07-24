@@ -22,6 +22,24 @@ func (q *Queries) DeleteOldChannelIATAs(ctx context.Context, lastHeard pgtype.Ti
 	return err
 }
 
+const deleteOldNodes = `-- name: DeleteOldNodes :exec
+DELETE FROM nodes
+WHERE last_seen < $1
+  AND id NOT IN (SELECT owner_node_id FROM observer_owners WHERE owner_node_id IS NOT NULL)
+`
+
+// Deletes nodes not seen since the given cutoff. node_iatas and node_neighbors cascade-
+// delete via FK. Excludes nodes referenced by observer_owners.owner_node_id -- that FK has
+// no ON DELETE action, so deleting one directly would fail the whole statement anyway, and
+// an operator manually recorded ownership for that node, so leave it alone even if stale.
+// known_routes.node_ids is a plain UUID[] with no FK; a deleted node's id can be left
+// dangling in old routes there, but ReconfirmTask already prunes stale/ambiguous routes
+// periodically and will clean those up on its own schedule.
+func (q *Queries) DeleteOldNodes(ctx context.Context, lastSeen pgtype.Timestamptz) error {
+	_, err := q.db.Exec(ctx, deleteOldNodes, lastSeen)
+	return err
+}
+
 const deleteOldPackets = `-- name: DeleteOldPackets :exec
 DELETE FROM packets WHERE last_heard_at < $1
 `

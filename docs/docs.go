@@ -4,11 +4,11 @@ package docs
 import "github.com/swaggo/swag"
 
 const docTemplate = `{
-    "schemes": {{ marshal .Schemes }},
+    "schemes": [[ marshal .Schemes ]],
     "swagger": "2.0",
     "info": {
-        "description": "{{escape .Description}}",
-        "title": "{{.Title}}",
+        "description": "[[escape .Description]]",
+        "title": "[[.Title]]",
         "termsOfService": "https://github.com/MeshCore-Beacon/beacon-server",
         "contact": {
             "name": "MeshCore Beacon",
@@ -17,10 +17,10 @@ const docTemplate = `{
         "license": {
             "name": "AGPL-3-or-later"
         },
-        "version": "{{.Version}}"
+        "version": "[[.Version]]"
     },
-    "host": "{{.Host}}",
-    "basePath": "{{.BasePath}}",
+    "host": "[[.Host]]",
+    "basePath": "[[.BasePath]]",
     "paths": {
         "/brokers": {
             "get": {
@@ -281,6 +281,43 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.IATA"
                         }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/iatas/{iata}/border": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IATAs"
+                ],
+                "summary": "Get an IATA's GeoJSON border, if configured",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "3-letter IATA code",
+                        "name": "iata",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GeoJSON Feature (Polygon or MultiPolygon geometry, with bbox)",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "204": {
+                        "description": "IATA exists but has no border configured"
                     },
                     "404": {
                         "description": "Not Found",
@@ -2539,6 +2576,10 @@ const docTemplate = `{
                     "description": "shorthand: \"freqMhz,bwKhz,sf\" e.g. \"910.525,62.5,7\"",
                     "type": "string"
                 },
+                "stale": {
+                    "description": "Stale is true when the node hasn't been seen (last_seen) within the configured\nstaleness window (default 24h; internal/config.ResolvedConfig.NodeStaleThreshold).\nApplies to every node type, unlike ClockDriftSeconds/ClockOutOfSync on Node, which\nare repeater/room-server only.",
+                    "type": "boolean"
+                },
                 "supportsMultibytePaths": {
                     "description": "firmware \u003e= 1.14.0; detected via path hash size",
                     "type": "boolean"
@@ -2664,6 +2705,10 @@ const docTemplate = `{
                 "radio": {
                     "description": "shorthand: \"freqMhz,bwKhz,sf\" e.g. \"910.525,62.5,7\"",
                     "type": "string"
+                },
+                "stale": {
+                    "description": "Stale is true when the node hasn't been seen (last_seen) within the configured\nstaleness window (default 24h; internal/config.ResolvedConfig.NodeStaleThreshold).\nApplies to every node type, unlike ClockDriftSeconds/ClockOutOfSync on Node, which\nare repeater/room-server only.",
+                    "type": "boolean"
                 }
             }
         },
@@ -3774,8 +3819,8 @@ var SwaggerInfo = &swag.Spec{
 	Description:      "MeshCore network observation backend. Ingests LoRa packets from MQTT brokers, stores in PostgreSQL, and streams live events via WebSocket.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
-	LeftDelim:        "{{",
-	RightDelim:       "}}",
+	LeftDelim:        "[[",
+	RightDelim:       "]]",
 }
 
 func init() {

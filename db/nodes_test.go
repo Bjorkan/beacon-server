@@ -242,6 +242,42 @@ func TestListNodes_IATAsUnmarshal(t *testing.T) {
 	}
 }
 
+func TestListNodes_Stale(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	staleID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	freshID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	unmeasuredID := uuid.MustParse("00000000-0000-0000-0000-000000000003")
+
+	mock.EXPECT().
+		ListNodes(gomock.Any(), gomock.Any()).
+		Return([]sqlc.ListNodesRow{
+			{ID: staleID, PublicKey: []byte{0x01}, LastSeen: pgtype.Timestamptz{Time: time.Now().Add(-48 * time.Hour), Valid: true}},
+			{ID: freshID, PublicKey: []byte{0x02}, LastSeen: pgtype.Timestamptz{Time: time.Now(), Valid: true}},
+			{ID: unmeasuredID, PublicKey: []byte{0x03}, LastSeen: pgtype.Timestamptz{Valid: false}},
+		}, nil)
+
+	store := &Store{q: mock, staleThreshold: 24 * time.Hour}
+	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", "", 0, 10, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	byID := make(map[uuid.UUID]bool)
+	for _, n := range page.Items {
+		byID[n.ID] = n.Stale
+	}
+	if !byID[staleID] {
+		t.Error("expected node last seen 48h ago to be stale with a 24h threshold")
+	}
+	if byID[freshID] {
+		t.Error("expected node last seen just now to not be stale")
+	}
+	if byID[unmeasuredID] {
+		t.Error("expected a node with no last_seen at all to not be stale")
+	}
+}
+
 func TestListNodes_RadioStringFormatting(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := mockdb.NewMockQuerier(ctrl)
@@ -271,8 +307,8 @@ func TestListNodes_RadioStringFormatting(t *testing.T) {
 	if page.Items[0].Radio == nil {
 		t.Fatal("expected Radio to be set")
 	}
-	if *page.Items[0].Radio != "915.0,125,7" {
-		t.Errorf("expected Radio 915.0,125,7, got %s", *page.Items[0].Radio)
+	if *page.Items[0].Radio != "915,125,7" {
+		t.Errorf("expected Radio 915,125,7, got %s", *page.Items[0].Radio)
 	}
 }
 
@@ -336,6 +372,36 @@ func TestGetNode_LastAdvertAtNil(t *testing.T) {
 	}
 	if node.LastAdvertAt != nil {
 		t.Errorf("expected nil LastAdvertAt, got %d", *node.LastAdvertAt)
+	}
+}
+
+func TestGetNode_Stale(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+	mock.EXPECT().
+		GetNodeByID(gomock.Any(), nodeID).
+		Return(sqlc.GetNodeByIDRow{
+			ID:        nodeID,
+			PublicKey: []byte{0x01},
+			NodeType:  1, // companion -- Stale applies to every node type, unlike clock drift
+			FirstSeen: pgtype.Timestamptz{Time: time.Now().Add(-72 * time.Hour), Valid: true},
+			LastSeen:  pgtype.Timestamptz{Time: time.Now().Add(-48 * time.Hour), Valid: true},
+		}, nil)
+
+	mock.EXPECT().
+		GetNodeNeighbors(gomock.Any(), nodeID).
+		Return([]sqlc.GetNodeNeighborsRow{}, nil)
+
+	store := &Store{q: mock, staleThreshold: 24 * time.Hour}
+	node, err := store.GetNode(context.Background(), nodeID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !node.Stale {
+		t.Error("expected node last seen 48h ago to be stale with a 24h threshold")
 	}
 }
 
@@ -622,5 +688,21 @@ func TestListNodes_ExcludeNeighbors_LeavesIDsNil(t *testing.T) {
 	}
 	if page.Items[0].NeighborIDs != nil {
 		t.Errorf("expected NeighborIDs to stay nil when includeNeighbors is false, got %v", page.Items[0].NeighborIDs)
+	}
+}
+
+func TestDeleteOldNodes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	cutoff := time.Now().Add(-30 * 24 * time.Hour)
+
+	mock.EXPECT().
+		DeleteOldNodes(gomock.Any(), gomock.Eq(pgtype.Timestamptz{Time: cutoff, Valid: true})).
+		Return(nil)
+
+	store := &Store{q: mock}
+	if err := store.DeleteOldNodes(context.Background(), cutoff); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

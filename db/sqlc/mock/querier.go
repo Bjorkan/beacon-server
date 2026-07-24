@@ -57,6 +57,20 @@ func (mr *MockQuerierMockRecorder) DeleteOldChannelIATAs(ctx, lastHeard any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteOldChannelIATAs", reflect.TypeOf((*MockQuerier)(nil).DeleteOldChannelIATAs), ctx, lastHeard)
 }
 
+// DeleteOldNodes mocks base method.
+func (m *MockQuerier) DeleteOldNodes(ctx context.Context, lastSeen pgtype.Timestamptz) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteOldNodes", ctx, lastSeen)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteOldNodes indicates an expected call of DeleteOldNodes.
+func (mr *MockQuerierMockRecorder) DeleteOldNodes(ctx, lastSeen any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteOldNodes", reflect.TypeOf((*MockQuerier)(nil).DeleteOldNodes), ctx, lastSeen)
+}
+
 // DeleteOldPackets mocks base method.
 func (m *MockQuerier) DeleteOldPackets(ctx context.Context, lastHeardAt pgtype.Timestamptz) error {
 	m.ctrl.T.Helper()

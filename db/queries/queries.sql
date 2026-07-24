@@ -509,6 +509,18 @@ LIMIT $6;
 -- packet_observations cascade-delete via FK.
 DELETE FROM packets WHERE last_heard_at < $1;
 
+-- name: DeleteOldNodes :exec
+-- Deletes nodes not seen since the given cutoff. node_iatas and node_neighbors cascade-
+-- delete via FK. Excludes nodes referenced by observer_owners.owner_node_id -- that FK has
+-- no ON DELETE action, so deleting one directly would fail the whole statement anyway, and
+-- an operator manually recorded ownership for that node, so leave it alone even if stale.
+-- known_routes.node_ids is a plain UUID[] with no FK; a deleted node's id can be left
+-- dangling in old routes there, but ReconfirmTask already prunes stale/ambiguous routes
+-- periodically and will clean those up on its own schedule.
+DELETE FROM nodes
+WHERE last_seen < $1
+  AND id NOT IN (SELECT owner_node_id FROM observer_owners WHERE owner_node_id IS NOT NULL);
+
 -- name: DeleteOldChannelIATAs :exec
 -- Keeps the channel IATA filter in step with packet retention.
 DELETE FROM channel_iatas WHERE last_heard < $1;

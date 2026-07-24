@@ -48,6 +48,11 @@ type NodeSummary struct {
 	DefaultScope       *string     `json:"defaultScope,omitempty"` // most recently matched transport scope name e.g. "#bc"
 	KnownNeighborCount int64       `json:"knownNeighborCount"`
 	NeighborIDs        []uuid.UUID `json:"neighborIds,omitempty"` // only populated when the list request opts in; see ?neighbors=true
+	// Stale is true when the node hasn't been seen (last_seen) within the configured
+	// staleness window (default 24h; internal/config.ResolvedConfig.NodeStaleThreshold).
+	// Applies to every node type, unlike ClockDriftSeconds/ClockOutOfSync on Node, which
+	// are repeater/room-server only.
+	Stale bool `json:"stale"`
 }
 
 // Node is the full node representation including firmware capability flags,

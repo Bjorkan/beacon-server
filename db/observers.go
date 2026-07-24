@@ -61,7 +61,7 @@ func (s *Store) ListObservers(ctx context.Context, iatas []string, observerType,
 			Scopes: v.Scopes,
 		}
 		if v.RadioFreqMhz != nil && v.RadioSf != nil && v.RadioBwKhz != nil {
-			s := fmt.Sprintf("%.1f,%g,%d", *v.RadioFreqMhz, *v.RadioBwKhz, *v.RadioSf)
+			s := fmt.Sprintf("%g,%g,%d", *v.RadioFreqMhz, *v.RadioBwKhz, *v.RadioSf)
 			observer.Radio = &s
 		}
 		if v.DisplayName != nil {
