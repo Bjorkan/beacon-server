@@ -3139,6 +3139,30 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "pathBytes": {
+                    "description": "hex-encoded accumulated path hashes",
+                    "type": "string"
+                },
+                "pathLength": {
+                    "description": "PathLength/PathBytes are cheap -- already-stored columns on packet_observations -- and\npopulated everywhere PacketLatestObserver appears: the REST list/backfill endpoints and\nthe WS feed alike. ResolvedPath/ResolvedSource/ResolvedDestination require a per-hash DB\nresolution lookup; they're populated on the WS feed (already computed once at ingest, so\neffectively free there) but deliberately left nil on the REST endpoints, which are\npaginated/high-volume and used only for scrollback and reconnect-gap backfill -- full\nresolution stays a GET /packets/{packetHash}-only feature.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.PacketPathLength"
+                        }
+                    ]
+                },
+                "resolvedDestination": {
+                    "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ResolvedHop"
+                },
+                "resolvedPath": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ResolvedHop"
+                    }
+                },
+                "resolvedSource": {
+                    "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ResolvedHop"
                 }
             }
         },

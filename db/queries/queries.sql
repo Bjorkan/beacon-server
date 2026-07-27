@@ -393,10 +393,14 @@ SELECT
   (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = p.packet_hash) AS observation_count,
   po.observer_id AS latest_observer_id,
   o.display_name AS latest_observer_name,
-  po.iata AS latest_observer_iata
+  po.iata AS latest_observer_iata,
+  po.path_length_byte AS latest_observer_path_length_byte,
+  po.hash_size AS latest_observer_hash_size,
+  po.hop_count AS latest_observer_hop_count,
+  po.path_bytes AS latest_observer_path_bytes
 FROM packets p
 LEFT JOIN LATERAL (
-  SELECT observer_id, iata
+  SELECT observer_id, iata, path_length_byte, hash_size, hop_count, path_bytes
   FROM packet_observations
   WHERE packet_hash = p.packet_hash
   ORDER BY heard_at DESC
@@ -436,7 +440,11 @@ SELECT
   (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = p.packet_hash) AS observation_count,
   po.observer_id AS latest_observer_id,
   o.display_name AS latest_observer_name,
-  po.iata AS latest_observer_iata
+  po.iata AS latest_observer_iata,
+  po.path_length_byte AS latest_observer_path_length_byte,
+  po.hash_size AS latest_observer_hash_size,
+  po.hop_count AS latest_observer_hop_count,
+  po.path_bytes AS latest_observer_path_bytes
 FROM (
   SELECT hits.packet_hash, MAX(hits.heard_at)::timestamptz AS site_heard_at
   FROM unnest(@iatas::bpchar[]) AS req(iata)
@@ -467,7 +475,7 @@ FROM (
 ) sh
 JOIN packets p ON p.packet_hash = sh.packet_hash
 LEFT JOIN LATERAL (
-  SELECT observer_id, iata
+  SELECT observer_id, iata, path_length_byte, hash_size, hop_count, path_bytes
   FROM packet_observations
   WHERE packet_hash = p.packet_hash
   ORDER BY heard_at DESC
@@ -490,6 +498,10 @@ SELECT
   po.observer_id AS latest_observer_id,
   o.display_name AS latest_observer_name,
   po.iata AS latest_observer_iata,
+  po.path_length_byte AS latest_observer_path_length_byte,
+  po.hash_size AS latest_observer_hash_size,
+  po.hop_count AS latest_observer_hop_count,
+  po.path_bytes AS latest_observer_path_bytes,
   ts.name AS scope_name
 FROM packets p
 JOIN packet_observations po ON po.packet_hash = p.packet_hash

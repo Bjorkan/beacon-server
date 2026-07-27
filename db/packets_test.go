@@ -157,6 +157,59 @@ func TestListPackets_LatestObserverSet(t *testing.T) {
 	}
 }
 
+func TestListPackets_LatestObserverPathFields(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	heardAt := pgtype.Timestamptz{Time: time.UnixMilli(1700000000000), Valid: true}
+	observerID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	pathLengthByte := int16(0x42)
+	hashSize := int16(1)
+	hopCount := int16(2)
+	pathBytes := []byte{0xa1, 0xb2}
+
+	mock.EXPECT().
+		ListPackets(gomock.Any(), gomock.Any()).
+		Return([]sqlc.ListPacketsRow{
+			{
+				PacketHash:                   []byte{0xde, 0xad},
+				FirstHeardAt:                 heardAt,
+				LastHeardAt:                  heardAt,
+				LatestObserverID:             observerID,
+				LatestObserverPathLengthByte: pathLengthByte,
+				LatestObserverHashSize:       hashSize,
+				LatestObserverHopCount:       hopCount,
+				LatestObserverPathBytes:      pathBytes,
+			},
+		}, nil)
+
+	store := &Store{q: mock}
+	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	obs := page.Items[0].LatestObserver
+	if obs == nil {
+		t.Fatal("expected LatestObserver to be set")
+	}
+	if obs.PathLength == nil {
+		t.Fatal("expected PathLength to be set")
+	}
+	if obs.PathLength.HashSize != 1 || obs.PathLength.HopCount != 2 {
+		t.Errorf("expected hashSize=1 hopCount=2, got hashSize=%d hopCount=%d", obs.PathLength.HashSize, obs.PathLength.HopCount)
+	}
+	if obs.PathLength.Raw != "42" {
+		t.Errorf("expected raw 42, got %s", obs.PathLength.Raw)
+	}
+	if obs.PathBytes == nil || *obs.PathBytes != "a1b2" {
+		t.Errorf("expected pathBytes a1b2, got %v", obs.PathBytes)
+	}
+	// Resolution stays a detail-view-only feature on this list endpoint -- deliberately unset.
+	if obs.ResolvedPath != nil || obs.ResolvedSource != nil || obs.ResolvedDestination != nil {
+		t.Error("expected no resolved path/source/destination on the list endpoint")
+	}
+}
+
 func TestInsertObservation_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := mockdb.NewMockQuerier(ctrl)
@@ -349,6 +402,45 @@ func TestListPacketsAfterID_PassesIATAsAsArray(t *testing.T) {
 	_, err := store.ListPacketsAfterID(context.Background(), 0, -1, -1, []string{"ALF", "YYZ"}, "", 50)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestListPacketsAfterID_LatestObserverPathFields(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	heardAt := pgtype.Timestamptz{Time: time.UnixMilli(1700000000000), Valid: true}
+	observerID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+	mock.EXPECT().
+		ListPacketsAfterID(gomock.Any(), gomock.Any()).
+		Return([]sqlc.ListPacketsAfterIDRow{
+			{
+				PacketHash:                   []byte{0xde, 0xad},
+				FirstHeardAt:                 heardAt,
+				LastHeardAt:                  heardAt,
+				LatestObserverID:             observerID,
+				LatestObserverPathLengthByte: 0x42,
+				LatestObserverHashSize:       1,
+				LatestObserverHopCount:       2,
+				LatestObserverPathBytes:      []byte{0xa1, 0xb2},
+			},
+		}, nil)
+
+	store := &Store{q: mock}
+	items, err := store.ListPacketsAfterID(context.Background(), 0, -1, -1, nil, "", 50)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	obs := items[0].LatestObserver
+	if obs == nil || obs.PathLength == nil {
+		t.Fatal("expected LatestObserver and PathLength to be set")
+	}
+	if obs.PathLength.HashSize != 1 || obs.PathLength.HopCount != 2 {
+		t.Errorf("expected hashSize=1 hopCount=2, got hashSize=%d hopCount=%d", obs.PathLength.HashSize, obs.PathLength.HopCount)
+	}
+	if obs.PathBytes == nil || *obs.PathBytes != "a1b2" {
+		t.Errorf("expected pathBytes a1b2, got %v", obs.PathBytes)
 	}
 }
 

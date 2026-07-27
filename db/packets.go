@@ -58,6 +58,32 @@ func (s *Store) SetPacketDecrypted(ctx context.Context, hash []byte) error {
 	return s.q.SetPacketDecrypted(ctx, hash)
 }
 
+// buildLatestObserverPath fills in PacketLatestObserver's optional path fields from the
+// nullable path_length_byte/hash_size/hop_count/path_bytes columns joined in alongside the
+// latest (or matching) observation. hashSize/hopCount nil means no observation joined at all
+// (only possible via ListPackets/ListPacketsByIATAs' LEFT JOIN LATERAL -- ListPacketsAfterID's
+// inner join always has them, callers there can pass &v.Field directly).
+func buildLatestObserverPath(pathLengthByte, hashSize, hopCount *int16, pathBytes []byte) (*api.PacketPathLength, *string) {
+	if hashSize == nil || hopCount == nil {
+		return nil, nil
+	}
+	raw := ""
+	if pathLengthByte != nil {
+		raw = fmt.Sprintf("%02x", *pathLengthByte)
+	}
+	pathLength := &api.PacketPathLength{
+		Raw:      raw,
+		HashSize: *hashSize,
+		HopCount: *hopCount,
+	}
+	var pathBytesHex *string
+	if pathBytes != nil {
+		s := hex.EncodeToString(pathBytes)
+		pathBytesHex = &s
+	}
+	return pathLength, pathBytesHex
+}
+
 func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32) (api.Page[api.PacketSummary], error) {
 	if len(iatas) > 0 {
 		return s.listPacketsByIATAs(ctx, payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit)
@@ -109,6 +135,9 @@ func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int1
 				DisplayName: v.LatestObserverName,
 				IATA:        v.LatestObserverIata,
 			}
+			item.LatestObserver.PathLength, item.LatestObserver.PathBytes = buildLatestObserverPath(
+				&v.LatestObserverPathLengthByte, &v.LatestObserverHashSize, &v.LatestObserverHopCount, v.LatestObserverPathBytes,
+			)
 		}
 		items = append(items, item)
 	}
@@ -177,6 +206,9 @@ func (s *Store) listPacketsByIATAs(ctx context.Context, payloadTypes, routeTypes
 				DisplayName: v.LatestObserverName,
 				IATA:        v.LatestObserverIata,
 			}
+			item.LatestObserver.PathLength, item.LatestObserver.PathBytes = buildLatestObserverPath(
+				&v.LatestObserverPathLengthByte, &v.LatestObserverHashSize, &v.LatestObserverHopCount, v.LatestObserverPathBytes,
+			)
 		}
 		items = append(items, item)
 	}
@@ -224,6 +256,11 @@ func (s *Store) ListPacketsAfterID(ctx context.Context, afterObservationID int64
 				DisplayName: v.LatestObserverName,
 				IATA:        v.LatestObserverIata,
 			}
+			// Inner join here (unlike ListPackets/listPacketsByIATAs' LEFT JOIN LATERAL), so
+			// these are never nil when an observer was joined at all.
+			item.LatestObserver.PathLength, item.LatestObserver.PathBytes = buildLatestObserverPath(
+				&v.LatestObserverPathLengthByte, &v.LatestObserverHashSize, &v.LatestObserverHopCount, v.LatestObserverPathBytes,
+			)
 		}
 		items = append(items, item)
 	}

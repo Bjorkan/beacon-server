@@ -2650,10 +2650,14 @@ SELECT
   (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = p.packet_hash) AS observation_count,
   po.observer_id AS latest_observer_id,
   o.display_name AS latest_observer_name,
-  po.iata AS latest_observer_iata
+  po.iata AS latest_observer_iata,
+  po.path_length_byte AS latest_observer_path_length_byte,
+  po.hash_size AS latest_observer_hash_size,
+  po.hop_count AS latest_observer_hop_count,
+  po.path_bytes AS latest_observer_path_bytes
 FROM packets p
 LEFT JOIN LATERAL (
-  SELECT observer_id, iata
+  SELECT observer_id, iata, path_length_byte, hash_size, hop_count, path_bytes
   FROM packet_observations
   WHERE packet_hash = p.packet_hash
   ORDER BY heard_at DESC
@@ -2683,17 +2687,21 @@ type ListPacketsParams struct {
 }
 
 type ListPacketsRow struct {
-	PacketHash         []byte             `json:"packet_hash"`
-	PayloadType        int16              `json:"payload_type"`
-	RouteType          int16              `json:"route_type"`
-	FirstHeardAt       pgtype.Timestamptz `json:"first_heard_at"`
-	LastHeardAt        pgtype.Timestamptz `json:"last_heard_at"`
-	ScopeID            *int32             `json:"scope_id"`
-	ScopeName          *string            `json:"scope_name"`
-	ObservationCount   int64              `json:"observation_count"`
-	LatestObserverID   uuid.UUID          `json:"latest_observer_id"`
-	LatestObserverName *string            `json:"latest_observer_name"`
-	LatestObserverIata string             `json:"latest_observer_iata"`
+	PacketHash                   []byte             `json:"packet_hash"`
+	PayloadType                  int16              `json:"payload_type"`
+	RouteType                    int16              `json:"route_type"`
+	FirstHeardAt                 pgtype.Timestamptz `json:"first_heard_at"`
+	LastHeardAt                  pgtype.Timestamptz `json:"last_heard_at"`
+	ScopeID                      *int32             `json:"scope_id"`
+	ScopeName                    *string            `json:"scope_name"`
+	ObservationCount             int64              `json:"observation_count"`
+	LatestObserverID             uuid.UUID          `json:"latest_observer_id"`
+	LatestObserverName           *string            `json:"latest_observer_name"`
+	LatestObserverIata           string             `json:"latest_observer_iata"`
+	LatestObserverPathLengthByte int16              `json:"latest_observer_path_length_byte"`
+	LatestObserverHashSize       int16              `json:"latest_observer_hash_size"`
+	LatestObserverHopCount       int16              `json:"latest_observer_hop_count"`
+	LatestObserverPathBytes      []byte             `json:"latest_observer_path_bytes"`
 }
 
 // Returns packets with the latest observation rolled in for display.
@@ -2728,6 +2736,10 @@ func (q *Queries) ListPackets(ctx context.Context, arg ListPacketsParams) ([]Lis
 			&i.LatestObserverID,
 			&i.LatestObserverName,
 			&i.LatestObserverIata,
+			&i.LatestObserverPathLengthByte,
+			&i.LatestObserverHashSize,
+			&i.LatestObserverHopCount,
+			&i.LatestObserverPathBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -2750,6 +2762,10 @@ SELECT
   po.observer_id AS latest_observer_id,
   o.display_name AS latest_observer_name,
   po.iata AS latest_observer_iata,
+  po.path_length_byte AS latest_observer_path_length_byte,
+  po.hash_size AS latest_observer_hash_size,
+  po.hop_count AS latest_observer_hop_count,
+  po.path_bytes AS latest_observer_path_bytes,
   ts.name AS scope_name
 FROM packets p
 JOIN packet_observations po ON po.packet_hash = p.packet_hash
@@ -2774,16 +2790,20 @@ type ListPacketsAfterIDParams struct {
 }
 
 type ListPacketsAfterIDRow struct {
-	PacketHash         []byte             `json:"packet_hash"`
-	PayloadType        int16              `json:"payload_type"`
-	RouteType          int16              `json:"route_type"`
-	FirstHeardAt       pgtype.Timestamptz `json:"first_heard_at"`
-	LastHeardAt        pgtype.Timestamptz `json:"last_heard_at"`
-	ObservationCount   int64              `json:"observation_count"`
-	LatestObserverID   uuid.UUID          `json:"latest_observer_id"`
-	LatestObserverName *string            `json:"latest_observer_name"`
-	LatestObserverIata string             `json:"latest_observer_iata"`
-	ScopeName          *string            `json:"scope_name"`
+	PacketHash                   []byte             `json:"packet_hash"`
+	PayloadType                  int16              `json:"payload_type"`
+	RouteType                    int16              `json:"route_type"`
+	FirstHeardAt                 pgtype.Timestamptz `json:"first_heard_at"`
+	LastHeardAt                  pgtype.Timestamptz `json:"last_heard_at"`
+	ObservationCount             int64              `json:"observation_count"`
+	LatestObserverID             uuid.UUID          `json:"latest_observer_id"`
+	LatestObserverName           *string            `json:"latest_observer_name"`
+	LatestObserverIata           string             `json:"latest_observer_iata"`
+	LatestObserverPathLengthByte int16              `json:"latest_observer_path_length_byte"`
+	LatestObserverHashSize       int16              `json:"latest_observer_hash_size"`
+	LatestObserverHopCount       int16              `json:"latest_observer_hop_count"`
+	LatestObserverPathBytes      []byte             `json:"latest_observer_path_bytes"`
+	ScopeName                    *string            `json:"scope_name"`
 }
 
 // Returns packets with observations after the given observation ID, ordered oldest first.
@@ -2814,6 +2834,10 @@ func (q *Queries) ListPacketsAfterID(ctx context.Context, arg ListPacketsAfterID
 			&i.LatestObserverID,
 			&i.LatestObserverName,
 			&i.LatestObserverIata,
+			&i.LatestObserverPathLengthByte,
+			&i.LatestObserverHashSize,
+			&i.LatestObserverHopCount,
+			&i.LatestObserverPathBytes,
 			&i.ScopeName,
 		); err != nil {
 			return nil, err
@@ -2839,7 +2863,11 @@ SELECT
   (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = p.packet_hash) AS observation_count,
   po.observer_id AS latest_observer_id,
   o.display_name AS latest_observer_name,
-  po.iata AS latest_observer_iata
+  po.iata AS latest_observer_iata,
+  po.path_length_byte AS latest_observer_path_length_byte,
+  po.hash_size AS latest_observer_hash_size,
+  po.hop_count AS latest_observer_hop_count,
+  po.path_bytes AS latest_observer_path_bytes
 FROM (
   SELECT hits.packet_hash, MAX(hits.heard_at)::timestamptz AS site_heard_at
   FROM unnest($1::bpchar[]) AS req(iata)
@@ -2870,7 +2898,7 @@ FROM (
 ) sh
 JOIN packets p ON p.packet_hash = sh.packet_hash
 LEFT JOIN LATERAL (
-  SELECT observer_id, iata
+  SELECT observer_id, iata, path_length_byte, hash_size, hop_count, path_bytes
   FROM packet_observations
   WHERE packet_hash = p.packet_hash
   ORDER BY heard_at DESC
@@ -2894,18 +2922,22 @@ type ListPacketsByIATAsParams struct {
 }
 
 type ListPacketsByIATAsRow struct {
-	PacketHash         []byte             `json:"packet_hash"`
-	PayloadType        int16              `json:"payload_type"`
-	RouteType          int16              `json:"route_type"`
-	FirstHeardAt       pgtype.Timestamptz `json:"first_heard_at"`
-	LastHeardAt        pgtype.Timestamptz `json:"last_heard_at"`
-	ScopeID            *int32             `json:"scope_id"`
-	ScopeName          *string            `json:"scope_name"`
-	SiteHeardAt        pgtype.Timestamptz `json:"site_heard_at"`
-	ObservationCount   int64              `json:"observation_count"`
-	LatestObserverID   uuid.UUID          `json:"latest_observer_id"`
-	LatestObserverName *string            `json:"latest_observer_name"`
-	LatestObserverIata string             `json:"latest_observer_iata"`
+	PacketHash                   []byte             `json:"packet_hash"`
+	PayloadType                  int16              `json:"payload_type"`
+	RouteType                    int16              `json:"route_type"`
+	FirstHeardAt                 pgtype.Timestamptz `json:"first_heard_at"`
+	LastHeardAt                  pgtype.Timestamptz `json:"last_heard_at"`
+	ScopeID                      *int32             `json:"scope_id"`
+	ScopeName                    *string            `json:"scope_name"`
+	SiteHeardAt                  pgtype.Timestamptz `json:"site_heard_at"`
+	ObservationCount             int64              `json:"observation_count"`
+	LatestObserverID             uuid.UUID          `json:"latest_observer_id"`
+	LatestObserverName           *string            `json:"latest_observer_name"`
+	LatestObserverIata           string             `json:"latest_observer_iata"`
+	LatestObserverPathLengthByte int16              `json:"latest_observer_path_length_byte"`
+	LatestObserverHashSize       int16              `json:"latest_observer_hash_size"`
+	LatestObserverHopCount       int16              `json:"latest_observer_hop_count"`
+	LatestObserverPathBytes      []byte             `json:"latest_observer_path_bytes"`
 }
 
 // IATA-filtered packet list, driven from idx_observations_iata_heard.
@@ -2949,6 +2981,10 @@ func (q *Queries) ListPacketsByIATAs(ctx context.Context, arg ListPacketsByIATAs
 			&i.LatestObserverID,
 			&i.LatestObserverName,
 			&i.LatestObserverIata,
+			&i.LatestObserverPathLengthByte,
+			&i.LatestObserverHashSize,
+			&i.LatestObserverHopCount,
+			&i.LatestObserverPathBytes,
 		); err != nil {
 			return nil, err
 		}
