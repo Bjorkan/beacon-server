@@ -479,7 +479,7 @@ func (q *Queries) GetObserverBrokers(ctx context.Context, observerID uuid.UUID) 
 }
 
 const getObserverByID = `-- name: GetObserverByID :one
-SELECT id, public_key, display_name, observer_type, software_version, hardware_model, firmware_version, firmware_build, radio_freq_mhz, radio_sf, radio_bw_khz, radio_cr, battery_level, uptime_seconds, status_metadata, last_status_at, first_seen, last_seen, observation_count, metadata FROM observers WHERE id = $1
+SELECT id, public_key, display_name, observer_type, software_version, hardware_model, firmware_version, firmware_build, radio_freq_mhz, radio_sf, radio_bw_khz, radio_cr, battery_level, uptime_seconds, status_metadata, last_status_at, first_seen, last_seen, observation_count, metadata, region_scope FROM observers WHERE id = $1
 `
 
 func (q *Queries) GetObserverByID(ctx context.Context, id uuid.UUID) (Observer, error) {
@@ -506,12 +506,13 @@ func (q *Queries) GetObserverByID(ctx context.Context, id uuid.UUID) (Observer, 
 		&i.LastSeen,
 		&i.ObservationCount,
 		&i.Metadata,
+		&i.RegionScope,
 	)
 	return i, err
 }
 
 const getObserverByPubkey = `-- name: GetObserverByPubkey :one
-SELECT id, public_key, display_name, observer_type, software_version, hardware_model, firmware_version, firmware_build, radio_freq_mhz, radio_sf, radio_bw_khz, radio_cr, battery_level, uptime_seconds, status_metadata, last_status_at, first_seen, last_seen, observation_count, metadata FROM observers WHERE public_key = $1
+SELECT id, public_key, display_name, observer_type, software_version, hardware_model, firmware_version, firmware_build, radio_freq_mhz, radio_sf, radio_bw_khz, radio_cr, battery_level, uptime_seconds, status_metadata, last_status_at, first_seen, last_seen, observation_count, metadata, region_scope FROM observers WHERE public_key = $1
 `
 
 func (q *Queries) GetObserverByPubkey(ctx context.Context, publicKey []byte) (Observer, error) {
@@ -538,6 +539,7 @@ func (q *Queries) GetObserverByPubkey(ctx context.Context, publicKey []byte) (Ob
 		&i.LastSeen,
 		&i.ObservationCount,
 		&i.Metadata,
+		&i.RegionScope,
 	)
 	return i, err
 }
@@ -3652,6 +3654,23 @@ func (q *Queries) TouchPackets(ctx context.Context, arg TouchPacketsParams) erro
 	return err
 }
 
+const updateObserverRegionScope = `-- name: UpdateObserverRegionScope :exec
+UPDATE observers SET region_scope = $2 WHERE id = $1
+`
+
+type UpdateObserverRegionScopeParams struct {
+	ID          uuid.UUID `json:"id"`
+	RegionScope *string   `json:"region_scope"`
+}
+
+// Records the observer's own OTA-reported region scope, from the "self"
+// field of a /neighbors report. Always known (not queried OTA), so this
+// unconditionally overwrites, unlike the neighbor-side region_scope.
+func (q *Queries) UpdateObserverRegionScope(ctx context.Context, arg UpdateObserverRegionScopeParams) error {
+	_, err := q.db.Exec(ctx, updateObserverRegionScope, arg.ID, arg.RegionScope)
+	return err
+}
+
 const updateObserverStatus = `-- name: UpdateObserverStatus :one
 UPDATE observers SET
   display_name     = COALESCE(NULLIF($2, ''), display_name),
@@ -3989,19 +4008,21 @@ func (q *Queries) UpsertNodeIATA(ctx context.Context, arg UpsertNodeIATAParams) 
 
 const upsertNodeNeighbor = `-- name: UpsertNodeNeighbor :exec
 
-INSERT INTO node_neighbors (node_id, neighbor_id, iata, observation_count, snr)
-VALUES ($1, $2, $3, 1, $4)
+INSERT INTO node_neighbors (node_id, neighbor_id, iata, observation_count, snr, region_scope)
+VALUES ($1, $2, $3, 1, $4, $5)
 ON CONFLICT (node_id, neighbor_id, iata) DO UPDATE SET
   last_seen         = NOW(),
   observation_count = node_neighbors.observation_count + 1,
-  snr               = COALESCE(EXCLUDED.snr, node_neighbors.snr)
+  snr               = COALESCE(EXCLUDED.snr, node_neighbors.snr),
+  region_scope      = COALESCE(EXCLUDED.region_scope, node_neighbors.region_scope)
 `
 
 type UpsertNodeNeighborParams struct {
-	NodeID     uuid.UUID `json:"node_id"`
-	NeighborID uuid.UUID `json:"neighbor_id"`
-	Iata       string    `json:"iata"`
-	Snr        *float32  `json:"snr"`
+	NodeID      uuid.UUID `json:"node_id"`
+	NeighborID  uuid.UUID `json:"neighbor_id"`
+	Iata        string    `json:"iata"`
+	Snr         *float32  `json:"snr"`
+	RegionScope *string   `json:"region_scope"`
 }
 
 // ============================================================
@@ -4010,15 +4031,18 @@ type UpsertNodeNeighborParams struct {
 // Records or updates a neighbor relationship between two nodes observed in the same IATA.
 // node_id is the advertising node, neighbor_id is the first-hop forwarder.
 // snr is optional; pass NULL when no signal reading is available (the
-// common case). On conflict, snr is only overwritten when a new non-null
-// value is supplied, so a later no-SNR observation doesn't erase an
-// earlier real reading.
+// common case). regionScope is optional too; pass NULL whenever the OTA
+// scope query for this neighbor didn't succeed (status != "responded"),
+// so a failed/timed-out query doesn't erase a previously known scope.
+// On conflict, snr and region_scope are only overwritten when a new
+// non-null value is supplied.
 func (q *Queries) UpsertNodeNeighbor(ctx context.Context, arg UpsertNodeNeighborParams) error {
 	_, err := q.db.Exec(ctx, upsertNodeNeighbor,
 		arg.NodeID,
 		arg.NeighborID,
 		arg.Iata,
 		arg.Snr,
+		arg.RegionScope,
 	)
 	return err
 }
@@ -4047,7 +4071,7 @@ VALUES ($1, 'unknown', NOW())
 ON CONFLICT (public_key) DO UPDATE SET
   last_seen         = NOW(),
   observation_count = observers.observation_count + 1
-RETURNING id, public_key, display_name, observer_type, software_version, hardware_model, firmware_version, firmware_build, radio_freq_mhz, radio_sf, radio_bw_khz, radio_cr, battery_level, uptime_seconds, status_metadata, last_status_at, first_seen, last_seen, observation_count, metadata
+RETURNING id, public_key, display_name, observer_type, software_version, hardware_model, firmware_version, firmware_build, radio_freq_mhz, radio_sf, radio_bw_khz, radio_cr, battery_level, uptime_seconds, status_metadata, last_status_at, first_seen, last_seen, observation_count, metadata, region_scope
 `
 
 // ============================================================
@@ -4077,6 +4101,7 @@ func (q *Queries) UpsertObserver(ctx context.Context, publicKey []byte) (Observe
 		&i.LastSeen,
 		&i.ObservationCount,
 		&i.Metadata,
+		&i.RegionScope,
 	)
 	return i, err
 }

@@ -315,6 +315,17 @@ func (s *Store) UpsertObserverScope(ctx context.Context, observerID uuid.UUID, s
 	})
 }
 
+// UpdateObserverRegionScope records the observer's own OTA-reported region scope
+// (the "self" field of a /neighbors report). Unrelated to UpsertObserverScope
+// above, which links an observer to a named transport_scopes row matched by
+// key fingerprint; this stores the raw OTA-configured scope string instead.
+func (s *Store) UpdateObserverRegionScope(ctx context.Context, observerID uuid.UUID, regionScope string) error {
+	return s.q.UpdateObserverRegionScope(ctx, sqlc.UpdateObserverRegionScopeParams{
+		ID:          observerID,
+		RegionScope: &regionScope,
+	})
+}
+
 func (s *Store) GetObserverScopes(ctx context.Context, observerID uuid.UUID) ([]string, error) {
 	return s.q.GetObserverScopes(ctx, observerID)
 }

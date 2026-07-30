@@ -21,6 +21,18 @@
 //  1. Parse topic → extract publisher pubkey
 //  2. Upsert observers row (status_metadata, last_status_at, observer_type, etc.)
 //  3. Fan out observerStatus event to hub
+//
+// Pipeline per incoming /neighbors message (sent every 12-368h if mqtt.neighbors
+// is enabled on the observer):
+//  1. Parse topic → extract IATA + publisher pubkey
+//  2. Record the observer's own "self" region scope (always known, unconditional write)
+//  3. For each reported zero-hop neighbor: resolve both sides via GetNodeByPubkey
+//     (skip the entry if either the observer or the neighbor has no node row yet --
+//     i.e. hasn't advertised) and upsert a node_neighbors edge. Absence from the
+//     report means nothing (10KB message cap can truncate a highly-connected node's
+//     list), so this never deletes existing edges. A neighbor's region_scope is only
+//     written when status == "responded"; "timeout" (OTA scope queries are flaky)
+//     leaves any previously known scope untouched.
 package ingest
 
 import (
@@ -178,7 +190,13 @@ type DB interface {
 	// UpsertNodeNeighbor records or updates a neighbor relationship between two nodes.
 	// nodeID is the advertising node, neighborID is the first-hop forwarder.
 	// snr is optional (nil when no signal reading is available, the common case).
-	UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.UUID, iata string, snr *float32) error
+	// regionScope is optional (nil when there's no fresh OTA-queried scope to
+	// record for this neighbor, e.g. a /neighbors report entry with a failed query).
+	UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.UUID, iata string, snr *float32, regionScope *string) error
+
+	// UpdateObserverRegionScope records the observer's own OTA-reported region
+	// scope, from the "self" field of a /neighbors report.
+	UpdateObserverRegionScope(ctx context.Context, observerID uuid.UUID, regionScope string) error
 }
 
 // ChannelKeyStore is a read-only view of the channel keys loaded from config.
@@ -326,6 +344,8 @@ func (w *Worker) handleMessage(msg mqtt.Message) {
 		w.handlePacket(ctx, iata, pubkeyHex, msg.Payload())
 	case "status":
 		w.handleStatus(ctx, pubkeyHex, msg.Payload())
+	case "neighbors":
+		w.handleNeighbors(ctx, iata, pubkeyHex, msg.Payload())
 		// "internal" is intentionally not handled (Role 2 access)
 	}
 }

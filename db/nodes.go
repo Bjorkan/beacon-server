@@ -61,12 +61,13 @@ func (s *Store) UpsertNodeShortID(ctx context.Context, nodeID uuid.UUID, iata st
 	})
 }
 
-func (s *Store) UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.UUID, iata string, snr *float32) error {
+func (s *Store) UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.UUID, iata string, snr *float32, regionScope *string) error {
 	return s.q.UpsertNodeNeighbor(ctx, sqlc.UpsertNodeNeighborParams{
-		NodeID:     nodeID,
-		NeighborID: neighborID,
-		Iata:       iata,
-		Snr:        snr,
+		NodeID:      nodeID,
+		NeighborID:  neighborID,
+		Iata:        iata,
+		Snr:         snr,
+		RegionScope: regionScope,
 	})
 }
 

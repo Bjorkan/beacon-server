@@ -1114,15 +1114,24 @@ ORDER BY hop_count ASC, last_seen DESC;
 -- Records or updates a neighbor relationship between two nodes observed in the same IATA.
 -- node_id is the advertising node, neighbor_id is the first-hop forwarder.
 -- snr is optional; pass NULL when no signal reading is available (the
--- common case). On conflict, snr is only overwritten when a new non-null
--- value is supplied, so a later no-SNR observation doesn't erase an
--- earlier real reading.
-INSERT INTO node_neighbors (node_id, neighbor_id, iata, observation_count, snr)
-VALUES ($1, $2, $3, 1, $4)
+-- common case). regionScope is optional too; pass NULL whenever the OTA
+-- scope query for this neighbor didn't succeed (status != "responded"),
+-- so a failed/timed-out query doesn't erase a previously known scope.
+-- On conflict, snr and region_scope are only overwritten when a new
+-- non-null value is supplied.
+INSERT INTO node_neighbors (node_id, neighbor_id, iata, observation_count, snr, region_scope)
+VALUES ($1, $2, $3, 1, $4, $5)
 ON CONFLICT (node_id, neighbor_id, iata) DO UPDATE SET
   last_seen         = NOW(),
   observation_count = node_neighbors.observation_count + 1,
-  snr               = COALESCE(EXCLUDED.snr, node_neighbors.snr);
+  snr               = COALESCE(EXCLUDED.snr, node_neighbors.snr),
+  region_scope      = COALESCE(EXCLUDED.region_scope, node_neighbors.region_scope);
+
+-- name: UpdateObserverRegionScope :exec
+-- Records the observer's own OTA-reported region scope, from the "self"
+-- field of a /neighbors report. Always known (not queried OTA), so this
+-- unconditionally overwrites, unlike the neighbor-side region_scope.
+UPDATE observers SET region_scope = $2 WHERE id = $1;
 
 -- name: GetNodeNeighbors :many
 -- Returns the neighbors of a node with details, ordered by most recently seen.

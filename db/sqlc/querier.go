@@ -200,6 +200,10 @@ type Querier interface {
 	// from regressing a newer write-through (e.g. a status update).
 	TouchObservers(ctx context.Context, arg TouchObserversParams) error
 	TouchPackets(ctx context.Context, arg TouchPacketsParams) error
+	// Records the observer's own OTA-reported region scope, from the "self"
+	// field of a /neighbors report. Always known (not queried OTA), so this
+	// unconditionally overwrites, unlike the neighbor-side region_scope.
+	UpdateObserverRegionScope(ctx context.Context, arg UpdateObserverRegionScopeParams) error
 	UpdateObserverStatus(ctx context.Context, arg UpdateObserverStatusParams) (uuid.UUID, error)
 	// ============================================================
 	// CHANNELS
@@ -242,9 +246,11 @@ type Querier interface {
 	// Records or updates a neighbor relationship between two nodes observed in the same IATA.
 	// node_id is the advertising node, neighbor_id is the first-hop forwarder.
 	// snr is optional; pass NULL when no signal reading is available (the
-	// common case). On conflict, snr is only overwritten when a new non-null
-	// value is supplied, so a later no-SNR observation doesn't erase an
-	// earlier real reading.
+	// common case). regionScope is optional too; pass NULL whenever the OTA
+	// scope query for this neighbor didn't succeed (status != "responded"),
+	// so a failed/timed-out query doesn't erase a previously known scope.
+	// On conflict, snr and region_scope are only overwritten when a new
+	// non-null value is supplied.
 	UpsertNodeNeighbor(ctx context.Context, arg UpsertNodeNeighborParams) error
 	UpsertNodeShortID(ctx context.Context, arg UpsertNodeShortIDParams) error
 	// ============================================================

@@ -165,6 +165,7 @@ type NodeNeighbor struct {
 	LastSeen         pgtype.Timestamptz `json:"last_seen"`
 	ObservationCount int64              `json:"observation_count"`
 	Snr              *float32           `json:"snr"`
+	RegionScope      *string            `json:"region_scope"`
 }
 
 type NodeShortID struct {
@@ -197,6 +198,7 @@ type Observer struct {
 	LastSeen         pgtype.Timestamptz `json:"last_seen"`
 	ObservationCount *int64             `json:"observation_count"`
 	Metadata         []byte             `json:"metadata"`
+	RegionScope      *string            `json:"region_scope"`
 }
 
 type ObserverBroker struct {

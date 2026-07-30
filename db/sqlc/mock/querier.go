@@ -1311,6 +1311,20 @@ func (mr *MockQuerierMockRecorder) TouchPackets(ctx, arg any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TouchPackets", reflect.TypeOf((*MockQuerier)(nil).TouchPackets), ctx, arg)
 }
 
+// UpdateObserverRegionScope mocks base method.
+func (m *MockQuerier) UpdateObserverRegionScope(ctx context.Context, arg db.UpdateObserverRegionScopeParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateObserverRegionScope", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateObserverRegionScope indicates an expected call of UpdateObserverRegionScope.
+func (mr *MockQuerierMockRecorder) UpdateObserverRegionScope(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateObserverRegionScope", reflect.TypeOf((*MockQuerier)(nil).UpdateObserverRegionScope), ctx, arg)
+}
+
 // UpdateObserverStatus mocks base method.
 func (m *MockQuerier) UpdateObserverStatus(ctx context.Context, arg db.UpdateObserverStatusParams) (uuid.UUID, error) {
 	m.ctrl.T.Helper()

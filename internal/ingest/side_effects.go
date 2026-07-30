@@ -116,7 +116,7 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 				if err == nil {
 					key := hex.EncodeToString(firstHop[0])
 					if entries := resolved[key]; len(entries) == 1 {
-						if err := w.db.UpsertNodeNeighbor(ctx, nodeID, entries[0].NodeID, iata, nil); err != nil {
+						if err := w.db.UpsertNodeNeighbor(ctx, nodeID, entries[0].NodeID, iata, nil, nil); err != nil {
 							log.Printf("ingest[%s]: failed to upsert node neighbor: %v", w.cfg.BrokerName, err)
 						}
 					}
@@ -131,7 +131,7 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 			observerNodeID, oErr := w.db.GetNodeByPubkey(ctx, observerPubkey)
 			if oErr == nil && observerNodeID != nodeID {
 				snr := rxSNR
-				if err := w.db.UpsertNodeNeighbor(ctx, observerNodeID, nodeID, iata, &snr); err != nil {
+				if err := w.db.UpsertNodeNeighbor(ctx, observerNodeID, nodeID, iata, &snr, nil); err != nil {
 					log.Printf("ingest[%s]: failed to upsert observer-advert neighbor: %v", w.cfg.BrokerName, err)
 				}
 			}
