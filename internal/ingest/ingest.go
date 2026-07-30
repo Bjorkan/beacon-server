@@ -277,6 +277,21 @@ func (w *Worker) subscribe(client mqtt.Client) {
 	}
 }
 
+// isValidIATA reports whether s is 3 uppercase ASCII letters, matching the
+// iata_codes.iata CHAR(3) column. MQTT topic segments are attacker/observer
+// controlled and must be validated before touching the DB.
+func isValidIATA(s string) bool {
+	if len(s) != 3 {
+		return false
+	}
+	for i := 0; i < 3; i++ {
+		if s[i] < 'A' || s[i] > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
 // handleMessage dispatches incoming MQTT messages by subtopic.
 // Each message is processed with a 30s timeout to prevent slow DB calls
 // from blocking the MQTT receive goroutine indefinitely.
@@ -287,6 +302,13 @@ func (w *Worker) handleMessage(msg mqtt.Message) {
 		return
 	}
 	iata, pubkeyHex, subtopic := parts[1], parts[2], parts[3]
+
+	// iata_codes.iata is CHAR(3); anything else would fail the DB insert
+	// downstream, so reject malformed topic segments here instead.
+	if !isValidIATA(iata) {
+		log.Printf("ingest[%s]: dropped packet with malformed IATA %q on topic %s", w.cfg.BrokerName, iata, msg.Topic())
+		return
+	}
 
 	// Drop packets from IATAs outside the configured geographic filter.
 	if w.cfg.AllowedIATAs != nil {
