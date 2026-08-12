@@ -73,15 +73,23 @@ func CleanupTask(store *db.Store, telemetryRetention, packetRetention, nodeDelet
 	}
 }
 
-// ReconfirmTask returns a Task that prunes stale and ambiguous resolved paths
-// and neighbors. Runs after routes to ensure neighbors are cleaned against
-// already-reconfirmed path data.
-func ReconfirmTask(store *db.Store, interval time.Duration) Task {
+// reconfirmBatchSize bounds per-tick reconfirm work; at hourly ticks a 16M-row
+// table gets fully re-checked roughly daily.
+const reconfirmBatchSize = 750_000
+
+// ReconfirmTask returns a Task that prunes aged routes first, then reconfirms
+// stale and ambiguous resolved paths and neighbors, so known_routes only ever
+// has one writer at a time.
+func ReconfirmTask(store *db.Store, routeRetention, routeGrace time.Duration, routeMinObservations int64, interval time.Duration) Task {
 	return Task{
 		Name:     "reconfirm",
 		Interval: interval,
 		Run: func(ctx context.Context) error {
-			if err := store.ReconfirmRoutes(ctx); err != nil {
+			now := time.Now()
+			if err := store.DeleteOldRoutes(ctx, now.Add(-routeRetention), routeMinObservations, now.Add(-routeGrace)); err != nil {
+				return fmt.Errorf("route retention: %w", err)
+			}
+			if err := store.ReconfirmRoutes(ctx, reconfirmBatchSize); err != nil {
 				return fmt.Errorf("routes: %w", err)
 			}
 			if err := store.ReconfirmNeighbors(ctx); err != nil {

@@ -25,6 +25,9 @@ type Querier interface {
 	// Deletes packets and their observations older than the given cutoff.
 	// packet_observations cascade-delete via FK.
 	DeleteOldPackets(ctx context.Context, lastHeardAt pgtype.Timestamptz) error
+	// Deletes routes not observed since the retention cutoff ($1), and rarely-observed
+	// routes (observation_count < $2) not observed since the grace cutoff ($3).
+	DeleteOldRoutes(ctx context.Context, arg DeleteOldRoutesParams) error
 	// Deletes telemetry rows older than the given cutoff. Called by the cleanup goroutine.
 	DeleteOldTelemetry(ctx context.Context, reportedAt pgtype.Timestamptz) error
 	// Keeps the trace IATA filter in step with packet retention.
@@ -38,7 +41,7 @@ type Querier interface {
 	// missing row (unknown IATA) is sql.ErrNoRows, same not-found distinction
 	// GetIATA already makes.
 	GetIATABorder(ctx context.Context, iata string) ([]byte, error)
-	GetKnownRoutesByNode(ctx context.Context, arg GetKnownRoutesByNodeParams) ([]KnownRoute, error)
+	GetKnownRoutesByNode(ctx context.Context, arg GetKnownRoutesByNodeParams) ([]GetKnownRoutesByNodeRow, error)
 	GetNodeByID(ctx context.Context, id uuid.UUID) (GetNodeByIDRow, error)
 	GetNodeByPubkey(ctx context.Context, publicKey []byte) (uuid.UUID, error)
 	// Returns the neighbors of a node with details, ordered by most recently seen.
@@ -119,7 +122,7 @@ type Querier interface {
 	// Pass cursor=0 to start from the beginning (cursor is last_seen epoch ms).
 	ListChannels(ctx context.Context, arg ListChannelsParams) ([]Channel, error)
 	ListIATAs(ctx context.Context) ([]IataCode, error)
-	ListKnownRoutes(ctx context.Context, arg ListKnownRoutesParams) ([]KnownRoute, error)
+	ListKnownRoutes(ctx context.Context, arg ListKnownRoutesParams) ([]ListKnownRoutesRow, error)
 	// Returns messages after the given message ID, ordered oldest first.
 	// Used for WS reconnect backfill.
 	ListMessagesAfterID(ctx context.Context, arg ListMessagesAfterIDParams) ([]ListMessagesAfterIDRow, error)
@@ -168,9 +171,10 @@ type Querier interface {
 	// Delete node_neighbors where the neighbor has departed from node_short_ids
 	// for that IATA, or where its prefix_4 is now ambiguous.
 	ReconfirmNeighbors(ctx context.Context) error
-	// Delete known_routes where any hop node has departed from node_short_ids for
-	// that IATA, or where any hop's prefix_4 is now ambiguous (matches >1 node).
-	ReconfirmRoutes(ctx context.Context) error
+	// Checks the $1 least-recently-reconfirmed routes: deletes those with a departed
+	// hop node or a hop prefix now matching >1 node in that IATA (length-aware:
+	// 1/2/3/4-byte hop prefixes check prefix_1/2/3/4), and stamps the survivors.
+	ReconfirmRoutes(ctx context.Context, limit int32) error
 	RefreshHourlyStats(ctx context.Context) error
 	RefreshPayloadBreakdown(ctx context.Context) error
 	RefreshRadioPresets(ctx context.Context) error
@@ -190,7 +194,7 @@ type Querier interface {
 	ResolvePathHashesP4(ctx context.Context, arg ResolvePathHashesP4Params) ([]ResolvePathHashesP4Row, error)
 	// Returns known routes containing a subsequence from source to destination hash prefix.
 	// Verifies source appears before destination in the route.
-	SearchKnownRoutes(ctx context.Context, arg SearchKnownRoutesParams) ([]KnownRoute, error)
+	SearchKnownRoutes(ctx context.Context, arg SearchKnownRoutesParams) ([]SearchKnownRoutesRow, error)
 	SetNodeDefaultScope(ctx context.Context, arg SetNodeDefaultScopeParams) error
 	SetNodeMultibytePaths(ctx context.Context, id uuid.UUID) error
 	SetNodeMultibyteTraces(ctx context.Context, id uuid.UUID) error
@@ -228,9 +232,8 @@ type Querier interface {
 	// ============================================================
 	// ROUTES
 	// ============================================================
-	// Inserts or updates a known route (all hops resolved to high confidence).
-	// node_ids and hash_prefix are ordered arrays of the resolved node UUIDs and
-	// their hash bytes. last_seen is bumped on conflict.
+	// Route identity is path_key, an md5 of node_ids computed by the caller.
+	// On conflict, observation_count and last_seen are bumped.
 	UpsertKnownRoute(ctx context.Context, arg UpsertKnownRouteParams) error
 	// ============================================================
 	// NODES
