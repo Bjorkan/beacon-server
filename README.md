@@ -4,10 +4,9 @@ MeshCore Beacon is a MeshCore network observation backend. It connects to one or
 more MeshCore MQTT brokers, ingests LoRa packet traffic in real time, stores it
 in PostgreSQL, and streams live events to WebSocket clients.
 
-[![CI](https://github.com/MeshCore-Beacon/beacon-server/actions/workflows/ci.yml/badge.svg)](https://github.com/MeshCore-Beacon/beacon-server/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/MeshCore-Beacon/beacon-server/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/MeshCore-Beacon/beacon-server/actions/workflows/codeql.yml)
-![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/446564/3e707bdf3f06ecb4575166ce598051c3/raw/beacon-coverage.json)
-[![Docker](https://github.com/MeshCore-Beacon/beacon-server/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/MeshCore-Beacon/beacon-server/actions/workflows/docker-publish.yml)
+[![CI](https://github.com/Bjorkan/beacon-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Bjorkan/beacon-server/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Bjorkan/beacon-server/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/Bjorkan/beacon-server/actions/workflows/codeql.yml)
+[![Docker](https://github.com/Bjorkan/beacon-server/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/Bjorkan/beacon-server/actions/workflows/docker-publish.yml)
 
 ## What it does
 
@@ -103,6 +102,13 @@ deployment `resolvedPath` will show `"confidence": "none"` for all hops and
 arrives and populates `node_short_ids`. This is expected behaviour — resolution
 improves automatically as the mesh is observed over time.
 
+Similarly, GRP_TXT packets whose channel key isn't yet known at ingest time are
+stored as hash-only, undecrypted rows. Adding the channel's key to `config.yaml`
+doesn't retroactively decrypt that history immediately — it's picked up
+automatically on the next restart, when Beacon scans for undecrypted packets
+matching a now-known channel and decrypts them. Watch the startup log for
+`backfilled N previously-undecrypted channel message(s)`.
+
 ---
 
 ## Configuration
@@ -129,11 +135,15 @@ improves automatically as the mesh is observed over time.
 ```yaml
 # Optional IATA overrides — auto-created on first packet arrival,
 # only needed if you want to customise display name or coordinates.
+# borderFile points to a GeoJSON Feature (Polygon or MultiPolygon) for the
+# region border map feature; relative paths resolve against this config
+# file's own directory. Validated at boot — invalid geometry fails startup.
 iatas:
   YVR:
     name: Vancouver International
     lat: 49.1967
     lng: -123.1815
+    borderFile: borders/yvr.geojson # optional
 
 # Super-regions grouping multiple IATAs.
 regions:
@@ -187,6 +197,12 @@ presence:
 websocket:
   max_connections_per_ip: 5 # default: 5
 
+# Node staleness, deletion, and clock-drift thresholds.
+nodes:
+  stale_threshold: 24h # mark a node "stale" in the API after this long unseen (default: 24h)
+  delete_after: 720h # delete a node entirely after this long unseen (default: 30 days, same default as packets.retention)
+  clock_drift_threshold: 5m # |device clock - server clock| above which clockOutOfSync=true for a repeater/room server (default: 5m)
+
 # Redis caching layer (optional).
 # Caches read-heavy, slow-changing responses to reduce PostgreSQL load.
 # Connection details (address, password, database) are set via environment
@@ -212,8 +228,8 @@ ingest:
 ```
 
 IATAs are auto-created on first packet arrival. The config file adds display
-names and coordinates. Regions and channel keys must be defined here — they are
-not auto-created.
+names, coordinates, and optional region borders. Regions and channel keys
+must be defined here — they are not auto-created.
 
 ---
 
@@ -358,42 +374,45 @@ Not yet implemented — see the Authentication section above.
 
 ### Endpoints
 
-| Method | Path                                | Description                                                                                        |
-| ------ | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `GET`  | `/brokers`                          | List MQTT brokers and connection status                                                            |
-| `GET`  | `/channels`                         | List channels (optional: `?hash=<hex>&iata=<code>&limit=50`)                                       |
-| `GET`  | `/channels/{id}`                    | Get channel detail by integer ID                                                                   |
-| `GET`  | `/channels/{id}/messages`           | List messages for a channel (optional: `?since=<ms>&iata=<code>&limit=50`)                         |
-| `GET`  | `/iatas`                            | List all known IATA codes                                                                          |
-| `GET`  | `/iatas/{iata}`                     | Get a single IATA code                                                                             |
-| `GET`  | `/messages`                         | List all messages (optional: `?channelId=<int>&channelHash=<hex>&iata=<code>&since=<ms>&limit=50`) |
-| `GET`  | `/messages/backfill`                | Backfill messages after a given message ID                                                         |
-| `GET`  | `/nodes`                            | List nodes                                                                                         |
-| `GET`  | `/nodes/{nodeId}`                   | Get node detail                                                                                    |
-| `GET`  | `/nodes/{nodeId}/neighbors`         | List neighboring nodes observed in the mesh                                                        |
-| `GET`  | `/nodes/{nodeId}/observations`      | List observations for a node                                                                       |
-| `GET`  | `/observers`                        | List observers (optional: `?iata=<code>&type=<str>&broker=<name>&status=online\|offline`)          |
-| `GET`  | `/observers/{observerId}`           | Get observer detail including broker last-seen timestamps                                          |
-| `GET`  | `/observers/{observerId}/adverts`   | Adverts heard by observer                                                                          |
-| `GET`  | `/observers/{observerId}/telemetry` | Observer telemetry history (optional: `?range=24h&interval=1h\|6h\|24h`)                           |
-| `GET`  | `/packets`                          | List packets with filters                                                                          |
-| `GET`  | `/packets/backfill`                 | Backfill packets after a given observation ID                                                      |
-| `GET`  | `/packets/{packetHash}`             | Get packet with all observations                                                                   |
-| `GET`  | `/regions`                          | List all regions (summary)                                                                         |
-| `GET`  | `/regions/{id}`                     | Get a single region with IATA list                                                                 |
-| `GET`  | `/routes`                           | List known routes (all hops high confidence)                                                       |
-| `GET`  | `/routes/search`                    | Search routes by source and destination hash                                                       |
-| `GET`  | `/routes/cross`                     | Search for routes crossing IATA boundaries                                                         |
-| `GET`  | `/scopes`                           | List transport scopes                                                                              |
-| `GET`  | `/scopes/{name}`                    | Get scope detail                                                                                   |
-| `GET`  | `/stats/observations`               | Hourly observation time series (last 7 days by default)                                            |
-| `GET`  | `/stats/overview`                   | Network overview stats                                                                             |
-| `GET`  | `/stats/payload-breakdown`          | Observation counts by payload type (last 24h by default)                                           |
-| `GET`  | `/stats/scopes`                     | Configured region scopes and breakdown of packets, nodes, observers                                |
-| `GET`  | `/stats/top-nodes`                  | Top N nodes by observation count (from materialized view)                                          |
-| `GET`  | `/stats/top-observers`              | Top N observers by observation count (last 24h by default)                                         |
-| `GET`  | `/traces`                           | List trace tags with filters (optional: ?type=TRACE\|PING)                                         |
-| `GET`  | `/traces/{tag}`                     | Get full trace detail with resolved routes                                                         |
+| Method | Path                                | Description                                                                                                                                      |
+| ------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET`  | `/brokers`                          | List MQTT brokers and connection status                                                                                                          |
+| `GET`  | `/channels`                         | List channels (optional: `?hash=<hex>&iata=<code>&limit=50`)                                                                                     |
+| `GET`  | `/channels/{id}`                    | Get channel detail by integer ID                                                                                                                 |
+| `GET`  | `/channels/{id}/messages`           | List messages for a channel (optional: `?since=<ms>&iata=<code>&limit=50`)                                                                       |
+| `GET`  | `/iatas`                            | List all known IATA codes                                                                                                                        |
+| `GET`  | `/iatas/{iata}`                     | Get a single IATA code                                                                                                                           |
+| `GET`  | `/iatas/{iata}/border`              | Get an IATA's GeoJSON region border, if configured (204 if not)                                                                                  |
+| `GET`  | `/messages`                         | List all messages (optional: `?channelId=<int>&channelHash=<hex>&iata=<code>&since=<ms>&limit=50`)                                               |
+| `GET`  | `/messages/backfill`                | Backfill messages after a given message ID                                                                                                       |
+| `GET`  | `/nodes`                            | List nodes (optional: `?pubkeyPrefix=<hex>&neighbors&iatas=<codes>&pubkey=<hex>`)                                                                |
+| `GET`  | `/nodes/{nodeId}`                   | Get node detail                                                                                                                                  |
+| `GET`  | `/nodes/{nodeId}/neighbors`         | List neighboring nodes observed in the mesh                                                                                                      |
+| `GET`  | `/nodes/{nodeId}/observations`      | List observations for a node                                                                                                                     |
+| `GET`  | `/observers`                        | List observers (optional: `?iata=<code>&type=<str>&broker=<name>&status=online\|offline`)                                                        |
+| `GET`  | `/observers/{observerId}`           | Get observer detail including broker last-seen timestamps                                                                                        |
+| `GET`  | `/observers/{observerId}/adverts`   | Adverts heard by observer                                                                                                                        |
+| `GET`  | `/observers/{observerId}/telemetry` | Observer telemetry history (optional: `?range=24h&interval=1h\|6h\|24h`)                                                                         |
+| `GET`  | `/packets`                          | List packets (optional: `?payloadTypes=<csv>&routeTypes=<csv>&scopes=<csv>` accept plural, comma-separated values alongside the singular params) |
+| `GET`  | `/packets/backfill`                 | Backfill packets after a given observation ID                                                                                                    |
+| `GET`  | `/packets/{packetHash}`             | Get packet with all observations                                                                                                                 |
+| `GET`  | `/regions`                          | List all regions (summary)                                                                                                                       |
+| `GET`  | `/regions/{id}`                     | Get a single region with IATA list                                                                                                               |
+| `GET`  | `/routes`                           | List known routes (all hops high confidence)                                                                                                     |
+| `GET`  | `/routes/search`                    | Search routes by source and destination hash                                                                                                     |
+| `GET`  | `/routes/cross`                     | Search for routes crossing IATA boundaries                                                                                                       |
+| `GET`  | `/scopes`                           | List transport scopes                                                                                                                            |
+| `GET`  | `/scopes/{name}`                    | Get scope detail                                                                                                                                 |
+| `GET`  | `/stats/observations`               | Hourly observation time series (last 7 days by default)                                                                                          |
+| `GET`  | `/stats/overview`                   | Network overview stats                                                                                                                           |
+| `GET`  | `/stats/payload-breakdown`          | Observation counts by payload type (last 24h by default)                                                                                         |
+| `GET`  | `/stats/scopes`                     | Configured region scopes and breakdown of packets, nodes, observers                                                                              |
+| `GET`  | `/stats/top-advertisers`            | Top N nodes by distinct ADVERT packet count (last 24h by default, from materialized view)                                                        |
+| `GET`  | `/stats/top-nodes`                  | Top N nodes by observation count (from materialized view)                                                                                        |
+| `GET`  | `/stats/top-observers`              | Top N observers by observation count (last 24h by default)                                                                                       |
+| `GET`  | `/stats/top-talkers`                | Top N companion names by decrypted channel message count (last 24h by default, from materialized view)                                           |
+| `GET`  | `/traces`                           | List trace tags with filters (optional: ?type=TRACE\|PING)                                                                                       |
+| `GET`  | `/traces/{tag}`                     | Get full trace detail with resolved routes                                                                                                       |
 
 ---
 
