@@ -94,6 +94,12 @@ routes:
   # retention tier for good.
   min_observations: 3
 
+# Neighbor edges between nodes (drawn from 3-byte path hashes and /neighbors
+# reports). An edge that gets no fresh confirmation -- neither source sees the
+# pair again -- is dropped once it ages past retention.
+#neighbors:
+#  retention: 168h   # default: 7 days
+
 websocket:
   max_connections_per_ip: 5 # default: 5
 

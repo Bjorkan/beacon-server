@@ -4,6 +4,7 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
@@ -11,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/MeshCore-Beacon/beacon-server/internal/keystore"
+	"github.com/google/uuid"
 	"github.com/meshcore-go/meshcore-go"
 )
 
@@ -213,5 +216,59 @@ func TestHandlePacket_Trace_UpsertsTraceIATA(t *testing.T) {
 
 	if db.upsertTraceIATACalls != 1 {
 		t.Errorf("expected UpsertTraceIATA to be called once for a stored trace, got %d", db.upsertTraceIATACalls)
+	}
+}
+
+// buildPathedAdvertPacket signs a repeater advert and wraps it in a packet
+// carrying `count` path hashes of `hashSize` bytes (flood route, no transport
+// codes), parsed back through PacketFromBytes so the ingest code sees the
+// header-encoded hash size/count exactly as it would on the wire.
+func buildPathedAdvertPacket(t *testing.T, hashSize, count int) *meshcore.Packet {
+	t.Helper()
+	base := buildAdvertPacket(t, false)
+	raw := []byte{base.Header, byte((hashSize-1)<<6 | count)}
+	for i := 0; i < count; i++ {
+		raw = append(raw, bytes.Repeat([]byte{byte(0xAB - i)}, hashSize)...)
+	}
+	raw = append(raw, base.Payload...)
+	pkt, err := meshcore.PacketFromBytes(raw)
+	if err != nil {
+		t.Fatalf("parse packet: %v", err)
+	}
+	return pkt
+}
+
+// A forwarded repeater advert with 3-byte path hashes resolves its first hop
+// and records the advertiser->first-hop neighbor edge.
+func TestHandlePayloadTypeSideEffects_Advert_ThreeBytePathHashes_UpsertsFirstHopNeighbor(t *testing.T) {
+	packet := buildPathedAdvertPacket(t, 3, 1)
+	w, db := newTestWorker()
+	db.pathResolves = map[string][]api.ResolvedPathEntry{
+		hex.EncodeToString(packet.PathHashes()[0]): {{NodeID: uuid.New()}},
+	}
+
+	w.handlePayloadTypeSideEffects(context.Background(), packet, "TEST", []byte{0x01}, RadioSettings{}, nil, nil, nil, 0)
+
+	if db.upsertNeighborCalls != 1 {
+		t.Errorf("expected 1 neighbor upsert for a 3-byte path hash, got %d", db.upsertNeighborCalls)
+	}
+}
+
+// 1- and 2-byte path hashes are too ambiguous to hang a neighbor edge on, so
+// no edge is recorded even when the hash resolves cleanly — only a 3-byte
+// packet or a /neighbors report may confirm neighbors.
+func TestHandlePayloadTypeSideEffects_Advert_ShortPathHashes_SkipNeighbor(t *testing.T) {
+	for _, hashSize := range []int{1, 2} {
+		packet := buildPathedAdvertPacket(t, hashSize, 1)
+		w, db := newTestWorker()
+		db.pathResolves = map[string][]api.ResolvedPathEntry{
+			hex.EncodeToString(packet.PathHashes()[0]): {{NodeID: uuid.New()}},
+		}
+
+		w.handlePayloadTypeSideEffects(context.Background(), packet, "TEST", []byte{0x01}, RadioSettings{}, nil, nil, nil, 0)
+
+		if db.upsertNeighborCalls != 0 {
+			t.Errorf("hash size %d: expected 0 neighbor upserts, got %d", hashSize, db.upsertNeighborCalls)
+		}
 	}
 }

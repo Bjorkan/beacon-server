@@ -90,6 +90,18 @@ func (q *Queries) DeleteOldTraceIATAs(ctx context.Context, lastHeard pgtype.Time
 	return err
 }
 
+const deleteStaleNodeNeighbors = `-- name: DeleteStaleNodeNeighbors :exec
+DELETE FROM node_neighbors WHERE last_seen < $1
+`
+
+// A neighbor edge is only as good as its last confirmation (a 3-byte-path
+// packet or a /neighbors report); the cleanup task drops edges that haven't
+// been re-confirmed within the neighbor retention window.
+func (q *Queries) DeleteStaleNodeNeighbors(ctx context.Context, lastSeen pgtype.Timestamptz) error {
+	_, err := q.db.Exec(ctx, deleteStaleNodeNeighbors, lastSeen)
+	return err
+}
+
 const getChannelByID = `-- name: GetChannelByID :one
 SELECT id, channel_hash, key_fingerprint, name, hashtag, is_hashtag, is_public, key_known, first_seen, last_seen, message_count FROM channels WHERE id = $1
 `

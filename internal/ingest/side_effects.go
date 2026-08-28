@@ -108,8 +108,14 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 			w.onNodeUpsert(ctx, nodeID)
 		}
 		// record advertiser neighbors
-		// if the advert was forwarded, the first hop is a neighbor
-		if packet.PathHashCount() > 0 && (advert.Type() == meshcore.AdvertTypeRepeater || advert.Type() == meshcore.AdvertTypeRoom) {
+		// if the advert was forwarded, the first hop is a neighbor — but only
+		// when the path hashes are 3 bytes. The header encodes the hash size
+		// as (PathLength>>6): 0=1B, 1=2B, 2=3B, and only the 3-byte width is
+		// specific enough to resolve one unambiguous node (see
+		// ResolvePathHashesP3); 1-2 byte prefixes must not create edges.
+		// /neighbors reports are the other trusted neighbor source.
+		if packet.PathHashCount() > 0 && packet.PathHashSize() >= 3 &&
+			(advert.Type() == meshcore.AdvertTypeRepeater || advert.Type() == meshcore.AdvertTypeRoom) {
 			firstHop := packet.PathHashes()
 			if len(firstHop) > 0 {
 				resolved, err := w.db.ResolvePathHashes(ctx, iata, firstHop[:1])

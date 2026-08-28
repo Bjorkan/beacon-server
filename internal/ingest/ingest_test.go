@@ -182,6 +182,9 @@ type stubDB struct {
 	observationInserted        bool
 	insertChannelMessageResult bool // configurable return for InsertChannelMessage; default false
 	undecryptedPackets         []UndecryptedPacket
+	// when non-nil, ResolvePathHashes returns this map verbatim; nil keeps the old empty result
+	pathResolves        map[string][]api.ResolvedPathEntry
+	upsertNeighborCalls int
 }
 
 type setCapabilityCall struct {
@@ -249,6 +252,9 @@ func (s *stubDB) GetObserverScopes(_ context.Context, _ uuid.UUID) ([]string, er
 }
 
 func (s *stubDB) ResolvePathHashes(_ context.Context, _ string, _ [][]byte) (map[string][]api.ResolvedPathEntry, error) {
+	if s.pathResolves != nil {
+		return s.pathResolves, nil
+	}
 	return nil, nil
 }
 
@@ -287,6 +293,7 @@ func (s *stubDB) UpsertKnownRoute(_ context.Context, _ []uuid.UUID, _ [][]byte, 
 }
 
 func (s *stubDB) UpsertNodeNeighbor(_ context.Context, _, _ uuid.UUID, _ string, _ *float32, _ *string) error {
+	s.upsertNeighborCalls++
 	return nil
 }
 

@@ -44,8 +44,9 @@ func ViewRefreshTask(store *db.Store, interval time.Duration) Task {
 	}
 }
 
-// CleanupTask returns a Task that prunes old telemetry, packet, and node rows.
-func CleanupTask(store *db.Store, telemetryRetention, packetRetention, nodeDeleteAfter, interval time.Duration) Task {
+// CleanupTask returns a Task that prunes old telemetry, packet, and node rows,
+// plus neighbor edges that haven't been re-confirmed within the retention window.
+func CleanupTask(store *db.Store, telemetryRetention, packetRetention, nodeDeleteAfter, neighborRetention, interval time.Duration) Task {
 	return Task{
 		Name:     "cleanup",
 		Interval: interval,
@@ -63,6 +64,9 @@ func CleanupTask(store *db.Store, telemetryRetention, packetRetention, nodeDelet
 				return err
 			}
 			if err := store.DeleteOldTraceIATAs(ctx, cutoff); err != nil {
+				return err
+			}
+			if err := store.DeleteStaleNodeNeighbors(ctx, time.Now().Add(-neighborRetention)); err != nil {
 				return err
 			}
 			if err := store.DeleteOldNodes(ctx, time.Now().Add(-nodeDeleteAfter)); err != nil {

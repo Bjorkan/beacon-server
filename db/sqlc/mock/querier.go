@@ -127,6 +127,20 @@ func (mr *MockQuerierMockRecorder) DeleteOldTraceIATAs(ctx, lastHeard any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteOldTraceIATAs", reflect.TypeOf((*MockQuerier)(nil).DeleteOldTraceIATAs), ctx, lastHeard)
 }
 
+// DeleteStaleNodeNeighbors mocks base method.
+func (m *MockQuerier) DeleteStaleNodeNeighbors(ctx context.Context, lastSeen pgtype.Timestamptz) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteStaleNodeNeighbors", ctx, lastSeen)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteStaleNodeNeighbors indicates an expected call of DeleteStaleNodeNeighbors.
+func (mr *MockQuerierMockRecorder) DeleteStaleNodeNeighbors(ctx, lastSeen any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteStaleNodeNeighbors", reflect.TypeOf((*MockQuerier)(nil).DeleteStaleNodeNeighbors), ctx, lastSeen)
+}
+
 // GetChannelByID mocks base method.
 func (m *MockQuerier) GetChannelByID(ctx context.Context, id int32) (db.Channel, error) {
 	m.ctrl.T.Helper()

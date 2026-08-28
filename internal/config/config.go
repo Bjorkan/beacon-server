@@ -23,6 +23,7 @@ type Config struct {
 	WebSocket   WebSocketConfig       `yaml:"websocket"`
 	Packets     PacketsConfig         `yaml:"packets"`
 	Routes      RoutesConfig          `yaml:"routes"`
+	Neighbors   NeighborsConfig       `yaml:"neighbors"`
 	Ingest      IngestFilterConfig    `yaml:"ingest"`
 	Scopes      []ScopeConfig         `yaml:"scopes"`
 	Cache       CacheConfig           `yaml:"cache"`
@@ -38,6 +39,7 @@ type ResolvedConfig struct {
 	TelemetryRetention   time.Duration
 	PacketRetention      time.Duration
 	RouteRetention       time.Duration
+	NeighborRetention    time.Duration
 	RouteGrace           time.Duration
 	RouteMinObservations int
 	MaxConnsPerIP        int
@@ -194,6 +196,14 @@ type RoutesConfig struct {
 	MinObservations int `yaml:"min_observations"`
 }
 
+// NeighborsConfig controls node_neighbors edge retention.
+type NeighborsConfig struct {
+	// Retention is how long a neighbor edge survives without a fresh
+	// confirmation (a 3-byte-path packet or a /neighbors report).
+	// Defaults to 168h (7 days) if not set.
+	Retention duration `yaml:"retention"`
+}
+
 // NodesConfig controls node-derived signal thresholds.
 type NodesConfig struct {
 	// ClockDriftThreshold is the |device clock - server clock| magnitude, measured from a
@@ -320,6 +330,7 @@ func Resolve(cfg *Config) ResolvedConfig {
 		TelemetryRetention:   cfg.Telemetry.Retention.Duration,
 		PacketRetention:      cfg.Packets.Retention.Duration,
 		RouteRetention:       cfg.Routes.Retention.Duration,
+		NeighborRetention:    cfg.Neighbors.Retention.Duration,
 		RouteGrace:           cfg.Routes.Grace.Duration,
 		RouteMinObservations: cfg.Routes.MinObservations,
 		MaxConnsPerIP:        cfg.WebSocket.MaxConnectionsPerIP,
@@ -345,6 +356,9 @@ func Resolve(cfg *Config) ResolvedConfig {
 	}
 	if r.RouteRetention == 0 {
 		r.RouteRetention = 14 * 24 * time.Hour
+	}
+	if r.NeighborRetention == 0 {
+		r.NeighborRetention = 7 * 24 * time.Hour
 	}
 	if r.RouteGrace == 0 {
 		r.RouteGrace = 7 * 24 * time.Hour
@@ -386,8 +400,9 @@ func Resolve(cfg *Config) ResolvedConfig {
 
 func (r ResolvedConfig) String() string {
 	return fmt.Sprintf(
-		"telemetryResolution=%s telemetryRetention=%s packetRetention=%s routeRetention=%s routeGrace=%s routeMinObs=%d maxConnsPerIP=%d viewRefresh=%s reconfirm=%s cleanup=%s presenceFlush=%s presencePacketTTL=%s clockDriftThreshold=%s nodeStaleThreshold=%s nodeDeleteAfter=%s",
+		"telemetryResolution=%s telemetryRetention=%s packetRetention=%s routeRetention=%s routeGrace=%s routeMinObs=%d neighborRetention=%s maxConnsPerIP=%d viewRefresh=%s reconfirm=%s cleanup=%s presenceFlush=%s presencePacketTTL=%s clockDriftThreshold=%s nodeStaleThreshold=%s nodeDeleteAfter=%s",
 		r.TelemetryResolution, r.TelemetryRetention, r.PacketRetention, r.RouteRetention, r.RouteGrace, r.RouteMinObservations,
+		r.NeighborRetention,
 		r.MaxConnsPerIP, r.ViewRefreshInterval, r.ReconfirmInterval, r.CleanupInterval,
 		r.PresenceFlushInterval, r.PresencePacketTTL, r.ClockDriftThreshold,
 		r.NodeStaleThreshold, r.NodeDeleteAfter,

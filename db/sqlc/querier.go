@@ -32,6 +32,10 @@ type Querier interface {
 	DeleteOldTelemetry(ctx context.Context, reportedAt pgtype.Timestamptz) error
 	// Keeps the trace IATA filter in step with packet retention.
 	DeleteOldTraceIATAs(ctx context.Context, lastHeard pgtype.Timestamptz) error
+	// A neighbor edge is only as good as its last confirmation (a 3-byte-path
+	// packet or a /neighbors report); the cleanup task drops edges that haven't
+	// been re-confirmed within the neighbor retention window.
+	DeleteStaleNodeNeighbors(ctx context.Context, lastSeen pgtype.Timestamptz) error
 	GetChannelByID(ctx context.Context, id int32) (Channel, error)
 	// Returns neighbors of a node that are in a different IATA.
 	GetCrossIATANeighbors(ctx context.Context, arg GetCrossIATANeighborsParams) ([]GetCrossIATANeighborsRow, error)

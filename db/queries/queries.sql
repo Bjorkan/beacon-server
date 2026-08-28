@@ -1160,6 +1160,12 @@ WHERE nn.node_id = $1
   AND nn.iata != $2
 ORDER BY nn.last_seen DESC;
 
+-- name: DeleteStaleNodeNeighbors :exec
+-- A neighbor edge is only as good as its last confirmation (a 3-byte-path
+-- packet or a /neighbors report); the cleanup task drops edges that haven't
+-- been re-confirmed within the neighbor retention window.
+DELETE FROM node_neighbors WHERE last_seen < $1;
+
 -- ============================================================
 -- HELPERS
 -- ============================================================

@@ -71,6 +71,12 @@ func (s *Store) UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.
 	})
 }
 
+// DeleteStaleNodeNeighbors drops neighbor edges not re-confirmed since the
+// given cutoff (see the cleanup task's neighbor retention).
+func (s *Store) DeleteStaleNodeNeighbors(ctx context.Context, cutoff time.Time) error {
+	return s.q.DeleteStaleNodeNeighbors(ctx, pgtype.Timestamptz{Time: cutoff, Valid: true})
+}
+
 func (s *Store) SetNodeCapability(ctx context.Context, nodeID uuid.UUID, paths, traces bool) error {
 	var errs []error
 	if paths {
