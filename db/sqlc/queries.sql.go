@@ -3372,7 +3372,7 @@ func (q *Queries) RefreshTopTalkers(ctx context.Context) error {
 const resolvePathHashesP1 = `-- name: ResolvePathHashesP1 :many
 
 
-SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
+SELECT DISTINCT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
 WHERE n.node_type IN (2, 3)
@@ -3428,7 +3428,7 @@ func (q *Queries) ResolvePathHashesP1(ctx context.Context, dollar_1 [][]byte) ([
 }
 
 const resolvePathHashesP2 = `-- name: ResolvePathHashesP2 :many
-SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
+SELECT DISTINCT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
 WHERE n.node_type IN (2, 3)
@@ -3472,7 +3472,7 @@ func (q *Queries) ResolvePathHashesP2(ctx context.Context, dollar_1 [][]byte) ([
 }
 
 const resolvePathHashesP3 = `-- name: ResolvePathHashesP3 :many
-SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
+SELECT DISTINCT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
 WHERE n.node_type IN (2, 3)
@@ -3516,7 +3516,7 @@ func (q *Queries) ResolvePathHashesP3(ctx context.Context, dollar_1 [][]byte) ([
 }
 
 const resolvePathHashesP4 = `-- name: ResolvePathHashesP4 :many
-SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
+SELECT DISTINCT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
 WHERE n.node_type IN (2, 3)

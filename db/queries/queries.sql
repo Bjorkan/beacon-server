@@ -1181,28 +1181,28 @@ DELETE FROM node_neighbors WHERE last_seen < $1;
 -- treat a multi-row result as ambiguous and skip.
 
 -- name: ResolvePathHashesP1 :many
-SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
+SELECT DISTINCT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
 WHERE n.node_type IN (2, 3)
   AND ns.prefix_1 = ANY($1::bytea[]);
 
 -- name: ResolvePathHashesP2 :many
-SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
+SELECT DISTINCT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
 WHERE n.node_type IN (2, 3)
   AND ns.prefix_2 = ANY($1::bytea[]);
 
 -- name: ResolvePathHashesP3 :many
-SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
+SELECT DISTINCT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
 WHERE n.node_type IN (2, 3)
   AND ns.prefix_3 = ANY($1::bytea[]);
 
 -- name: ResolvePathHashesP4 :many
-SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
+SELECT DISTINCT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
 WHERE n.node_type IN (2, 3)
