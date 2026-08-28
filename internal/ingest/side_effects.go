@@ -107,32 +107,14 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 		if w.onNodeUpsert != nil {
 			w.onNodeUpsert(ctx, nodeID)
 		}
-		// record advertiser neighbors
-		// if the advert was forwarded, the first hop is a neighbor — but only
-		// when the path hashes are 3 bytes. The header encodes the hash size
-		// as (PathLength>>6): 0=1B, 1=2B, 2=3B, and only the 3-byte width is
-		// specific enough to resolve one unambiguous node (see
-		// ResolvePathHashesP3); 1-2 byte prefixes must not create edges.
-		// /neighbors reports are the other trusted neighbor source.
-		if packet.PathHashCount() > 0 && packet.PathHashSize() >= 3 &&
-			(advert.Type() == meshcore.AdvertTypeRepeater || advert.Type() == meshcore.AdvertTypeRoom) {
-			firstHop := packet.PathHashes()
-			if len(firstHop) > 0 {
-				resolved, err := w.db.ResolvePathHashes(ctx, firstHop[:1])
-				if err == nil {
-					key := hex.EncodeToString(firstHop[0])
-					if entries := resolved[key]; len(entries) == 1 {
-						if err := w.db.UpsertNodeNeighbor(ctx, nodeID, entries[0].NodeID, iata, nil, nil); err != nil {
-							log.Printf("ingest[%s]: failed to upsert node neighbor: %v", w.cfg.BrokerName, err)
-						}
-					}
-				}
-			}
-		}
-		// record observer neighbors
-		// if heard directly (zero-hop), record the observer's own RX SNR
-		// of hearing this advertiser as a node_neighbors edge. Skipped if
-		// the observer has no node row yet (hasn't advertised itself).
+		// Advertiser neighbor edges (origin -> first relay) are derived
+		// generically from 3-byte path hashes in handlePacket, for every
+		// packet type and advert role.
+		//
+		// Zero-hop reception is recorded here instead: the observer's own RX
+		// SNR of directly hearing this repeater/room advertiser is real radio
+		// adjacency, so it becomes a node_neighbors edge. Skipped if the
+		// observer has no node row yet (hasn't advertised itself).
 		if packet.PathHashCount() == 0 && (advert.Type() == meshcore.AdvertTypeRepeater || advert.Type() == meshcore.AdvertTypeRoom) {
 			observerNodeID, oErr := w.db.GetNodeByPubkey(ctx, observerPubkey)
 			if oErr == nil && observerNodeID != nodeID {

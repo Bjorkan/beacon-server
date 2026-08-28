@@ -837,6 +837,49 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 			}
 		}
 	}
+
+	// Path-derived neighbor edges (non-TRACE — traces record their own hop
+	// SNRs above). ANY packet sent with 3-byte path hashes — adverts, group
+	// texts, whatever — confirms adjacency along its path: origin to first
+	// relay, and each relay to the next. 1-2 byte hashes stay excluded
+	// (ambiguous identity), and a hash only counts when it resolves to
+	// exactly one node across ALL IATA areas: if it could have been another
+	// node, no line is drawn. Without fresh confirmation edges age out via
+	// the neighbor retention cleanup.
+	if packet.PayloadType() != meshcore.PayloadTypeTrace &&
+		packet.PathHashSize() >= 3 && len(hashes) > 0 && resolved != nil {
+		nodeIDFor := func(hash []byte) (uuid.UUID, bool) {
+			entries := resolved[hex.EncodeToString(hash)]
+			if len(entries) != 1 {
+				return uuid.UUID{}, false
+			}
+			return entries[0].NodeID, true
+		}
+		upsertEdge := func(from, to uuid.UUID) {
+			if from == to {
+				return
+			}
+			if err := w.db.UpsertNodeNeighbor(ctx, from, to, iata, nil, nil); err != nil {
+				log.Printf("ingest[%s]: failed to upsert path neighbor: %v", w.cfg.BrokerName, err)
+			}
+		}
+		prevID, prevOK := nodeIDFor(hashes[0])
+		if prevOK && originPubkey != nil {
+			// Adverts carry the sender's real pubkey: link the origin to its
+			// first relay (messages keep the sender anonymous, so there is
+			// nothing trustworthy to link them from).
+			if originID, err := w.db.GetNodeByPubkey(ctx, originPubkey); err == nil {
+				upsertEdge(originID, prevID)
+			}
+		}
+		for _, hash := range hashes[1:] {
+			currID, currOK := nodeIDFor(hash)
+			if prevOK && currOK {
+				upsertEdge(prevID, currID)
+			}
+			prevID, prevOK = currID, currOK
+		}
+	}
 	w.runCapabilityDetection(ctx, packet.PayloadType(), packet.PathHashSize(), resolvedIDs)
 
 	var resolvedSource, resolvedDestination *api.ResolvedHop

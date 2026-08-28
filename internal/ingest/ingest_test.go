@@ -183,7 +183,9 @@ type stubDB struct {
 	insertChannelMessageResult bool // configurable return for InsertChannelMessage; default false
 	undecryptedPackets         []UndecryptedPacket
 	// when non-nil, ResolvePathHashes returns this map verbatim; nil keeps the old empty result
-	pathResolves        map[string][]api.ResolvedPathEntry
+	pathResolves map[string][]api.ResolvedPathEntry
+	// when non-nil, GetNodeByPubkey returns this ID; nil keeps the not-found error
+	nodeByPubkey        *uuid.UUID
 	upsertNeighborCalls int
 }
 
@@ -222,6 +224,9 @@ func (s *stubDB) UpsertNodeShortID(_ context.Context, _ uuid.UUID, _ string, _ [
 }
 
 func (s *stubDB) GetNodeByPubkey(_ context.Context, _ []byte) (uuid.UUID, error) {
+	if s.nodeByPubkey != nil {
+		return *s.nodeByPubkey, nil
+	}
 	return uuid.Nil, errors.New("not found")
 }
 

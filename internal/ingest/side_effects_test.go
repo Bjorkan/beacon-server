@@ -219,16 +219,15 @@ func TestHandlePacket_Trace_UpsertsTraceIATA(t *testing.T) {
 	}
 }
 
-// buildPathedAdvertPacket signs a repeater advert and wraps it in a packet
-// carrying `count` path hashes of `hashSize` bytes (flood route, no transport
-// codes), parsed back through PacketFromBytes so the ingest code sees the
-// header-encoded hash size/count exactly as it would on the wire.
-func buildPathedAdvertPacket(t *testing.T, hashSize, count int) *meshcore.Packet {
+// attachPath wraps an already-built packet in raw bytes carrying `hashes`
+// (each `hashSize` bytes) as its path, parsed back through PacketFromBytes so
+// the ingest code sees the header-encoded hash size/count exactly as it would
+// on the wire.
+func attachPath(t *testing.T, base *meshcore.Packet, hashSize int, hashes [][]byte) *meshcore.Packet {
 	t.Helper()
-	base := buildAdvertPacket(t, false)
-	raw := []byte{base.Header, byte((hashSize-1)<<6 | count)}
-	for i := 0; i < count; i++ {
-		raw = append(raw, bytes.Repeat([]byte{byte(0xAB - i)}, hashSize)...)
+	raw := []byte{base.Header, byte((hashSize-1)<<6 | len(hashes))}
+	for _, h := range hashes {
+		raw = append(raw, h...)
 	}
 	raw = append(raw, base.Payload...)
 	pkt, err := meshcore.PacketFromBytes(raw)
@@ -238,38 +237,77 @@ func buildPathedAdvertPacket(t *testing.T, hashSize, count int) *meshcore.Packet
 	return pkt
 }
 
-// A forwarded repeater advert with 3-byte path hashes resolves its first hop
-// and records the advertiser->first-hop neighbor edge.
-func TestHandlePayloadTypeSideEffects_Advert_ThreeBytePathHashes_UpsertsFirstHopNeighbor(t *testing.T) {
-	packet := buildPathedAdvertPacket(t, 3, 1)
+// buildPathedAdvertPacket signs a repeater advert and gives it a path of
+// `count` hashes of `hashSize` bytes (0xA0, 0xA1, ... repeating per hash).
+func buildPathedAdvertPacket(t *testing.T, hashSize, count int) *meshcore.Packet {
+	t.Helper()
+	hashes := make([][]byte, count)
+	for i := range hashes {
+		hashes[i] = bytes.Repeat([]byte{byte(0xA0 + i)}, hashSize)
+	}
+	return attachPath(t, buildAdvertPacket(t, false), hashSize, hashes)
+}
+
+// A forwarded advert with 3-byte path hashes links the advertiser to its
+// first relay AND chains relay to relay — regardless of advert role, so a
+// Companion advertising through relays shows up on the map too.
+func TestHandlePacket_Advert_ThreeBytePathHashes_UpsertsOriginAndRelayChain(t *testing.T) {
 	w, db := newTestWorker()
+	db.observationInserted = true
+	origin := uuid.New()
+	db.nodeByPubkey = &origin
 	db.pathResolves = map[string][]api.ResolvedPathEntry{
-		hex.EncodeToString(packet.PathHashes()[0]): {{NodeID: uuid.New()}},
+		"a0a0a0": {{NodeID: uuid.New()}},
+		"a1a1a1": {{NodeID: uuid.New()}},
 	}
 
-	w.handlePayloadTypeSideEffects(context.Background(), packet, "TEST", []byte{0x01}, RadioSettings{}, nil, nil, nil, 0)
+	packet := buildPathedAdvertPacket(t, 3, 2)
+	w.handlePacket(context.Background(), "YOW", "0102", packetEnvelope(t, packet))
 
-	if db.upsertNeighborCalls != 1 {
-		t.Errorf("expected 1 neighbor upsert for a 3-byte path hash, got %d", db.upsertNeighborCalls)
+	if db.upsertNeighborCalls != 2 {
+		t.Errorf("expected 2 neighbor upserts (origin->relay, relay->relay), got %d", db.upsertNeighborCalls)
 	}
 }
 
 // 1- and 2-byte path hashes are too ambiguous to hang a neighbor edge on, so
-// no edge is recorded even when the hash resolves cleanly — only a 3-byte
-// packet or a /neighbors report may confirm neighbors.
-func TestHandlePayloadTypeSideEffects_Advert_ShortPathHashes_SkipNeighbor(t *testing.T) {
+// no edge is recorded even when the hash resolves cleanly — only 3-byte
+// packets, traces with unique hashes, or /neighbors reports confirm neighbors.
+func TestHandlePacket_Advert_ShortPathHashes_SkipNeighbor(t *testing.T) {
 	for _, hashSize := range []int{1, 2} {
-		packet := buildPathedAdvertPacket(t, hashSize, 1)
 		w, db := newTestWorker()
+		db.observationInserted = true
+		origin := uuid.New()
+		db.nodeByPubkey = &origin
 		db.pathResolves = map[string][]api.ResolvedPathEntry{
-			hex.EncodeToString(packet.PathHashes()[0]): {{NodeID: uuid.New()}},
+			hex.EncodeToString(bytes.Repeat([]byte{0xAB}, hashSize)): {{NodeID: uuid.New()}},
 		}
 
-		w.handlePayloadTypeSideEffects(context.Background(), packet, "TEST", []byte{0x01}, RadioSettings{}, nil, nil, nil, 0)
+		packet := attachPath(t, buildAdvertPacket(t, false), hashSize, [][]byte{bytes.Repeat([]byte{0xAB}, hashSize)})
+		w.handlePacket(context.Background(), "YOW", "0102", packetEnvelope(t, packet))
 
 		if db.upsertNeighborCalls != 0 {
 			t.Errorf("hash size %d: expected 0 neighbor upserts, got %d", hashSize, db.upsertNeighborCalls)
 		}
+	}
+}
+
+// Group texts carry no sender identity, so only the relay chain is linked:
+// a 3-byte path of three hashes yields relay->relay edges, not origin edges.
+func TestHandlePacket_GrpTxt_ThreeBytePath_UpsertsRelayChain(t *testing.T) {
+	w, db := newTestWorker()
+	db.observationInserted = true
+	db.pathResolves = map[string][]api.ResolvedPathEntry{
+		"a0a0a0": {{NodeID: uuid.New()}},
+		"a1a1a1": {{NodeID: uuid.New()}},
+		"a2a2a2": {{NodeID: uuid.New()}},
+	}
+
+	packet := attachPath(t, buildGrpTxtPacket(t, 0x1a, make([]byte, 16)), 3,
+		[][]byte{{0xA0, 0xA0, 0xA0}, {0xA1, 0xA1, 0xA1}, {0xA2, 0xA2, 0xA2}})
+	w.handlePacket(context.Background(), "YOW", "0102", packetEnvelope(t, packet))
+
+	if db.upsertNeighborCalls != 2 {
+		t.Errorf("expected 2 relay-chain neighbor upserts, got %d", db.upsertNeighborCalls)
 	}
 }
 
