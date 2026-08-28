@@ -35,7 +35,11 @@ func New(pool *pgxpool.Pool, clockDriftThreshold, staleThreshold time.Duration) 
 	return &Store{q: sqlc.New(pool), clockDriftThreshold: clockDriftThreshold, staleThreshold: staleThreshold}
 }
 
-func (s *Store) ResolvePathHashes(ctx context.Context, iata string, hashes [][]byte) (map[string][]api.ResolvedPathEntry, error) {
+// ResolvePathHashes resolves path hash prefixes to nodes GLOBALLY — across
+// every IATA area. Packets routinely cross regions, so a hash is only
+// trustworthy when no other node anywhere shares it; callers must treat a
+// multi-entry result as ambiguous and skip it.
+func (s *Store) ResolvePathHashes(ctx context.Context, hashes [][]byte) (map[string][]api.ResolvedPathEntry, error) {
 	if len(hashes) == 0 {
 		return nil, nil
 	}
@@ -45,24 +49,24 @@ func (s *Store) ResolvePathHashes(ctx context.Context, iata string, hashes [][]b
 	switch len(hashes[0]) {
 	case 1:
 		var rs []sqlc.ResolvePathHashesP1Row
-		rs, err = s.q.ResolvePathHashesP1(ctx, sqlc.ResolvePathHashesP1Params{Iata: iata, Column2: hashes})
+		rs, err = s.q.ResolvePathHashesP1(ctx, hashes)
 		for _, r := range rs {
 			rows = append(rows, sqlc.ResolvePathHashesP4Row(r))
 		}
 	case 2:
 		var rs []sqlc.ResolvePathHashesP2Row
-		rs, err = s.q.ResolvePathHashesP2(ctx, sqlc.ResolvePathHashesP2Params{Iata: iata, Column2: hashes})
+		rs, err = s.q.ResolvePathHashesP2(ctx, hashes)
 		for _, r := range rs {
 			rows = append(rows, sqlc.ResolvePathHashesP4Row(r))
 		}
 	case 3:
 		var rs []sqlc.ResolvePathHashesP3Row
-		rs, err = s.q.ResolvePathHashesP3(ctx, sqlc.ResolvePathHashesP3Params{Iata: iata, Column2: hashes})
+		rs, err = s.q.ResolvePathHashesP3(ctx, hashes)
 		for _, r := range rs {
 			rows = append(rows, sqlc.ResolvePathHashesP4Row(r))
 		}
 	case 4:
-		rows, err = s.q.ResolvePathHashesP4(ctx, sqlc.ResolvePathHashesP4Params{Iata: iata, Column2: hashes})
+		rows, err = s.q.ResolvePathHashesP4(ctx, hashes)
 	default:
 		return nil, nil
 	}

@@ -101,7 +101,7 @@ func TestResolvePathHashes_Empty(t *testing.T) {
 	// no EXPECT — sqlc should never be called
 	store := &Store{q: mock}
 
-	result, err := store.ResolvePathHashes(context.Background(), "YVR", nil)
+	result, err := store.ResolvePathHashes(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -116,14 +116,11 @@ func TestResolvePathHashes_DBError(t *testing.T) {
 
 	hashes := [][]byte{{0x01, 0x02}}
 	mock.EXPECT().
-		ResolvePathHashesP2(gomock.Any(), sqlc.ResolvePathHashesP2Params{
-			Iata:    "YVR",
-			Column2: hashes,
-		}).
+		ResolvePathHashesP2(gomock.Any(), hashes).
 		Return(nil, errors.New("db error"))
 
 	store := &Store{q: mock}
-	result, err := store.ResolvePathHashes(context.Background(), "YVR", hashes)
+	result, err := store.ResolvePathHashes(context.Background(), hashes)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -144,10 +141,7 @@ func TestResolvePathHashes_Mapping(t *testing.T) {
 	hashes := [][]byte{{0xab, 0xcd}}
 
 	mock.EXPECT().
-		ResolvePathHashesP2(gomock.Any(), sqlc.ResolvePathHashesP2Params{
-			Iata:    "YVR",
-			Column2: hashes,
-		}).
+		ResolvePathHashesP2(gomock.Any(), hashes).
 		Return([]sqlc.ResolvePathHashesP2Row{
 			{
 				Hash:      []byte{0xab, 0xcd},
@@ -160,7 +154,7 @@ func TestResolvePathHashes_Mapping(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	result, err := store.ResolvePathHashes(context.Background(), "YVR", hashes)
+	result, err := store.ResolvePathHashes(context.Background(), hashes)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

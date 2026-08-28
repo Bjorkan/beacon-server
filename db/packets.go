@@ -437,7 +437,7 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 		resolvedPath := []api.ResolvedHop{}
 		if row.PayloadType == int16(meshcore.PayloadTypeTrace) {
 			if len(traceRawHashes) > 0 {
-				resolved, err := s.ResolvePathHashes(ctx, v.Iata, traceRawHashes)
+				resolved, err := s.ResolvePathHashes(ctx, traceRawHashes)
 				if err != nil {
 					log.Printf("store: path resolution failed for observation %d: %v", v.ID, err)
 				} else {
@@ -450,7 +450,7 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 			for i := 0; i+hashSize <= len(v.PathBytes); i += hashSize {
 				hashes = append(hashes, v.PathBytes[i:i+hashSize])
 			}
-			resolved, err := s.ResolvePathHashes(ctx, v.Iata, hashes)
+			resolved, err := s.ResolvePathHashes(ctx, hashes)
 			if err != nil {
 				log.Printf("store: path resolution failed for observation %d: %v", v.ID, err)
 			} else {
@@ -462,7 +462,7 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 			hop := api.ResolveExactNode(resolvedAdvertSource)
 			obs.ResolvedSource = &hop
 		} else if len(sourceHashByte) == 1 {
-			if r, err := s.ResolvePathHashes(ctx, v.Iata, [][]byte{sourceHashByte}); err != nil {
+			if r, err := s.ResolvePathHashes(ctx, [][]byte{sourceHashByte}); err != nil {
 				log.Printf("store: source resolution failed for observation %d: %v", v.ID, err)
 			} else {
 				hop := api.BuildResolvedPath([][]byte{sourceHashByte}, r)[0]
@@ -470,7 +470,7 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 			}
 		}
 		if len(destHashByte) == 1 {
-			if r, err := s.ResolvePathHashes(ctx, v.Iata, [][]byte{destHashByte}); err != nil {
+			if r, err := s.ResolvePathHashes(ctx, [][]byte{destHashByte}); err != nil {
 				log.Printf("store: destination resolution failed for observation %d: %v", v.ID, err)
 			} else {
 				hop := api.BuildResolvedPath([][]byte{destHashByte}, r)[0]
@@ -503,18 +503,10 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 		}
 		p.Observations = append(p.Observations, obs)
 	}
-	if row.PayloadType == 9 && len(obsRows) > 0 {
-		iatas := make([]string, 0, len(obsRows))
-		seen := make(map[string]struct{})
-		for _, v := range obsRows {
-			if _, ok := seen[v.Iata]; !ok {
-				seen[v.Iata] = struct{}{}
-				iatas = append(iatas, v.Iata)
-			}
-		}
+	if row.PayloadType == 9 {
 		var parsed tracePayload
 		if err := json.Unmarshal(row.ParsedPayload, &parsed); err == nil {
-			p.ResolvedRoute = s.resolveTraceRoute(ctx, &parsed, iatas)
+			p.ResolvedRoute = s.resolveTraceRoute(ctx, &parsed)
 		}
 	}
 	return p, nil

@@ -182,7 +182,7 @@ func (s *Store) SearchCrossIATARoutes(ctx context.Context, fromHash, fromIATA, t
 	if err != nil {
 		return nil, err
 	}
-	fromResolved, err := s.ResolvePathHashes(ctx, fromIATA, [][]byte{fromBytes})
+	fromResolved, err := s.ResolvePathHashes(ctx, [][]byte{fromBytes})
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +197,7 @@ func (s *Store) SearchCrossIATARoutes(ctx context.Context, fromHash, fromIATA, t
 	if err != nil {
 		return nil, err
 	}
-	toResolved, err := s.ResolvePathHashes(ctx, toIATA, [][]byte{toBytes})
+	toResolved, err := s.ResolvePathHashes(ctx, [][]byte{toBytes})
 	if err != nil {
 		return nil, err
 	}

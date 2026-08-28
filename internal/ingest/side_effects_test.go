@@ -272,3 +272,66 @@ func TestHandlePayloadTypeSideEffects_Advert_ShortPathHashes_SkipNeighbor(t *tes
 		}
 	}
 }
+
+// buildSNRTracePacket builds a TRACE packet whose payload carries `count`
+// path hashes of `hashSize` bytes (the trace Flags field selects the width:
+// 1<<(flags&3), so traces can use 1/2/4/8 — there is no 3) and whose path
+// carries one recorded SNR byte per consumed hop. Parsed back through
+// PacketFromBytes so the ingest code sees it exactly as on the wire.
+func buildSNRTracePacket(t *testing.T, hashSize, count int, snrs ...byte) *meshcore.Packet {
+	t.Helper()
+	var flags byte
+	for size := 1; size < hashSize; size *= 2 {
+		flags++
+	}
+	hashes := make([]byte, 0, hashSize*count)
+	for i := 0; i < count; i++ {
+		hashes = append(hashes, bytes.Repeat([]byte{byte(0xA0 + i)}, hashSize)...)
+	}
+	payload, err := (&meshcore.Trace{Tag: 0xdeadbeef, AuthCode: 1, Flags: flags, PathHashes: hashes}).ToBytes()
+	if err != nil {
+		t.Fatalf("trace to bytes: %v", err)
+	}
+	return &meshcore.Packet{
+		Header:     meshcore.MakeHeader(meshcore.RouteTypeFlood, meshcore.PayloadTypeTrace, 0),
+		PathLength: byte(len(snrs)), // size code 0 (1B entries), count = len(snrs)
+		Path:       snrs,
+		Payload:    payload,
+	}
+}
+
+// 2-byte trace hashes are accepted as neighbor evidence: each hash was
+// appended by a node that actually forwarded the trace, and the edge is only
+// recorded when the hash resolves to exactly one node — no other node it
+// could have been. The per-hop SNR measured by the receiving hop is stored.
+func TestHandlePacket_Trace_TwoByteHashes_UniqueResolution_UpsertsHopNeighbor(t *testing.T) {
+	w, db := newTestWorker()
+	db.observationInserted = true
+	db.pathResolves = map[string][]api.ResolvedPathEntry{
+		"a0a0": {{NodeID: uuid.New()}},
+		"a1a1": {{NodeID: uuid.New()}},
+	}
+
+	w.handlePacket(context.Background(), "YOW", "0102", packetEnvelope(t, buildSNRTracePacket(t, 2, 2, 8, 12)))
+
+	if db.upsertNeighborCalls != 1 {
+		t.Errorf("expected 1 trace neighbor upsert for a uniquely-resolved 2-byte pair, got %d", db.upsertNeighborCalls)
+	}
+}
+
+// If a trace hash matches more than one node in the database — i.e. there IS
+// another node it could have been — the pair is skipped entirely.
+func TestHandlePacket_Trace_AmbiguousResolution_SkipsHopNeighbor(t *testing.T) {
+	w, db := newTestWorker()
+	db.observationInserted = true
+	db.pathResolves = map[string][]api.ResolvedPathEntry{
+		"a0a0": {{NodeID: uuid.New()}, {NodeID: uuid.New()}},
+		"a1a1": {{NodeID: uuid.New()}},
+	}
+
+	w.handlePacket(context.Background(), "YOW", "0102", packetEnvelope(t, buildSNRTracePacket(t, 2, 2, 8, 12)))
+
+	if db.upsertNeighborCalls != 0 {
+		t.Errorf("expected 0 trace neighbor upserts for an ambiguous hash, got %d", db.upsertNeighborCalls)
+	}
+}

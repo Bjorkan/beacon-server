@@ -150,8 +150,11 @@ type DB interface {
 	// GetObserverScopes returns the list of scope names associated with the given observer.
 	GetObserverScopes(ctx context.Context, observerID uuid.UUID) ([]string, error)
 
-	// ResolvePathHashes returns a list of node UUIDs for the given path hash prefixes and IATA.
-	ResolvePathHashes(ctx context.Context, iata string, hashes [][]byte) (map[string][]api.ResolvedPathEntry, error)
+	// ResolvePathHashes resolves path hash prefixes to nodes across ALL IATA
+	// areas (packets cross regions, so a hash is only trustworthy when no
+	// other node anywhere shares it). Multi-entry results are ambiguous and
+	// must be skipped by the caller.
+	ResolvePathHashes(ctx context.Context, hashes [][]byte) (map[string][]api.ResolvedPathEntry, error)
 
 	// UpsertChannel upserts a channel row by (hash, keyFingerprint) and returns its integer ID.
 	// Pass nil keyFingerprint to record a hash-only row when the key is unknown.

@@ -116,16 +116,7 @@ func TestGetTraceByTag_WithPacket(t *testing.T) {
 		}, nil)
 
 	mock.EXPECT().
-		ListObservationsForPacket(gomock.Any(), []byte{0xaa, 0xbb, 0xcc, 0xdd}).
-		Return([]sqlc.ListObservationsForPacketRow{
-			{Iata: "YVR"},
-		}, nil)
-
-	mock.EXPECT().
-		ResolvePathHashesP2(gomock.Any(), sqlc.ResolvePathHashesP2Params{
-			Iata:    "YVR",
-			Column2: [][]byte{{0xaa, 0xbb}},
-		}).
+		ResolvePathHashesP2(gomock.Any(), [][]byte{{0xaa, 0xbb}}).
 		Return([]sqlc.ResolvePathHashesP2Row{}, nil)
 
 	store := &Store{q: mock}

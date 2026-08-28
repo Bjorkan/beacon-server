@@ -118,7 +118,7 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 			(advert.Type() == meshcore.AdvertTypeRepeater || advert.Type() == meshcore.AdvertTypeRoom) {
 			firstHop := packet.PathHashes()
 			if len(firstHop) > 0 {
-				resolved, err := w.db.ResolvePathHashes(ctx, iata, firstHop[:1])
+				resolved, err := w.db.ResolvePathHashes(ctx, firstHop[:1])
 				if err == nil {
 					key := hex.EncodeToString(firstHop[0])
 					if entries := resolved[key]; len(entries) == 1 {

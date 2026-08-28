@@ -110,28 +110,15 @@ func (s *Store) GetTraceByTag(ctx context.Context, tag string) (*api.TraceDetail
 			}
 			packet.RawPath = rawPath
 		}
-		// fetch observations to get IATAs for route resolution
-		packetHashBytes, err := hex.DecodeString(r.PacketHashHex)
-		if err == nil {
-			obsRows, err := s.q.ListObservationsForPacket(ctx, packetHashBytes)
-			if err == nil && len(obsRows) > 0 {
-				iatas := make([]string, 0, len(obsRows))
-				seen := make(map[string]struct{})
-				for _, v := range obsRows {
-					if _, ok := seen[v.Iata]; !ok {
-						seen[v.Iata] = struct{}{}
-						iatas = append(iatas, v.Iata)
-					}
-				}
-				packet.ResolvedRoute = s.resolveTraceRoute(ctx, &parsed, iatas)
-			}
-		}
+		// Route resolution is global across all IATA areas, so no per-region
+		// observation lookup is needed to scope it.
+		packet.ResolvedRoute = s.resolveTraceRoute(ctx, &parsed)
 		detail.Packets = append(detail.Packets, packet)
 	}
 	return detail, nil
 }
 
-func (s *Store) resolveTraceRoute(ctx context.Context, payload *tracePayload, iatas []string) []api.ResolvedHop {
+func (s *Store) resolveTraceRoute(ctx context.Context, payload *tracePayload) []api.ResolvedHop {
 	if payload == nil || len(payload.PathHashes) == 0 {
 		return nil
 	}
@@ -143,48 +130,32 @@ func (s *Store) resolveTraceRoute(ctx context.Context, payload *tracePayload, ia
 			hashes = append(hashes, b)
 		}
 	}
-	confidenceRank := map[string]int{"none": 0, "ambiguous": 1, "high": 2}
-	type hopResult struct {
-		confidence string
-		entries    []api.ResolvedPathEntry
-	}
-	merged := make([]hopResult, len(hashes))
-	for i := range merged {
-		merged[i] = hopResult{confidence: "none"}
-	}
-	for _, iata := range iatas {
-		resolved, err := s.ResolvePathHashes(ctx, iata, hashes)
-		if err != nil {
-			continue
-		}
-		for i, hash := range hashes {
-			key := hex.EncodeToString(hash[:hashSize])
-			entries := resolved[key]
-			var confidence string
-			switch len(entries) {
-			case 0:
-				confidence = "none"
-			case 1:
-				confidence = "high"
-			default:
-				confidence = "ambiguous"
-			}
-			if confidenceRank[confidence] > confidenceRank[merged[i].confidence] {
-				merged[i] = hopResult{confidence: confidence, entries: entries}
-			}
-		}
+	resolved, err := s.ResolvePathHashes(ctx, hashes)
+	if err != nil {
+		return nil
 	}
 	route := make([]api.ResolvedHop, 0, len(hashes))
-	for i, hr := range merged {
+	for i, hash := range hashes {
+		key := hex.EncodeToString(hash[:hashSize])
+		entries := resolved[key]
+		var confidence string
+		switch len(entries) {
+		case 0:
+			confidence = "none"
+		case 1:
+			confidence = "high"
+		default:
+			confidence = "ambiguous"
+		}
 		hop := api.ResolvedHop{
-			Confidence: hr.confidence,
-			Nodes:      make([]api.ResolvedNode, 0, len(hr.entries)),
+			Confidence: confidence,
+			Nodes:      make([]api.ResolvedNode, 0, len(entries)),
 		}
 		if i < len(payload.SNRValues) {
 			snr := payload.SNRValues[i]
 			hop.SNR = &snr
 		}
-		for _, e := range hr.entries {
+		for _, e := range entries {
 			hop.Nodes = append(hop.Nodes, api.ResolvedNode{
 				ID:        e.NodeID,
 				Name:      e.Name,

@@ -3375,15 +3375,9 @@ const resolvePathHashesP1 = `-- name: ResolvePathHashesP1 :many
 SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
-WHERE ns.iata = $1
-  AND n.node_type IN (2, 3)
-  AND ns.prefix_1 = ANY($2::bytea[])
+WHERE n.node_type IN (2, 3)
+  AND ns.prefix_1 = ANY($1::bytea[])
 `
-
-type ResolvePathHashesP1Params struct {
-	Iata    string   `json:"iata"`
-	Column2 [][]byte `json:"column_2"`
-}
 
 type ResolvePathHashesP1Row struct {
 	Hash      []byte    `json:"hash"`
@@ -3398,10 +3392,16 @@ type ResolvePathHashesP1Row struct {
 // HELPERS
 // ============================================================
 // Path hash resolution is split per prefix width so each query gets a
-// cacheable generic plan on its (iata, prefix_N) index; a single CASE
-// predicate forced a fresh custom plan on every call.
-func (q *Queries) ResolvePathHashesP1(ctx context.Context, arg ResolvePathHashesP1Params) ([]ResolvePathHashesP1Row, error) {
-	rows, err := q.db.Query(ctx, resolvePathHashesP1, arg.Iata, arg.Column2)
+// cacheable generic plan on its prefix_N index; a single CASE predicate
+// forced a fresh custom plan on every call.
+//
+// Resolution is deliberately GLOBAL: no IATA filter. Packets routinely cross
+// IATA areas, so a short hash that happens to be unique inside the hearing
+// region may still belong to a node registered elsewhere — the caller can
+// only trust a hit when no other node anywhere could have been it. Callers
+// treat a multi-row result as ambiguous and skip.
+func (q *Queries) ResolvePathHashesP1(ctx context.Context, dollar_1 [][]byte) ([]ResolvePathHashesP1Row, error) {
+	rows, err := q.db.Query(ctx, resolvePathHashesP1, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -3431,15 +3431,9 @@ const resolvePathHashesP2 = `-- name: ResolvePathHashesP2 :many
 SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
-WHERE ns.iata = $1
-  AND n.node_type IN (2, 3)
-  AND ns.prefix_2 = ANY($2::bytea[])
+WHERE n.node_type IN (2, 3)
+  AND ns.prefix_2 = ANY($1::bytea[])
 `
-
-type ResolvePathHashesP2Params struct {
-	Iata    string   `json:"iata"`
-	Column2 [][]byte `json:"column_2"`
-}
 
 type ResolvePathHashesP2Row struct {
 	Hash      []byte    `json:"hash"`
@@ -3450,8 +3444,8 @@ type ResolvePathHashesP2Row struct {
 	PublicKey []byte    `json:"public_key"`
 }
 
-func (q *Queries) ResolvePathHashesP2(ctx context.Context, arg ResolvePathHashesP2Params) ([]ResolvePathHashesP2Row, error) {
-	rows, err := q.db.Query(ctx, resolvePathHashesP2, arg.Iata, arg.Column2)
+func (q *Queries) ResolvePathHashesP2(ctx context.Context, dollar_1 [][]byte) ([]ResolvePathHashesP2Row, error) {
+	rows, err := q.db.Query(ctx, resolvePathHashesP2, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -3481,15 +3475,9 @@ const resolvePathHashesP3 = `-- name: ResolvePathHashesP3 :many
 SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
-WHERE ns.iata = $1
-  AND n.node_type IN (2, 3)
-  AND ns.prefix_3 = ANY($2::bytea[])
+WHERE n.node_type IN (2, 3)
+  AND ns.prefix_3 = ANY($1::bytea[])
 `
-
-type ResolvePathHashesP3Params struct {
-	Iata    string   `json:"iata"`
-	Column2 [][]byte `json:"column_2"`
-}
 
 type ResolvePathHashesP3Row struct {
 	Hash      []byte    `json:"hash"`
@@ -3500,8 +3488,8 @@ type ResolvePathHashesP3Row struct {
 	PublicKey []byte    `json:"public_key"`
 }
 
-func (q *Queries) ResolvePathHashesP3(ctx context.Context, arg ResolvePathHashesP3Params) ([]ResolvePathHashesP3Row, error) {
-	rows, err := q.db.Query(ctx, resolvePathHashesP3, arg.Iata, arg.Column2)
+func (q *Queries) ResolvePathHashesP3(ctx context.Context, dollar_1 [][]byte) ([]ResolvePathHashesP3Row, error) {
+	rows, err := q.db.Query(ctx, resolvePathHashesP3, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -3531,15 +3519,9 @@ const resolvePathHashesP4 = `-- name: ResolvePathHashesP4 :many
 SELECT ns.prefix_4 AS hash, n.id AS node_id, n.name, n.latitude, n.longitude, n.public_key
 FROM node_short_ids ns
 JOIN nodes n ON n.id = ns.node_id
-WHERE ns.iata = $1
-  AND n.node_type IN (2, 3)
-  AND ns.prefix_4 = ANY($2::bytea[])
+WHERE n.node_type IN (2, 3)
+  AND ns.prefix_4 = ANY($1::bytea[])
 `
-
-type ResolvePathHashesP4Params struct {
-	Iata    string   `json:"iata"`
-	Column2 [][]byte `json:"column_2"`
-}
 
 type ResolvePathHashesP4Row struct {
 	Hash      []byte    `json:"hash"`
@@ -3550,8 +3532,8 @@ type ResolvePathHashesP4Row struct {
 	PublicKey []byte    `json:"public_key"`
 }
 
-func (q *Queries) ResolvePathHashesP4(ctx context.Context, arg ResolvePathHashesP4Params) ([]ResolvePathHashesP4Row, error) {
-	rows, err := q.db.Query(ctx, resolvePathHashesP4, arg.Iata, arg.Column2)
+func (q *Queries) ResolvePathHashesP4(ctx context.Context, dollar_1 [][]byte) ([]ResolvePathHashesP4Row, error) {
+	rows, err := q.db.Query(ctx, resolvePathHashesP4, dollar_1)
 	if err != nil {
 		return nil, err
 	}

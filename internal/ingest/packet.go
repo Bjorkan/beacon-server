@@ -565,7 +565,7 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 			// resolving ambiguously (>1 candidate) or not at all (0
 			// candidates) skips that specific pair.
 			if len(rawHashes) >= 2 {
-				resolved, rErr := w.db.ResolvePathHashes(ctx, iata, rawHashes)
+				resolved, rErr := w.db.ResolvePathHashes(ctx, rawHashes)
 				if rErr == nil {
 					for i := 1; i < len(rawHashes); i++ {
 						if i >= len(snrValues) {
@@ -807,7 +807,7 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 	if packet.PayloadType() == meshcore.PayloadTypeTrace {
 		hashes = traceRawHashes
 	}
-	resolved, err := w.db.ResolvePathHashes(ctx, iata, hashes)
+	resolved, err := w.db.ResolvePathHashes(ctx, hashes)
 	if err != nil {
 		log.Printf("ingest[%s]: path resolution failed: %v", w.cfg.BrokerName, err)
 	}
@@ -850,13 +850,13 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 			}
 		}
 	} else if len(sourceHashByte) == 1 {
-		if r, err := w.db.ResolvePathHashes(ctx, iata, [][]byte{sourceHashByte}); err == nil {
+		if r, err := w.db.ResolvePathHashes(ctx, [][]byte{sourceHashByte}); err == nil {
 			hop := api.BuildResolvedPath([][]byte{sourceHashByte}, r)[0]
 			resolvedSource = &hop
 		}
 	}
 	if len(destHashByte) == 1 {
-		if r, err := w.db.ResolvePathHashes(ctx, iata, [][]byte{destHashByte}); err == nil {
+		if r, err := w.db.ResolvePathHashes(ctx, [][]byte{destHashByte}); err == nil {
 			hop := api.BuildResolvedPath([][]byte{destHashByte}, r)[0]
 			resolvedDestination = &hop
 		}
