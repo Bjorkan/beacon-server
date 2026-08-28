@@ -373,3 +373,86 @@ func TestHandlePacket_Trace_AmbiguousResolution_SkipsHopNeighbor(t *testing.T) {
 		t.Errorf("expected 0 trace neighbor upserts for an ambiguous hash, got %d", db.upsertNeighborCalls)
 	}
 }
+
+// neighborsReport builds the JSON body of a /neighbors MQTT message.
+func neighborsReport(selfScopes string, entries ...neighborReportEntry) []byte {
+	raw, err := json.Marshal(neighborReport{
+		Self: struct {
+			Scopes string `json:"scopes"`
+		}{Scopes: selfScopes},
+		Neighbors: entries,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return raw
+}
+
+func coordsNode(lat, lon float64) *api.ResolvedNode {
+	return &api.ResolvedNode{Latitude: &lat, Longitude: &lon}
+}
+
+// One reported neighbor beyond LoRa range invalidates the ENTIRE report:
+// nothing at all is written from it — no observer, no region scope, no edges.
+func TestHandleNeighbors_ImpossibleDistance_IgnoresWholeReport(t *testing.T) {
+	w, db := newTestWorker()
+	w.cfg.NeighborMaxKm = 150
+	observer := uuid.MustParse("00000000-0000-0000-0000-00000000000a")
+	near := uuid.MustParse("00000000-0000-0000-0000-00000000000b")
+	far := uuid.MustParse("00000000-0000-0000-0000-00000000000c")
+	db.nodesByPubkey = map[string]uuid.UUID{
+		"aaaa": observer, // reporter
+		"bbbb": near,     // plausible neighbor
+		"cccc": far,      // impossible neighbor
+	}
+	db.nodesByIDs = map[uuid.UUID]*api.ResolvedNode{
+		observer: coordsNode(59.61, 16.54), // Västmanland
+		near:     coordsNode(59.63, 16.56), // ~2 km away
+		far:      coordsNode(55.68, 12.57), // Copenhagen, ~430 km
+	}
+
+	w.handleNeighbors(context.Background(), "VST", "aaaa", neighborsReport("SE01",
+		neighborReportEntry{PubKey: "bbbb", SNR: 6, Status: "responded"},
+		neighborReportEntry{PubKey: "cccc", SNR: -10, Status: "responded"},
+	))
+
+	if db.upsertObserverCalls != 0 {
+		t.Errorf("expected the observer upsert to be skipped, got %d", db.upsertObserverCalls)
+	}
+	if len(db.updatedScopes) != 0 {
+		t.Errorf("expected no region scope writes, got %v", db.updatedScopes)
+	}
+	if db.upsertNeighborCalls != 0 {
+		t.Errorf("expected 0 neighbor upserts, got %d", db.upsertNeighborCalls)
+	}
+}
+
+// A report whose neighbors are all within LoRa range is processed normally.
+func TestHandleNeighbors_AllInRange_ProcessesReport(t *testing.T) {
+	w, db := newTestWorker()
+	w.cfg.NeighborMaxKm = 150
+	observer := uuid.MustParse("00000000-0000-0000-0000-00000000000a")
+	near := uuid.MustParse("00000000-0000-0000-0000-00000000000b")
+	db.nodesByPubkey = map[string]uuid.UUID{
+		"aaaa": observer,
+		"bbbb": near,
+	}
+	db.nodesByIDs = map[uuid.UUID]*api.ResolvedNode{
+		observer: coordsNode(59.61, 16.54),
+		near:     coordsNode(59.63, 16.56),
+	}
+
+	w.handleNeighbors(context.Background(), "VST", "aaaa", neighborsReport("SE01",
+		neighborReportEntry{PubKey: "bbbb", SNR: 6, Status: "responded"},
+	))
+
+	if db.upsertObserverCalls != 1 {
+		t.Errorf("expected the observer upsert, got %d", db.upsertObserverCalls)
+	}
+	if len(db.updatedScopes) != 1 || db.updatedScopes[0] != "SE01" {
+		t.Errorf("expected the region scope write, got %v", db.updatedScopes)
+	}
+	if db.upsertNeighborCalls != 1 {
+		t.Errorf("expected 1 neighbor upsert, got %d", db.upsertNeighborCalls)
+	}
+}

@@ -173,3 +173,57 @@ func TestResolvePathHashes_Mapping(t *testing.T) {
 		t.Errorf("expected Name %s, got %v", name, entries[0].Name)
 	}
 }
+
+// A neighbor edge between nodes with known coordinates further apart than the
+// direct LoRa cap is refused — MQTT-interconnected hops are not radio hops.
+func TestUpsertNodeNeighbor_DistanceCap_RefusesImpossibleLink(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	latA, lonA := 59.61, 16.54
+	latB, lonB := 55.68, 12.57 // Copenhagen: ~430 km from Västmanland
+	a := uuid.MustParse("00000000-0000-0000-0000-00000000000a")
+	b := uuid.MustParse("00000000-0000-0000-0000-00000000000b")
+
+	mock.EXPECT().
+		GetNodesByIDs(gomock.Any(), []uuid.UUID{a, b}).
+		Return([]sqlc.GetNodesByIDsRow{
+			{ID: a, Latitude: &latA, Longitude: &lonA},
+			{ID: b, Latitude: &latB, Longitude: &lonB},
+		}, nil)
+	// no EXPECT for UpsertNodeNeighbor — it must never be reached
+
+	store := &Store{q: mock, neighborMaxKm: 150}
+	if err := store.UpsertNodeNeighbor(context.Background(), a, b, "VST", nil, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUpsertNodeNeighbor_DistanceCap_AllowsNearbyLink(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	latA, lonA := 59.61, 16.54
+	latB, lonB := 59.63, 16.56
+	a := uuid.MustParse("00000000-0000-0000-0000-00000000000a")
+	b := uuid.MustParse("00000000-0000-0000-0000-00000000000b")
+
+	mock.EXPECT().
+		GetNodesByIDs(gomock.Any(), []uuid.UUID{a, b}).
+		Return([]sqlc.GetNodesByIDsRow{
+			{ID: a, Latitude: &latA, Longitude: &lonA},
+			{ID: b, Latitude: &latB, Longitude: &lonB},
+		}, nil)
+	mock.EXPECT().
+		UpsertNodeNeighbor(gomock.Any(), sqlc.UpsertNodeNeighborParams{
+			NodeID:     a,
+			NeighborID: b,
+			Iata:       "VST",
+		}).
+		Return(nil)
+
+	store := &Store{q: mock, neighborMaxKm: 150}
+	if err := store.UpsertNodeNeighbor(context.Background(), a, b, "VST", nil, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

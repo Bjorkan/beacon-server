@@ -71,6 +71,12 @@ type Config struct {
 	// Build this set at startup from IngestFilterConfig using iatadb.
 	AllowedIATAs map[string]struct{}
 
+	// NeighborMaxKm is the great-circle distance beyond which two nodes cannot
+	// be direct LoRa neighbors. A /neighbors report containing even one pair
+	// further apart than this is discarded whole (see handleNeighbors).
+	// 0 disables the check.
+	NeighborMaxKm float64
+
 	// TelemetryResolution controls how frequently telemetry snapshots are stored.
 	// Status messages within the same window are deduplicated via ON CONFLICT.
 	// Defaults to 1 hour if zero.

@@ -6,6 +6,7 @@ package ingest
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -185,8 +186,15 @@ type stubDB struct {
 	// when non-nil, ResolvePathHashes returns this map verbatim; nil keeps the old empty result
 	pathResolves map[string][]api.ResolvedPathEntry
 	// when non-nil, GetNodeByPubkey returns this ID; nil keeps the not-found error
-	nodeByPubkey        *uuid.UUID
+	nodeByPubkey *uuid.UUID
+	// pubkey-hex -> node ID: consulted first by GetNodeByPubkey; unknown
+	// pubkeys fall back to nodeByPubkey and then to not-found
+	nodesByPubkey map[string]uuid.UUID
+	// when non-nil, GetNodesByIDs returns this map verbatim; nil keeps the old empty result
+	nodesByIDs          map[uuid.UUID]*api.ResolvedNode
 	upsertNeighborCalls int
+	upsertObserverCalls int
+	updatedScopes       []string
 }
 
 type setCapabilityCall struct {
@@ -202,6 +210,7 @@ func (s *stubDB) SetNodeCapability(_ context.Context, nodeID uuid.UUID, paths, t
 
 // no-op implementations for remaining DB interface methods
 func (s *stubDB) UpsertObserver(_ context.Context, _ []byte) (uuid.UUID, string, error) {
+	s.upsertObserverCalls++
 	return uuid.Nil, "", nil
 }
 func (s *stubDB) UpsertObserverBroker(_ context.Context, _ uuid.UUID, _ string) error { return nil }
@@ -223,7 +232,13 @@ func (s *stubDB) UpsertNodeShortID(_ context.Context, _ uuid.UUID, _ string, _ [
 	return nil
 }
 
-func (s *stubDB) GetNodeByPubkey(_ context.Context, _ []byte) (uuid.UUID, error) {
+func (s *stubDB) GetNodeByPubkey(_ context.Context, pubkey []byte) (uuid.UUID, error) {
+	if s.nodesByPubkey != nil {
+		if id, ok := s.nodesByPubkey[hex.EncodeToString(pubkey)]; ok {
+			return id, nil
+		}
+		return uuid.Nil, errors.New("not found")
+	}
 	if s.nodeByPubkey != nil {
 		return *s.nodeByPubkey, nil
 	}
@@ -231,6 +246,9 @@ func (s *stubDB) GetNodeByPubkey(_ context.Context, _ []byte) (uuid.UUID, error)
 }
 
 func (s *stubDB) GetNodesByIDs(_ context.Context, _ []uuid.UUID) (map[uuid.UUID]*api.ResolvedNode, error) {
+	if s.nodesByIDs != nil {
+		return s.nodesByIDs, nil
+	}
 	return nil, nil
 }
 
@@ -302,7 +320,8 @@ func (s *stubDB) UpsertNodeNeighbor(_ context.Context, _, _ uuid.UUID, _ string,
 	return nil
 }
 
-func (s *stubDB) UpdateObserverRegionScope(_ context.Context, _ uuid.UUID, _ string) error {
+func (s *stubDB) UpdateObserverRegionScope(_ context.Context, _ uuid.UUID, scope string) error {
+	s.updatedScopes = append(s.updatedScopes, scope)
 	return nil
 }
 

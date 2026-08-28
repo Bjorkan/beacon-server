@@ -110,7 +110,7 @@ func main() {
 		log.Fatalf("migrations failed: %v", err)
 	}
 
-	store := db.New(pool, resolved.ClockDriftThreshold, resolved.NodeStaleThreshold)
+	store := db.New(pool, resolved.ClockDriftThreshold, resolved.NodeStaleThreshold, resolved.NeighborMaxKm)
 
 	// ── Presence write coalescing ────────────────────────────────────────────
 	// Ingest writes go through the coalescer; reads keep using the store.
@@ -224,6 +224,7 @@ func main() {
 			Username:            getEnv("MQTT_BROKER_1_USERNAME"),
 			Password:            getEnv("MQTT_BROKER_1_PASSWORD"),
 			TelemetryResolution: resolved.TelemetryResolution,
+			NeighborMaxKm:       resolved.NeighborMaxKm,
 			AllowedIATAs:        allowedIATAs,
 		},
 		coalescer,
@@ -239,6 +240,7 @@ func main() {
 			Username:            getEnv("MQTT_BROKER_2_USERNAME"),
 			Password:            getEnv("MQTT_BROKER_2_PASSWORD"),
 			TelemetryResolution: resolved.TelemetryResolution,
+			NeighborMaxKm:       resolved.NeighborMaxKm,
 			AllowedIATAs:        allowedIATAs,
 		},
 		coalescer,

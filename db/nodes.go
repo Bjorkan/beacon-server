@@ -62,6 +62,23 @@ func (s *Store) UpsertNodeShortID(ctx context.Context, nodeID uuid.UUID, iata st
 }
 
 func (s *Store) UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.UUID, iata string, snr *float32, regionScope *string) error {
+	// A neighbor edge claims the two nodes hear each other over RF, which is
+	// impossible beyond a bounded range. When both endpoints report
+	// coordinates, refuse links longer than the cap — packets and /neighbors
+	// reports cross IATA areas via MQTT interconnects, and those hops are
+	// internet hops, not radio hops. Nodes without coordinates pass.
+	if s.neighborMaxKm > 0 {
+		nodes, err := s.GetNodesByIDs(ctx, []uuid.UUID{nodeID, neighborID})
+		if err != nil {
+			return err
+		}
+		a, b := nodes[nodeID], nodes[neighborID]
+		if a != nil && b != nil && a.Latitude != nil && b.Latitude != nil && a.Longitude != nil && b.Longitude != nil {
+			if km := api.HaversineKm(*a.Latitude, *a.Longitude, *b.Latitude, *b.Longitude); km > s.neighborMaxKm {
+				return nil
+			}
+		}
+	}
 	return s.q.UpsertNodeNeighbor(ctx, sqlc.UpsertNodeNeighborParams{
 		NodeID:      nodeID,
 		NeighborID:  neighborID,

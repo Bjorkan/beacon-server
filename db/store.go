@@ -24,15 +24,18 @@ type Store struct {
 	q                   sqlc.Querier
 	clockDriftThreshold time.Duration // see api.Node.ClockOutOfSync
 	staleThreshold      time.Duration // see api.NodeSummary.Stale
+	neighborMaxKm       float64       // direct LoRa sanity cap for node_neighbors edges (0 = unlimited)
 }
 
 // New creates a Store backed by the given pgxpool connection pool. clockDriftThreshold is
 // the |device clock - server clock| magnitude above which a repeater/room server's
 // clockOutOfSync is reported true; see internal/config.ResolvedConfig.ClockDriftThreshold.
 // staleThreshold is how long since last_seen before a node's Stale is reported true; see
-// internal/config.ResolvedConfig.NodeStaleThreshold.
-func New(pool *pgxpool.Pool, clockDriftThreshold, staleThreshold time.Duration) *Store {
-	return &Store{q: sqlc.New(pool), clockDriftThreshold: clockDriftThreshold, staleThreshold: staleThreshold}
+// internal/config.ResolvedConfig.NodeStaleThreshold. neighborMaxKm is the great-circle
+// distance beyond which a node_neighbors edge is refused as physically impossible for a
+// direct LoRa hop (0 = unlimited); see internal/config.ResolvedConfig.NeighborMaxKm.
+func New(pool *pgxpool.Pool, clockDriftThreshold, staleThreshold time.Duration, neighborMaxKm float64) *Store {
+	return &Store{q: sqlc.New(pool), clockDriftThreshold: clockDriftThreshold, staleThreshold: staleThreshold, neighborMaxKm: neighborMaxKm}
 }
 
 // ResolvePathHashes resolves path hash prefixes to nodes GLOBALLY — across

@@ -99,6 +99,12 @@ routes:
 # pair again -- is dropped once it ages past retention.
 #neighbors:
 #  retention: 168h   # default: 7 days
+#  # Direct LoRa sanity cap: two nodes with known coordinates further apart
+#  # than this can't hear each other, so no edge is recorded between them, and
+#  # a /neighbors report containing even one such impossible pair is discarded
+#  # whole (packets reach other regions via MQTT interconnects — those hops
+#  # are not radio hops).
+#  max_distance_km: 150   # default: 150
 
 websocket:
   max_connections_per_ip: 5 # default: 5

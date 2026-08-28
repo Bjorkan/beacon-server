@@ -40,6 +40,7 @@ type ResolvedConfig struct {
 	PacketRetention      time.Duration
 	RouteRetention       time.Duration
 	NeighborRetention    time.Duration
+	NeighborMaxKm        float64
 	RouteGrace           time.Duration
 	RouteMinObservations int
 	MaxConnsPerIP        int
@@ -196,12 +197,20 @@ type RoutesConfig struct {
 	MinObservations int `yaml:"min_observations"`
 }
 
-// NeighborsConfig controls node_neighbors edge retention.
+// NeighborsConfig controls node_neighbors edges: how long they live and how
+// far apart two nodes may be for a direct LoRa neighbor claim to be believed.
 type NeighborsConfig struct {
 	// Retention is how long a neighbor edge survives without a fresh
 	// confirmation (a 3-byte-path packet or a /neighbors report).
 	// Defaults to 168h (7 days) if not set.
 	Retention duration `yaml:"retention"`
+	// MaxDistanceKm is the great-circle distance beyond which two nodes with
+	// known coordinates cannot be direct LoRa neighbors. Packets and /neighbors
+	// reports cross IATA areas via MQTT interconnects, and those hops are not
+	// radio hops — edges longer than this are refused, and a /neighbors report
+	// containing even one such impossible pair is discarded whole.
+	// Defaults to 150 km if not set.
+	MaxDistanceKm float64 `yaml:"max_distance_km"`
 }
 
 // NodesConfig controls node-derived signal thresholds.
@@ -331,6 +340,7 @@ func Resolve(cfg *Config) ResolvedConfig {
 		PacketRetention:      cfg.Packets.Retention.Duration,
 		RouteRetention:       cfg.Routes.Retention.Duration,
 		NeighborRetention:    cfg.Neighbors.Retention.Duration,
+		NeighborMaxKm:        cfg.Neighbors.MaxDistanceKm,
 		RouteGrace:           cfg.Routes.Grace.Duration,
 		RouteMinObservations: cfg.Routes.MinObservations,
 		MaxConnsPerIP:        cfg.WebSocket.MaxConnectionsPerIP,
@@ -359,6 +369,9 @@ func Resolve(cfg *Config) ResolvedConfig {
 	}
 	if r.NeighborRetention == 0 {
 		r.NeighborRetention = 7 * 24 * time.Hour
+	}
+	if r.NeighborMaxKm == 0 {
+		r.NeighborMaxKm = 150
 	}
 	if r.RouteGrace == 0 {
 		r.RouteGrace = 7 * 24 * time.Hour
@@ -400,9 +413,10 @@ func Resolve(cfg *Config) ResolvedConfig {
 
 func (r ResolvedConfig) String() string {
 	return fmt.Sprintf(
-		"telemetryResolution=%s telemetryRetention=%s packetRetention=%s routeRetention=%s routeGrace=%s routeMinObs=%d neighborRetention=%s maxConnsPerIP=%d viewRefresh=%s reconfirm=%s cleanup=%s presenceFlush=%s presencePacketTTL=%s clockDriftThreshold=%s nodeStaleThreshold=%s nodeDeleteAfter=%s",
+		"telemetryResolution=%s telemetryRetention=%s packetRetention=%s routeRetention=%s routeGrace=%s routeMinObs=%d neighborRetention=%s neighborMaxKm=%.0f maxConnsPerIP=%d viewRefresh=%s reconfirm=%s cleanup=%s presenceFlush=%s presencePacketTTL=%s clockDriftThreshold=%s nodeStaleThreshold=%s nodeDeleteAfter=%s",
 		r.TelemetryResolution, r.TelemetryRetention, r.PacketRetention, r.RouteRetention, r.RouteGrace, r.RouteMinObservations,
 		r.NeighborRetention,
+		r.NeighborMaxKm,
 		r.MaxConnsPerIP, r.ViewRefreshInterval, r.ReconfirmInterval, r.CleanupInterval,
 		r.PresenceFlushInterval, r.PresencePacketTTL, r.ClockDriftThreshold,
 		r.NodeStaleThreshold, r.NodeDeleteAfter,
