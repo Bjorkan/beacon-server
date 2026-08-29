@@ -11,6 +11,7 @@ import (
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
 	mockdb "github.com/MeshCore-Beacon/beacon-server/db/sqlc/mock"
+	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/mock/gomock"
@@ -73,7 +74,9 @@ func TestListObservers_Pagination(t *testing.T) {
 	for i := range rows {
 		rows[i] = sqlc.ListObserversRow{
 			ID:           observerID,
+			LastSeen:     lastStatusAt,
 			LastStatusAt: lastStatusAt,
+			PageSortKey:  "00000001700000000000",
 		}
 	}
 
@@ -82,7 +85,7 @@ func TestListObservers_Pagination(t *testing.T) {
 		Return(rows, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListObservers(context.Background(), []string{"YVR"}, "", "", "", "", "", 0, 2)
+	page, err := store.ListObservers(context.Background(), api.ObserverListParams{IATAs: []string{"YVR"}, Limit: 2})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,6 +97,16 @@ func TestListObservers_Pagination(t *testing.T) {
 	}
 	if page.NextCursor == nil {
 		t.Error("expected NextCursor to be set")
+	}
+	if page.NextPageToken == nil {
+		t.Fatal("expected NextPageToken to be set")
+	}
+	token, err := api.DecodePageToken(*page.NextPageToken)
+	if err != nil {
+		t.Fatalf("invalid NextPageToken: %v", err)
+	}
+	if token.Collection != api.PageCollectionObservers || token.Sort != api.ObserverSortLastSeen || token.Direction != api.SortDesc {
+		t.Fatalf("unexpected token ordering: %#v", token)
 	}
 }
 
@@ -118,7 +131,7 @@ func TestListObservers_RadioStringFormatting(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListObservers(context.Background(), nil, "", "", "", "", "", 0, 10)
+	page, err := store.ListObservers(context.Background(), api.ObserverListParams{Limit: 10})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,7 +159,7 @@ func TestListObservers_NilRadioFields(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListObservers(context.Background(), nil, "", "", "", "", "", 0, 10)
+	page, err := store.ListObservers(context.Background(), api.ObserverListParams{Limit: 10})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -164,7 +177,7 @@ func TestListObservers_DBError(t *testing.T) {
 		Return(nil, errors.New("db error"))
 
 	store := &Store{q: mock}
-	_, err := store.ListObservers(context.Background(), nil, "", "", "", "", "", 0, 10)
+	_, err := store.ListObservers(context.Background(), api.ObserverListParams{Limit: 10})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

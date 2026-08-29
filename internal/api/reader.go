@@ -12,14 +12,15 @@ import (
 	"github.com/google/uuid"
 )
 
-// Page is a generic paginated response envelope used by all list endpoints
-// that support cursor-based pagination. NextCursor is the ID of the last item
-// returned and should be passed as the cursor param in the next request.
-// HasMore is true when additional results exist beyond the current page.
+// Page is a generic paginated response envelope used by list endpoints.
+// NextCursor is retained for legacy timestamp/ID cursors where an endpoint already exposed one.
+// NextPageToken is the preferred opaque keyset cursor for sortable lists; callers should round-trip
+// it unchanged. HasMore is true when additional results exist beyond the current page.
 type Page[T any] struct {
-	Items      []T    `json:"items"`
-	NextCursor *int64 `json:"nextCursor,omitempty"`
-	HasMore    bool   `json:"hasMore"`
+	Items         []T     `json:"items"`
+	NextCursor    *int64  `json:"nextCursor,omitempty"`
+	NextPageToken *string `json:"nextPageToken,omitempty"`
+	HasMore       bool    `json:"hasMore"`
 }
 
 type Reader interface {
@@ -78,11 +79,10 @@ type Reader interface {
 	// ordered oldest first. Used for WS reconnect backfill.
 	ListMessagesAfterID(ctx context.Context, afterID int64, iatas []string, scope string, limit int32) ([]ChannelMessage, error)
 
-	// ListObservers returns a paginated list of observers with optional filters.
-	// All filter params are optional — pass empty string or nil to skip a filter.
-	// status is "online" or "offline" derived from last_status_at recency.
-	// cursor is last_seen epoch ms of the last observer; pass 0 to start from the beginning.
-	ListObservers(ctx context.Context, iatas []string, observerType, broker, status, name, scope string, cursor int64, limit int32) (Page[ObserverSummary], error)
+	// ListObservers returns a keyset-paginated list of observers with optional filters and ordering.
+	// LegacyCursor preserves the historical last_seen cursor for older API clients; new callers should
+	// round-trip NextPageToken because it remains stable for every supported sort.
+	ListObservers(ctx context.Context, params ObserverListParams) (Page[ObserverSummary], error)
 
 	// GetObserver returns full detail for a single observer by UUID.
 	// Returns nil, pgx.ErrNoRows if the observer is not found.
@@ -103,11 +103,12 @@ type Reader interface {
 	// Pass cursor=0 to start from the beginning.
 	ListObserverAdverts(ctx context.Context, observerID uuid.UUID, cursor int64, limit int32) (Page[AdvertObservation], error)
 
-	// ListNodes returns a paginated list of nodes with optional filters.
-	// When includeNeighbors is true, each NodeSummary's NeighborIDs field is
-	// populated with the distinct set of neighbor node IDs (across all
-	// IATAs); otherwise it's left nil to avoid the extra aggregation.
-	ListNodes(ctx context.Context, nodeType int16, iatas []string, supportsMultibytePaths, supportsMultibyteTraces *bool, pubkey []byte, pubkeyPrefix, name, scope string, cursor int64, limit int32, includeNeighbors bool) (Page[NodeSummary], error)
+	// ListNodes returns a keyset-paginated list of nodes with optional filters and ordering.
+	// When IncludeNeighbors is true, each NodeSummary's NeighborIDs field is populated with the
+	// distinct set of neighbor node IDs (across all IATAs); otherwise it is omitted. LegacyCursor
+	// preserves the historical last_seen cursor for older API clients; new callers should round-trip
+	// NextPageToken because it remains stable for every supported sort.
+	ListNodes(ctx context.Context, params NodeListParams) (Page[NodeSummary], error)
 
 	// GetNode returns full detail for a single node by UUID.
 	// Returns nil, pgx.ErrNoRows if the node is not found.

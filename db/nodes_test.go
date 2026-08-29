@@ -11,6 +11,7 @@ import (
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
 	mockdb "github.com/MeshCore-Beacon/beacon-server/db/sqlc/mock"
+	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/MeshCore-Beacon/beacon-server/internal/ingest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -186,9 +187,10 @@ func TestListNodes_Pagination(t *testing.T) {
 	rows := make([]sqlc.ListNodesRow, 3)
 	for i := range rows {
 		rows[i] = sqlc.ListNodesRow{
-			ID:        nodeID,
-			PublicKey: []byte{0x01},
-			LastSeen:  lastSeen,
+			ID:          nodeID,
+			PublicKey:   []byte{0x01},
+			LastSeen:    lastSeen,
+			PageSortKey: "00000001700000000000",
 		}
 	}
 
@@ -197,7 +199,7 @@ func TestListNodes_Pagination(t *testing.T) {
 		Return(rows, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, []string{"YVR"}, nil, nil, nil, "", "", "", 0, 2, false)
+	page, err := store.ListNodes(context.Background(), api.NodeListParams{IATAs: []string{"YVR"}, Limit: 2})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -209,6 +211,16 @@ func TestListNodes_Pagination(t *testing.T) {
 	}
 	if page.NextCursor == nil {
 		t.Error("expected NextCursor to be set")
+	}
+	if page.NextPageToken == nil {
+		t.Fatal("expected NextPageToken to be set")
+	}
+	token, err := api.DecodePageToken(*page.NextPageToken)
+	if err != nil {
+		t.Fatalf("invalid NextPageToken: %v", err)
+	}
+	if token.Collection != api.PageCollectionNodes || token.Sort != api.NodeSortLastSeen || token.Direction != api.SortDesc {
+		t.Fatalf("unexpected token ordering: %#v", token)
 	}
 }
 
@@ -230,7 +242,7 @@ func TestListNodes_IATAsUnmarshal(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", "", 0, 10, false)
+	page, err := store.ListNodes(context.Background(), api.NodeListParams{Limit: 10})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -259,7 +271,7 @@ func TestListNodes_Stale(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock, staleThreshold: 24 * time.Hour}
-	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", "", 0, 10, false)
+	page, err := store.ListNodes(context.Background(), api.NodeListParams{Limit: 10})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -300,7 +312,7 @@ func TestListNodes_RadioStringFormatting(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", "", 0, 10, false)
+	page, err := store.ListNodes(context.Background(), api.NodeListParams{Limit: 10})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -646,6 +658,8 @@ func TestListNodes_IncludeNeighbors_PassesFlagAndMapsIDs(t *testing.T) {
 			Column1: int16(0), Column2: nil, Column3: "any", Column4: "any",
 			Column5: nil, Column6: "", Column7: pgtype.Timestamptz{},
 			Limit: 11, Column9: "", Column10: true,
+			Column11: "", Column12: api.NodeSortLastSeen, Column13: string(api.SortDesc),
+			Column14: false, Column15: false, Column16: "", Column17: uuid.Nil,
 		})).
 		Return([]sqlc.ListNodesRow{
 			{
@@ -656,7 +670,7 @@ func TestListNodes_IncludeNeighbors_PassesFlagAndMapsIDs(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", "", 0, 10, true)
+	page, err := store.ListNodes(context.Background(), api.NodeListParams{Limit: 10, IncludeNeighbors: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -676,13 +690,15 @@ func TestListNodes_ExcludeNeighbors_LeavesIDsNil(t *testing.T) {
 			Column1: int16(0), Column2: nil, Column3: "any", Column4: "any",
 			Column5: nil, Column6: "", Column7: pgtype.Timestamptz{},
 			Limit: 11, Column9: "", Column10: false,
+			Column11: "", Column12: api.NodeSortLastSeen, Column13: string(api.SortDesc),
+			Column14: false, Column15: false, Column16: "", Column17: uuid.Nil,
 		})).
 		Return([]sqlc.ListNodesRow{
 			{ID: nodeID, PublicKey: []byte{0x01}, NeighborIds: nil},
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListNodes(context.Background(), 0, nil, nil, nil, nil, "", "", "", 0, 10, false)
+	page, err := store.ListNodes(context.Background(), api.NodeListParams{Limit: 10})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

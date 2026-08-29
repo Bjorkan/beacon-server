@@ -44,7 +44,10 @@ func ObserversRouter(reader api.Reader) http.Handler {
 //	@Param		status	query		string	false	"Filter by status (online or offline)"
 //	@Param		name	query		string	false	"Partial case-insensitive display name match"
 //	@Param		scope	query		string	false	"Filter by transport scope name e.g. %23bc (URL-encoded #bc)"
-//	@Param		cursor	query		int		false	"last_seen epoch ms of last item for pagination"
+//	@Param		sort	query		string	false	"Sort field: name, type, radio, iata, status, last_seen (default last_seen)"
+//	@Param		direction	query		string	false	"Sort direction: asc or desc (default desc)"
+//	@Param		pageToken	query		string	false	"Opaque keyset cursor returned as nextPageToken"
+//	@Param		cursor	query		int		false	"Legacy last_seen epoch ms cursor (only for last_seen desc)"
 //	@Param		limit	query		int		false	"Max results (default 50)"
 //	@Success	200		{object}	api.Page[api.ObserverSummary]
 //	@Failure	400		{object}	handlers.APIError
@@ -66,6 +69,20 @@ func listObservers(reader api.Reader) http.HandlerFunc {
 			}
 			cursor = c
 		}
+		sort, direction, pageToken, err := parseSortablePage(r, api.PageCollectionObservers, api.ObserverSortLastSeen, api.SortDesc, api.ValidObserverSort)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if pageToken != nil && cursor != 0 {
+			respondError(w, http.StatusBadRequest, "cursor and pageToken cannot be combined")
+			return
+		}
+		if cursor != 0 && (sort != api.ObserverSortLastSeen || direction != api.SortDesc) {
+			respondError(w, http.StatusBadRequest, "legacy cursor is only valid with sort=last_seen&direction=desc")
+			return
+		}
+
 		var limit int32 = 50
 		if limitParam := r.URL.Query().Get("limit"); limitParam != "" {
 			l, err := strconv.ParseInt(limitParam, 10, 32)
@@ -84,7 +101,19 @@ func listObservers(reader api.Reader) http.HandlerFunc {
 			}
 			iatas = append(iatas, regionIATAs...)
 		}
-		observers, err := reader.ListObservers(r.Context(), iatas, observerType, broker, status, name, scope, cursor, limit)
+		observers, err := reader.ListObservers(r.Context(), api.ObserverListParams{
+			IATAs:        iatas,
+			ObserverType: observerType,
+			Broker:       broker,
+			Status:       status,
+			Name:         name,
+			Scope:        scope,
+			LegacyCursor: cursor,
+			PageToken:    pageToken,
+			Sort:         sort,
+			Direction:    direction,
+			Limit:        limit,
+		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "failed to get list of observers")
 			return

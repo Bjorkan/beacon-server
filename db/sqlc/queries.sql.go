@@ -2314,41 +2314,86 @@ func (q *Queries) ListNodeObservations(ctx context.Context, arg ListNodeObservat
 }
 
 const listNodes = `-- name: ListNodes :many
-SELECT n.id, n.public_key, n.node_type, n.name, n.latitude, n.longitude, n.last_seen,
-  n.radio_freq_mhz, n.radio_sf, n.radio_bw_khz,
-  ts.name AS default_scope_name,
-  json_agg(json_build_object('iata', ni.iata, 'lastHeard', (extract(epoch from ni.last_heard) * 1000)::bigint) ORDER BY ni.last_heard DESC) FILTER (WHERE ni.iata IS NOT NULL) AS iatas,
-  EXISTS (SELECT 1 FROM observers o WHERE o.public_key = n.public_key) AS is_observer,
-  (SELECT o.id FROM observers o WHERE o.public_key = n.public_key LIMIT 1) AS observer_id,
-  (SELECT COUNT(DISTINCT nn.neighbor_id) FROM node_neighbors nn WHERE nn.node_id = n.id)::bigint AS known_neighbor_count,
-  -- CASE short-circuits: the array_agg subquery only runs when $10 is true,
-  -- so requests that don't ask for neighbor IDs don't pay for it.
-(CASE WHEN $10::bool THEN
-    (SELECT COALESCE(array_agg(DISTINCT nn.neighbor_id), '{}'::uuid[]) FROM node_neighbors nn WHERE nn.node_id = n.id)
-  ELSE NULL END)::uuid[] AS neighbor_ids
-FROM nodes n
-LEFT JOIN node_iatas ni ON ni.node_id = n.id
-LEFT JOIN transport_scopes ts ON ts.id = n.default_scope_id
+WITH node_base AS (
+  SELECT n.id, n.public_key, n.node_type, n.name, n.latitude, n.longitude, n.last_seen,
+    n.radio_freq_mhz, n.radio_sf, n.radio_bw_khz,
+    ts.name AS default_scope_name,
+    json_agg(json_build_object('iata', ni.iata, 'lastHeard', (extract(epoch from ni.last_heard) * 1000)::bigint) ORDER BY ni.last_heard DESC) FILTER (WHERE ni.iata IS NOT NULL) AS iatas,
+    EXISTS (SELECT 1 FROM observers o WHERE o.public_key = n.public_key) AS is_observer,
+    (SELECT o.id FROM observers o WHERE o.public_key = n.public_key LIMIT 1) AS observer_id,
+    (SELECT COUNT(DISTINCT nn.neighbor_id) FROM node_neighbors nn WHERE nn.node_id = n.id)::bigint AS known_neighbor_count,
+    (CASE WHEN $10::bool THEN
+      (SELECT COALESCE(array_agg(DISTINCT nn.neighbor_id), '{}'::uuid[]) FROM node_neighbors nn WHERE nn.node_id = n.id)
+    ELSE NULL END)::uuid[] AS neighbor_ids
+  FROM nodes n
+  LEFT JOIN node_iatas ni ON ni.node_id = n.id
+  LEFT JOIN transport_scopes ts ON ts.id = n.default_scope_id
+  WHERE
+    ($1 = 0 OR n.node_type = $1)
+    AND (COALESCE(cardinality($2::bpchar[]), 0) = 0 OR n.id IN (SELECT node_id FROM node_iatas WHERE iata = ANY($2::bpchar[])))
+    AND (
+      $3::text = 'any'
+      OR ($3::text = 'true' AND n.supports_multibyte_paths = TRUE)
+      OR ($3::text = 'false' AND n.supports_multibyte_paths = FALSE)
+    )
+    AND (
+      $4::text = 'any'
+      OR ($4::text = 'true' AND n.supports_multibyte_traces = TRUE)
+      OR ($4::text = 'false' AND n.supports_multibyte_traces = FALSE)
+    )
+    AND ($5::bytea IS NULL OR n.public_key = $5)
+    AND ($6 = '' OR n.name ILIKE '%' || $6 || '%')
+    AND ($7::timestamptz IS NULL OR n.last_seen < $7)
+    AND ($9::text = '' OR ts.name = $9::text)
+    AND ($11::text = '' OR encode(n.public_key, 'hex') ILIKE $11 || '%')
+  GROUP BY n.id, ts.name
+), node_keyed AS (
+  SELECT node_base.id, node_base.public_key, node_base.node_type, node_base.name, node_base.latitude, node_base.longitude, node_base.last_seen, node_base.radio_freq_mhz, node_base.radio_sf, node_base.radio_bw_khz, node_base.default_scope_name, node_base.iatas, node_base.is_observer, node_base.observer_id, node_base.known_neighbor_count, node_base.neighbor_ids,
+    CASE $12::text
+      WHEN 'name' THEN lower(COALESCE(NULLIF(name, ''), id::text))
+      WHEN 'type' THEN CASE node_type
+        WHEN 1 THEN 'companion'
+        WHEN 2 THEN 'repeater'
+        WHEN 3 THEN 'room_server'
+        WHEN 4 THEN 'sensor'
+        ELSE 'unknown'
+      END
+      WHEN 'radio' THEN CASE
+        WHEN radio_freq_mhz IS NULL OR radio_sf IS NULL OR radio_bw_khz IS NULL THEN NULL
+        ELSE lpad(round(radio_freq_mhz::numeric * 1000000)::bigint::text, 20, '0') || '|' ||
+             lpad(radio_sf::text, 6, '0') || '|' ||
+             lpad(round(radio_bw_khz::numeric * 1000000)::bigint::text, 20, '0')
+      END
+      WHEN 'neighbors' THEN lpad(known_neighbor_count::text, 20, '0')
+      ELSE lpad((extract(epoch from last_seen) * 1000)::bigint::text, 20, '0')
+    END::text AS page_sort_key
+  FROM node_base
+), node_ranked AS (
+  SELECT node_keyed.id, node_keyed.public_key, node_keyed.node_type, node_keyed.name, node_keyed.latitude, node_keyed.longitude, node_keyed.last_seen, node_keyed.radio_freq_mhz, node_keyed.radio_sf, node_keyed.radio_bw_khz, node_keyed.default_scope_name, node_keyed.iatas, node_keyed.is_observer, node_keyed.observer_id, node_keyed.known_neighbor_count, node_keyed.neighbor_ids, node_keyed.page_sort_key, (page_sort_key IS NULL OR page_sort_key = '') AS page_sort_empty
+  FROM node_keyed
+)
+SELECT id, public_key, node_type, name, latitude, longitude, last_seen,
+       radio_freq_mhz, radio_sf, radio_bw_khz, default_scope_name, iatas,
+       is_observer, observer_id, known_neighbor_count, neighbor_ids, page_sort_key, page_sort_empty
+FROM node_ranked
 WHERE
-  ($1 = 0 OR n.node_type = $1)
-  AND (COALESCE(cardinality($2::bpchar[]), 0) = 0 OR n.id IN (SELECT node_id FROM node_iatas WHERE iata = ANY($2::bpchar[])))
-  AND (
-    $3::text = 'any'
-    OR ($3::text = 'true' AND n.supports_multibyte_paths = TRUE)
-    OR ($3::text = 'false' AND n.supports_multibyte_paths = FALSE)
-  )
-  AND (
-    $4::text = 'any'
-    OR ($4::text = 'true' AND n.supports_multibyte_traces = TRUE)
-    OR ($4::text = 'false' AND n.supports_multibyte_traces = FALSE)
-  )
-  AND ($5::bytea IS NULL OR n.public_key = $5)
-  AND ($6 = '' OR n.name ILIKE '%' || $6 || '%')
-  AND ($7::timestamptz IS NULL OR n.last_seen < $7)
-  AND ($9::text = '' OR ts.name = $9::text)
-  AND ($11::text = '' OR encode(n.public_key, 'hex') ILIKE $11 || '%')
-GROUP BY n.id, ts.name
-ORDER BY n.last_seen DESC
+  NOT $14::bool
+  OR page_sort_empty > $15::bool
+  OR (page_sort_empty = $15::bool AND (
+    (page_sort_empty AND (
+      ($13::text = 'asc' AND id > $17::uuid) OR ($13::text = 'desc' AND id < $17::uuid)
+    ))
+    OR (NOT page_sort_empty AND (
+      ($13::text = 'asc' AND (page_sort_key > $16::text OR (page_sort_key = $16::text AND id > $17::uuid)))
+      OR ($13::text = 'desc' AND (page_sort_key < $16::text OR (page_sort_key = $16::text AND id < $17::uuid)))
+    ))
+  ))
+ORDER BY
+  page_sort_empty ASC,
+  CASE WHEN $13::text = 'asc' THEN page_sort_key END ASC,
+  CASE WHEN $13::text = 'desc' THEN page_sort_key END DESC,
+  CASE WHEN $13::text = 'asc' THEN id END ASC,
+  CASE WHEN $13::text = 'desc' THEN id END DESC
 LIMIT $8
 `
 
@@ -2364,6 +2409,12 @@ type ListNodesParams struct {
 	Column9  string             `json:"column_9"`
 	Column10 bool               `json:"column_10"`
 	Column11 string             `json:"column_11"`
+	Column12 string             `json:"column_12"`
+	Column13 string             `json:"column_13"`
+	Column14 bool               `json:"column_14"`
+	Column15 bool               `json:"column_15"`
+	Column16 string             `json:"column_16"`
+	Column17 uuid.UUID          `json:"column_17"`
 }
 
 type ListNodesRow struct {
@@ -2383,8 +2434,12 @@ type ListNodesRow struct {
 	ObserverID         uuid.UUID          `json:"observer_id"`
 	KnownNeighborCount int64              `json:"known_neighbor_count"`
 	NeighborIds        []uuid.UUID        `json:"neighbor_ids"`
+	PageSortKey        string             `json:"page_sort_key"`
+	PageSortEmpty      *bool              `json:"page_sort_empty"`
 }
 
+// Keyset-paginated node list. $7 preserves the legacy last_seen cursor; new clients round-trip
+// nextPageToken, which supplies $14-$17 and remains correct for every supported sort field.
 func (q *Queries) ListNodes(ctx context.Context, arg ListNodesParams) ([]ListNodesRow, error) {
 	rows, err := q.db.Query(ctx, listNodes,
 		arg.Column1,
@@ -2398,6 +2453,12 @@ func (q *Queries) ListNodes(ctx context.Context, arg ListNodesParams) ([]ListNod
 		arg.Column9,
 		arg.Column10,
 		arg.Column11,
+		arg.Column12,
+		arg.Column13,
+		arg.Column14,
+		arg.Column15,
+		arg.Column16,
+		arg.Column17,
 	)
 	if err != nil {
 		return nil, err
@@ -2423,6 +2484,8 @@ func (q *Queries) ListNodes(ctx context.Context, arg ListNodesParams) ([]ListNod
 			&i.ObserverID,
 			&i.KnownNeighborCount,
 			&i.NeighborIds,
+			&i.PageSortKey,
+			&i.PageSortEmpty,
 		); err != nil {
 			return nil, err
 		}
@@ -2579,80 +2642,131 @@ func (q *Queries) ListObserverAdverts(ctx context.Context, arg ListObserverAdver
 }
 
 const listObservers = `-- name: ListObservers :many
-SELECT
-  o.id,
-  o.display_name,
-  o.observer_type,
-  o.last_status_at,
-  o.radio_freq_mhz,
-  o.radio_sf,
-  o.radio_bw_khz,
-  array_remove(array_agg(DISTINCT ts.name ORDER BY ts.name), NULL)::text[] AS scopes,
-COALESCE(CASE
-    WHEN GREATEST(COALESCE(o.last_status_at, o.last_seen), o.last_seen) > NOW() - INTERVAL '5 minutes' THEN 'online'
-    ELSE 'offline'
-END, 'offline')::text AS status,
-COALESCE((
-    SELECT po.iata
-    FROM packet_observations po
-    WHERE po.observer_id = o.id
-    ORDER BY po.heard_at DESC
-    LIMIT 1
-), '')::text AS iata
-FROM observers o
-LEFT JOIN observer_brokers ob ON ob.observer_id = o.id
-LEFT JOIN observer_scopes os ON os.observer_id = o.id
-LEFT JOIN transport_scopes ts ON ts.id = os.scope_id
-WHERE
-  (COALESCE(cardinality($1::bpchar[]), 0) = 0 OR (
+WITH observer_base AS (
+  SELECT
+    o.id,
+    o.display_name,
+    o.observer_type,
+    o.last_seen,
+    o.last_status_at,
+    o.radio_freq_mhz,
+    o.radio_sf,
+    o.radio_bw_khz,
+    array_remove(array_agg(DISTINCT ts.name ORDER BY ts.name), NULL)::text[] AS scopes,
+    COALESCE(CASE
+      WHEN GREATEST(COALESCE(o.last_status_at, o.last_seen), o.last_seen) > NOW() - INTERVAL '5 minutes' THEN 'online'
+      ELSE 'offline'
+    END, 'offline')::text AS status,
+    COALESCE((
+      SELECT po.iata
+      FROM packet_observations po
+      WHERE po.observer_id = o.id
+      ORDER BY po.heard_at DESC
+      LIMIT 1
+    ), '')::text AS iata
+  FROM observers o
+  LEFT JOIN observer_brokers ob ON ob.observer_id = o.id
+  LEFT JOIN observer_scopes os ON os.observer_id = o.id
+  LEFT JOIN transport_scopes ts ON ts.id = os.scope_id
+  WHERE
+    (COALESCE(cardinality($1::bpchar[]), 0) = 0 OR (
       SELECT po.iata FROM packet_observations po
       WHERE po.observer_id = o.id
       ORDER BY po.heard_at DESC LIMIT 1
-  ) = ANY($1::bpchar[]))
-  AND ($2 = '' OR o.observer_type = $2)
-  AND ($3 = '' OR ob.broker_name = $3)
-  AND ($4 = '' OR CASE
-    WHEN GREATEST(COALESCE(o.last_status_at, o.last_seen), o.last_seen) > NOW() - INTERVAL '5 minutes' THEN 'online'
-    ELSE 'offline'
-  END = $4)
-  AND ($5 = '' OR o.display_name ILIKE '%' || $5 || '%')
-  AND ($6::timestamptz IS NULL OR o.last_seen < $6)
-  AND ($8::text = '' OR EXISTS (
-    SELECT 1 FROM observer_scopes os2
-    JOIN transport_scopes ts2 ON ts2.id = os2.scope_id
-    WHERE os2.observer_id = o.id AND ts2.name = $8::text
+    ) = ANY($1::bpchar[]))
+    AND ($2 = '' OR o.observer_type = $2)
+    AND ($3 = '' OR ob.broker_name = $3)
+    AND ($4 = '' OR CASE
+      WHEN GREATEST(COALESCE(o.last_status_at, o.last_seen), o.last_seen) > NOW() - INTERVAL '5 minutes' THEN 'online'
+      ELSE 'offline'
+    END = $4)
+    AND ($5 = '' OR o.display_name ILIKE '%' || $5 || '%')
+    AND ($6::timestamptz IS NULL OR o.last_seen < $6)
+    AND ($8::text = '' OR EXISTS (
+      SELECT 1 FROM observer_scopes os2
+      JOIN transport_scopes ts2 ON ts2.id = os2.scope_id
+      WHERE os2.observer_id = o.id AND ts2.name = $8::text
+    ))
+  GROUP BY o.id
+), observer_keyed AS (
+  SELECT observer_base.id, observer_base.display_name, observer_base.observer_type, observer_base.last_seen, observer_base.last_status_at, observer_base.radio_freq_mhz, observer_base.radio_sf, observer_base.radio_bw_khz, observer_base.scopes, observer_base.status, observer_base.iata,
+    CASE $9::text
+      WHEN 'name' THEN lower(COALESCE(NULLIF(display_name, ''), id::text))
+      WHEN 'type' THEN lower(NULLIF(observer_type, ''))
+      WHEN 'radio' THEN CASE
+        WHEN radio_freq_mhz IS NULL OR radio_sf IS NULL OR radio_bw_khz IS NULL THEN NULL
+        ELSE lpad(round(radio_freq_mhz::numeric * 1000000)::bigint::text, 20, '0') || '|' ||
+             lpad(radio_sf::text, 6, '0') || '|' ||
+             lpad(round(radio_bw_khz::numeric * 1000000)::bigint::text, 20, '0')
+      END
+      WHEN 'iata' THEN lower(NULLIF(iata, ''))
+      WHEN 'status' THEN status
+      ELSE lpad((extract(epoch from last_seen) * 1000)::bigint::text, 20, '0')
+    END::text AS page_sort_key
+  FROM observer_base
+), observer_ranked AS (
+  SELECT observer_keyed.id, observer_keyed.display_name, observer_keyed.observer_type, observer_keyed.last_seen, observer_keyed.last_status_at, observer_keyed.radio_freq_mhz, observer_keyed.radio_sf, observer_keyed.radio_bw_khz, observer_keyed.scopes, observer_keyed.status, observer_keyed.iata, observer_keyed.page_sort_key, (page_sort_key IS NULL OR page_sort_key = '') AS page_sort_empty
+  FROM observer_keyed
+)
+SELECT id, display_name, observer_type, last_seen, last_status_at, radio_freq_mhz, radio_sf, radio_bw_khz,
+       scopes, status, iata, page_sort_key, page_sort_empty
+FROM observer_ranked
+WHERE
+  NOT $11::bool
+  OR page_sort_empty > $12::bool
+  OR (page_sort_empty = $12::bool AND (
+    (page_sort_empty AND (
+      ($10::text = 'asc' AND id > $14::uuid) OR ($10::text = 'desc' AND id < $14::uuid)
+    ))
+    OR (NOT page_sort_empty AND (
+      ($10::text = 'asc' AND (page_sort_key > $13::text OR (page_sort_key = $13::text AND id > $14::uuid)))
+      OR ($10::text = 'desc' AND (page_sort_key < $13::text OR (page_sort_key = $13::text AND id < $14::uuid)))
+    ))
   ))
-GROUP BY o.id
-ORDER BY o.last_seen DESC
+ORDER BY
+  page_sort_empty ASC,
+  CASE WHEN $10::text = 'asc' THEN page_sort_key END ASC,
+  CASE WHEN $10::text = 'desc' THEN page_sort_key END DESC,
+  CASE WHEN $10::text = 'asc' THEN id END ASC,
+  CASE WHEN $10::text = 'desc' THEN id END DESC
 LIMIT $7
 `
 
 type ListObserversParams struct {
-	Column1 []string           `json:"column_1"`
-	Column2 interface{}        `json:"column_2"`
-	Column3 interface{}        `json:"column_3"`
-	Column4 interface{}        `json:"column_4"`
-	Column5 interface{}        `json:"column_5"`
-	Column6 pgtype.Timestamptz `json:"column_6"`
-	Limit   int32              `json:"limit"`
-	Column8 string             `json:"column_8"`
+	Column1  []string           `json:"column_1"`
+	Column2  interface{}        `json:"column_2"`
+	Column3  interface{}        `json:"column_3"`
+	Column4  interface{}        `json:"column_4"`
+	Column5  interface{}        `json:"column_5"`
+	Column6  pgtype.Timestamptz `json:"column_6"`
+	Limit    int32              `json:"limit"`
+	Column8  string             `json:"column_8"`
+	Column9  string             `json:"column_9"`
+	Column10 string             `json:"column_10"`
+	Column11 bool               `json:"column_11"`
+	Column12 bool               `json:"column_12"`
+	Column13 string             `json:"column_13"`
+	Column14 uuid.UUID          `json:"column_14"`
 }
 
 type ListObserversRow struct {
-	ID           uuid.UUID          `json:"id"`
-	DisplayName  *string            `json:"display_name"`
-	ObserverType *string            `json:"observer_type"`
-	LastStatusAt pgtype.Timestamptz `json:"last_status_at"`
-	RadioFreqMhz *float32           `json:"radio_freq_mhz"`
-	RadioSf      *int16             `json:"radio_sf"`
-	RadioBwKhz   *float32           `json:"radio_bw_khz"`
-	Scopes       []string           `json:"scopes"`
-	Status       string             `json:"status"`
-	Iata         string             `json:"iata"`
+	ID            uuid.UUID          `json:"id"`
+	DisplayName   *string            `json:"display_name"`
+	ObserverType  *string            `json:"observer_type"`
+	LastSeen      pgtype.Timestamptz `json:"last_seen"`
+	LastStatusAt  pgtype.Timestamptz `json:"last_status_at"`
+	RadioFreqMhz  *float32           `json:"radio_freq_mhz"`
+	RadioSf       *int16             `json:"radio_sf"`
+	RadioBwKhz    *float32           `json:"radio_bw_khz"`
+	Scopes        []string           `json:"scopes"`
+	Status        string             `json:"status"`
+	Iata          string             `json:"iata"`
+	PageSortKey   string             `json:"page_sort_key"`
+	PageSortEmpty *bool              `json:"page_sort_empty"`
 }
 
-// Pass cursor=0 to start from the beginning, or the last seen observer's rownum for pagination.
-// Note: observers use UUID PKs so we order by last_seen and use a keyset on last_seen+id.
+// Keyset-paginated observer list. $6 preserves the legacy last_seen cursor; new clients round-trip
+// nextPageToken, which supplies $11-$14 and remains correct for every supported sort field.
 func (q *Queries) ListObservers(ctx context.Context, arg ListObserversParams) ([]ListObserversRow, error) {
 	rows, err := q.db.Query(ctx, listObservers,
 		arg.Column1,
@@ -2663,6 +2777,12 @@ func (q *Queries) ListObservers(ctx context.Context, arg ListObserversParams) ([
 		arg.Column6,
 		arg.Limit,
 		arg.Column8,
+		arg.Column9,
+		arg.Column10,
+		arg.Column11,
+		arg.Column12,
+		arg.Column13,
+		arg.Column14,
 	)
 	if err != nil {
 		return nil, err
@@ -2675,6 +2795,7 @@ func (q *Queries) ListObservers(ctx context.Context, arg ListObserversParams) ([
 			&i.ID,
 			&i.DisplayName,
 			&i.ObserverType,
+			&i.LastSeen,
 			&i.LastStatusAt,
 			&i.RadioFreqMhz,
 			&i.RadioSf,
@@ -2682,6 +2803,8 @@ func (q *Queries) ListObservers(ctx context.Context, arg ListObserversParams) ([
 			&i.Scopes,
 			&i.Status,
 			&i.Iata,
+			&i.PageSortKey,
+			&i.PageSortEmpty,
 		); err != nil {
 			return nil, err
 		}

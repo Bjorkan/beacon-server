@@ -153,7 +153,7 @@ func (s *stubReader) ListMessagesAfterID(_ context.Context, _ int64, _ []string,
 	return nil, nil
 }
 
-func (s *stubReader) ListNodes(_ context.Context, _ int16, _ []string, _, _ *bool, _ []byte, _, _, _ string, _ int64, _ int32, _ bool) (api.Page[api.NodeSummary], error) {
+func (s *stubReader) ListNodes(_ context.Context, _ api.NodeListParams) (api.Page[api.NodeSummary], error) {
 	return api.Page[api.NodeSummary]{}, nil
 }
 
@@ -161,7 +161,7 @@ func (s *stubReader) ListNodeObservations(_ context.Context, _ uuid.UUID, _ int6
 	return api.Page[api.PacketObservationSummary]{}, nil
 }
 
-func (s *stubReader) ListObservers(_ context.Context, _ []string, _, _, _, _, _ string, _ int64, _ int32) (api.Page[api.ObserverSummary], error) {
+func (s *stubReader) ListObservers(_ context.Context, _ api.ObserverListParams) (api.Page[api.ObserverSummary], error) {
 	return api.Page[api.ObserverSummary]{}, nil
 }
 

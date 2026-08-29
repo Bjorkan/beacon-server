@@ -71,7 +71,7 @@ func TestListObservers_OK(t *testing.T) {
 	observerID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	r := chi.NewRouter()
 	r.Get("/observers", listObservers(stubReader{
-		listObservers: func(_ context.Context, _ []string, _, _, _, _, _ string, _ int64, _ int32) (api.Page[api.ObserverSummary], error) {
+		listObservers: func(_ context.Context, _ api.ObserverListParams) (api.Page[api.ObserverSummary], error) {
 			return api.Page[api.ObserverSummary]{Items: []api.ObserverSummary{{ID: observerID}}}, nil
 		},
 	}))
@@ -166,5 +166,59 @@ func TestListObserverAdverts_InvalidUUID(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestListObservers_SortAndPageTokenPassedThrough(t *testing.T) {
+	id := uuid.MustParse("00000000-0000-0000-0000-000000000321")
+	token := api.EncodePageToken(api.PageToken{Version: api.PageTokenVersion, Collection: api.PageCollectionObservers, Sort: api.ObserverSortStatus, Direction: api.SortDesc, Key: "online", ID: id})
+	var got api.ObserverListParams
+	r := chi.NewRouter()
+	r.Get("/observers", listObservers(stubReader{
+		listObservers: func(_ context.Context, params api.ObserverListParams) (api.Page[api.ObserverSummary], error) {
+			got = params
+			return api.Page[api.ObserverSummary]{}, nil
+		},
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/observers?sort=status&direction=desc&pageToken="+token+"&scope=%23bc", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got.Sort != api.ObserverSortStatus || got.Direction != api.SortDesc {
+		t.Fatalf("got sort=%q direction=%q", got.Sort, got.Direction)
+	}
+	if got.PageToken == nil || got.PageToken.ID != id || got.PageToken.Key != "online" {
+		t.Fatalf("page token not passed through: %#v", got.PageToken)
+	}
+	if got.Scope != "#bc" {
+		t.Fatalf("got scope %q, want #bc", got.Scope)
+	}
+}
+
+func TestListObservers_RejectsInvalidSortablePagination(t *testing.T) {
+	validID := uuid.MustParse("00000000-0000-0000-0000-000000000321")
+	mismatched := api.EncodePageToken(api.PageToken{Version: api.PageTokenVersion, Collection: api.PageCollectionObservers, Sort: api.ObserverSortIATA, Direction: api.SortAsc, Key: "YVR", ID: validID})
+	wrongCollection := api.EncodePageToken(api.PageToken{Version: api.PageTokenVersion, Collection: api.PageCollectionNodes, Sort: api.ObserverSortStatus, Direction: api.SortDesc, Key: "online", ID: validID})
+	tests := []string{
+		"/observers?sort=bogus",
+		"/observers?direction=sideways",
+		"/observers?pageToken=not-a-token",
+		"/observers?sort=status&direction=desc&pageToken=" + mismatched,
+		"/observers?sort=status&direction=desc&pageToken=" + wrongCollection,
+		"/observers?sort=status&direction=desc&cursor=1700000000000",
+	}
+	for _, target := range tests {
+		t.Run(target, func(t *testing.T) {
+			r := chi.NewRouter()
+			r.Get("/observers", listObservers(stubReader{}))
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }

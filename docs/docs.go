@@ -577,8 +577,26 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "Sort field: name, type, radio, neighbors, last_seen (default last_seen)",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort direction: asc or desc (default desc)",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque keyset cursor returned as nextPageToken",
+                        "name": "pageToken",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
-                        "description": "last_seen epoch ms of last item for pagination",
+                        "description": "Legacy last_seen epoch ms cursor (only for last_seen desc)",
                         "name": "cursor",
                         "in": "query"
                     },
@@ -811,8 +829,26 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "Sort field: name, type, radio, iata, status, last_seen (default last_seen)",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort direction: asc or desc (default desc)",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque keyset cursor returned as nextPageToken",
+                        "name": "pageToken",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
-                        "description": "last_seen epoch ms of last item for pagination",
+                        "description": "Legacy last_seen epoch ms cursor (only for last_seen desc)",
                         "name": "cursor",
                         "in": "query"
                     },
@@ -3399,6 +3435,9 @@ const docTemplate = `{
                 },
                 "nextCursor": {
                     "type": "integer"
+                },
+                "nextPageToken": {
+                    "type": "string"
                 }
             }
         },
@@ -3416,6 +3455,9 @@ const docTemplate = `{
                 },
                 "nextCursor": {
                     "type": "integer"
+                },
+                "nextPageToken": {
+                    "type": "string"
                 }
             }
         },

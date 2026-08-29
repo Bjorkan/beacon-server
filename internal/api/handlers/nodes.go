@@ -48,7 +48,10 @@ func NodesRouter(reader api.Reader) http.Handler {
 //	@Param		supportsMultibytePaths	query		bool	false	"Filter by multibyte path support (true/false); omit for no filter"
 //	@Param		supportsMultibyteTraces	query		bool	false	"Filter by multibyte trace support (true/false); omit for no filter"
 //	@Param		neighbors				query		bool	false	"Include each node's known neighbor IDs (neighborIds field). Bare ?neighbors or ?neighbors=true enables it; omit/false for none"
-//	@Param		cursor					query		int		false	"last_seen epoch ms of last item for pagination"
+//	@Param		sort					query		string	false	"Sort field: name, type, radio, neighbors, last_seen (default last_seen)"
+//	@Param		direction				query		string	false	"Sort direction: asc or desc (default desc)"
+//	@Param		pageToken				query		string	false	"Opaque keyset cursor returned as nextPageToken"
+//	@Param		cursor					query		int		false	"Legacy last_seen epoch ms cursor (only for last_seen desc)"
 //	@Param		limit					query		int		false	"Max results (default 50)"
 //	@Success	200						{object}	api.Page[api.NodeSummary]
 //	@Failure	400						{object}	handlers.APIError
@@ -85,6 +88,20 @@ func listNodes(reader api.Reader) http.HandlerFunc {
 			}
 			cursor = c
 		}
+		sort, direction, pageToken, err := parseSortablePage(r, api.PageCollectionNodes, api.NodeSortLastSeen, api.SortDesc, api.ValidNodeSort)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if pageToken != nil && cursor != 0 {
+			respondError(w, http.StatusBadRequest, "cursor and pageToken cannot be combined")
+			return
+		}
+		if cursor != 0 && (sort != api.NodeSortLastSeen || direction != api.SortDesc) {
+			respondError(w, http.StatusBadRequest, "legacy cursor is only valid with sort=last_seen&direction=desc")
+			return
+		}
+
 		var pubkey []byte
 		if pubkeyParam := strings.ToLower(r.URL.Query().Get("pubkey")); pubkeyParam != "" {
 			b, err := hex.DecodeString(pubkeyParam)
@@ -142,7 +159,22 @@ func listNodes(reader api.Reader) http.HandlerFunc {
 				includeNeighbors = b
 			}
 		}
-		nodes, err := reader.ListNodes(r.Context(), nodeType, iatas, supportsMultibytePaths, supportsMultibyteTraces, pubkey, pubkeyPrefix, name, scope, cursor, limit, includeNeighbors)
+		nodes, err := reader.ListNodes(r.Context(), api.NodeListParams{
+			NodeType:                nodeType,
+			IATAs:                   iatas,
+			SupportsMultibytePaths:  supportsMultibytePaths,
+			SupportsMultibyteTraces: supportsMultibyteTraces,
+			PublicKey:               pubkey,
+			PubkeyPrefix:            pubkeyPrefix,
+			Name:                    name,
+			Scope:                   scope,
+			LegacyCursor:            cursor,
+			PageToken:               pageToken,
+			Sort:                    sort,
+			Direction:               direction,
+			Limit:                   limit,
+			IncludeNeighbors:        includeNeighbors,
+		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return

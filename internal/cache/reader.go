@@ -398,8 +398,8 @@ func (cr *CachedReader) ListMessagesAfterID(ctx context.Context, afterID int64, 
 }
 
 // ListNodes implements [api.Reader].
-func (cr *CachedReader) ListNodes(ctx context.Context, nodeType int16, iatas []string, supportsMultibytePaths, supportsMultibyteTraces *bool, pubkey []byte, pubkeyPrefix, name, scope string, cursor int64, limit int32, includeNeighbors bool) (api.Page[api.NodeSummary], error) {
-	return cr.inner.ListNodes(ctx, nodeType, iatas, supportsMultibytePaths, supportsMultibyteTraces, pubkey, pubkeyPrefix, name, scope, cursor, limit, includeNeighbors)
+func (cr *CachedReader) ListNodes(ctx context.Context, params api.NodeListParams) (api.Page[api.NodeSummary], error) {
+	return cr.inner.ListNodes(ctx, params)
 }
 
 // ListNodeObservations implements [api.Reader].
@@ -408,8 +408,8 @@ func (cr *CachedReader) ListNodeObservations(ctx context.Context, nodeID uuid.UU
 }
 
 // ListObservers implements [api.Reader].
-func (cr *CachedReader) ListObservers(ctx context.Context, iatas []string, observerType, broker, status, name, scope string, cursor int64, limit int32) (api.Page[api.ObserverSummary], error) {
-	return cr.inner.ListObservers(ctx, iatas, observerType, broker, status, name, scope, cursor, limit)
+func (cr *CachedReader) ListObservers(ctx context.Context, params api.ObserverListParams) (api.Page[api.ObserverSummary], error) {
+	return cr.inner.ListObservers(ctx, params)
 }
 
 // ListObserverAdverts implements [api.Reader].

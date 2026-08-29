@@ -29,28 +29,44 @@ func (s *Store) UpsertObserver(ctx context.Context, pubkey []byte) (uuid.UUID, s
 	return row.ID, displayName, err
 }
 
-func (s *Store) ListObservers(ctx context.Context, iatas []string, observerType, broker, status, name, scope string, cursor int64, limit int32) (api.Page[api.ObserverSummary], error) {
+func (s *Store) ListObservers(ctx context.Context, params api.ObserverListParams) (api.Page[api.ObserverSummary], error) {
+	if params.Sort == "" {
+		params.Sort = api.ObserverSortLastSeen
+	}
+	if params.Direction == "" {
+		params.Direction = api.SortDesc
+	}
+	if params.Limit <= 0 {
+		params.Limit = 50
+	}
+
 	var cursorTS pgtype.Timestamptz
-	if cursor > 0 {
-		cursorTS = pgtype.Timestamptz{Time: time.UnixMilli(cursor), Valid: true}
+	if params.LegacyCursor > 0 {
+		cursorTS = pgtype.Timestamptz{Time: time.UnixMilli(params.LegacyCursor), Valid: true}
 	}
-	params := sqlc.ListObserversParams{
-		Column1: iatas,
-		Column2: observerType,
-		Column3: broker,
-		Column4: status,
-		Column5: name,
-		Column6: cursorTS,
-		Limit:   limit + 1,
-		Column8: scope,
-	}
-	rows, err := s.q.ListObservers(ctx, params)
+	cursorValid, cursorEmpty, cursorKey, cursorID := listCursorValues(params.PageToken)
+	rows, err := s.q.ListObservers(ctx, sqlc.ListObserversParams{
+		Column1:  params.IATAs,
+		Column2:  params.ObserverType,
+		Column3:  params.Broker,
+		Column4:  params.Status,
+		Column5:  params.Name,
+		Column6:  cursorTS,
+		Limit:    params.Limit + 1,
+		Column8:  params.Scope,
+		Column9:  params.Sort,
+		Column10: string(params.Direction),
+		Column11: cursorValid,
+		Column12: cursorEmpty,
+		Column13: cursorKey,
+		Column14: cursorID,
+	})
 	if err != nil {
 		return api.Page[api.ObserverSummary]{}, err
 	}
-	hasMore := len(rows) > int(limit)
+	hasMore := len(rows) > int(params.Limit)
 	if hasMore {
-		rows = rows[:limit]
+		rows = rows[:params.Limit]
 	}
 	items := make([]api.ObserverSummary, 0, len(rows))
 	for _, v := range rows {
@@ -73,17 +89,21 @@ func (s *Store) ListObservers(ctx context.Context, iatas []string, observerType,
 		items = append(items, observer)
 	}
 	var nextCursor *int64
-	if hasMore {
-		// observers use UUID so encode last_seen as cursor
-		if rows[len(rows)-1].LastStatusAt.Valid {
-			ms := rows[len(rows)-1].LastStatusAt.Time.UnixMilli()
+	var nextToken *string
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		if params.Sort == api.ObserverSortLastSeen && params.Direction == api.SortDesc && last.LastSeen.Valid {
+			ms := last.LastSeen.Time.UnixMilli()
 			nextCursor = &ms
 		}
+		token := nextPageToken(api.PageCollectionObservers, params.Sort, params.Direction, last.PageSortEmpty, last.PageSortKey, last.ID)
+		nextToken = &token
 	}
 	return api.Page[api.ObserverSummary]{
-		Items:      items,
-		NextCursor: nextCursor,
-		HasMore:    hasMore,
+		Items:         items,
+		NextCursor:    nextCursor,
+		NextPageToken: nextToken,
+		HasMore:       hasMore,
 	}, nil
 }
 

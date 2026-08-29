@@ -131,13 +131,15 @@ type Querier interface {
 	// Used for WS reconnect backfill.
 	ListMessagesAfterID(ctx context.Context, arg ListMessagesAfterIDParams) ([]ListMessagesAfterIDRow, error)
 	ListNodeObservations(ctx context.Context, arg ListNodeObservationsParams) ([]ListNodeObservationsRow, error)
+	// Keyset-paginated node list. $7 preserves the legacy last_seen cursor; new clients round-trip
+	// nextPageToken, which supplies $14-$17 and remains correct for every supported sort field.
 	ListNodes(ctx context.Context, arg ListNodesParams) ([]ListNodesRow, error)
 	ListObservationsForPacket(ctx context.Context, packetHash []byte) ([]ListObservationsForPacketRow, error)
 	// Returns advert packets (payload_type=4) heard by a specific observer.
 	// Pass cursor=0 to start from the beginning, or the last seen id for pagination.
 	ListObserverAdverts(ctx context.Context, arg ListObserverAdvertsParams) ([]ListObserverAdvertsRow, error)
-	// Pass cursor=0 to start from the beginning, or the last seen observer's rownum for pagination.
-	// Note: observers use UUID PKs so we order by last_seen and use a keyset on last_seen+id.
+	// Keyset-paginated observer list. $6 preserves the legacy last_seen cursor; new clients round-trip
+	// nextPageToken, which supplies $11-$14 and remains correct for every supported sort field.
 	ListObservers(ctx context.Context, arg ListObserversParams) ([]ListObserversRow, error)
 	// Returns packets with the latest observation rolled in for display.
 	// Pass cursor=0 to start from the beginning. IATA-filtered requests are

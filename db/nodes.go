@@ -112,30 +112,47 @@ func (s *Store) SetNodeDefaultScope(ctx context.Context, nodeID uuid.UUID, scope
 	})
 }
 
-func (s *Store) ListNodes(ctx context.Context, nodeType int16, iatas []string, supportsMultibytePaths, supportsMultibyteTraces *bool, pubkey []byte, pubkeyPrefix, name, scope string, cursor int64, limit int32, includeNeighbors bool) (api.Page[api.NodeSummary], error) {
-	var cursorTS pgtype.Timestamptz
-	if cursor > 0 {
-		cursorTS = pgtype.Timestamptz{Time: time.UnixMilli(cursor), Valid: true}
+func (s *Store) ListNodes(ctx context.Context, params api.NodeListParams) (api.Page[api.NodeSummary], error) {
+	if params.Sort == "" {
+		params.Sort = api.NodeSortLastSeen
 	}
+	if params.Direction == "" {
+		params.Direction = api.SortDesc
+	}
+	if params.Limit <= 0 {
+		params.Limit = 50
+	}
+
+	var cursorTS pgtype.Timestamptz
+	if params.LegacyCursor > 0 {
+		cursorTS = pgtype.Timestamptz{Time: time.UnixMilli(params.LegacyCursor), Valid: true}
+	}
+	cursorValid, cursorEmpty, cursorKey, cursorID := listCursorValues(params.PageToken)
 	rows, err := s.q.ListNodes(ctx, sqlc.ListNodesParams{
-		Column1:  nodeType,
-		Column2:  iatas,
-		Column3:  tristate(supportsMultibytePaths),
-		Column4:  tristate(supportsMultibyteTraces),
-		Column5:  pubkey,
-		Column6:  name,
+		Column1:  params.NodeType,
+		Column2:  params.IATAs,
+		Column3:  tristate(params.SupportsMultibytePaths),
+		Column4:  tristate(params.SupportsMultibyteTraces),
+		Column5:  params.PublicKey,
+		Column6:  params.Name,
 		Column7:  cursorTS,
-		Limit:    limit + 1,
-		Column9:  scope,
-		Column10: includeNeighbors,
-		Column11: pubkeyPrefix,
+		Limit:    params.Limit + 1,
+		Column9:  params.Scope,
+		Column10: params.IncludeNeighbors,
+		Column11: params.PubkeyPrefix,
+		Column12: params.Sort,
+		Column13: string(params.Direction),
+		Column14: cursorValid,
+		Column15: cursorEmpty,
+		Column16: cursorKey,
+		Column17: cursorID,
 	})
 	if err != nil {
 		return api.Page[api.NodeSummary]{}, err
 	}
-	hasMore := len(rows) > int(limit)
+	hasMore := len(rows) > int(params.Limit)
 	if hasMore {
-		rows = rows[:limit]
+		rows = rows[:params.Limit]
 	}
 	items := make([]api.NodeSummary, 0, len(rows))
 	for _, v := range rows {
@@ -166,14 +183,22 @@ func (s *Store) ListNodes(ctx context.Context, nodeType int16, iatas []string, s
 		items = append(items, node)
 	}
 	var nextCursor *int64
-	if hasMore && len(items) > 0 {
-		ms := rows[len(rows)-1].LastSeen.Time.UnixMilli()
-		nextCursor = &ms
+	var nextToken *string
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		// Preserve the historical numeric cursor for clients using the API's legacy newest-first order.
+		if params.Sort == api.NodeSortLastSeen && params.Direction == api.SortDesc && last.LastSeen.Valid {
+			ms := last.LastSeen.Time.UnixMilli()
+			nextCursor = &ms
+		}
+		token := nextPageToken(api.PageCollectionNodes, params.Sort, params.Direction, last.PageSortEmpty, last.PageSortKey, last.ID)
+		nextToken = &token
 	}
 	return api.Page[api.NodeSummary]{
-		Items:      items,
-		NextCursor: nextCursor,
-		HasMore:    hasMore,
+		Items:         items,
+		NextCursor:    nextCursor,
+		NextPageToken: nextToken,
+		HasMore:       hasMore,
 	}, nil
 }
 
