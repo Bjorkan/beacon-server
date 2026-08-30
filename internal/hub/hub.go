@@ -139,6 +139,7 @@ type subscribeMsg struct {
 
 	isConfigure bool
 	resolvePath bool
+	applied     chan struct{}
 }
 
 type unsubscribeMsg struct {
@@ -197,7 +198,9 @@ func (h *Hub) RemoveScope(c *Client, id string) {
 // the connection's lifetime — takes effect on the next broadcast after the
 // hub processes it.
 func (h *Hub) SetResolvePath(c *Client, enabled bool) {
-	h.subscribe <- subscribeMsg{client: c, isConfigure: true, resolvePath: enabled}
+	applied := make(chan struct{})
+	h.subscribe <- subscribeMsg{client: c, isConfigure: true, resolvePath: enabled, applied: applied}
+	<-applied
 }
 
 // Remove deregisters a client and closes its Send channel.
@@ -244,6 +247,9 @@ func (h *Hub) Run() {
 				if _, ok := clients[msg.client]; ok {
 					msg.client.subscriptions[msg.subscriptionID] = msg.scope
 				}
+			}
+			if msg.applied != nil {
+				close(msg.applied)
 			}
 
 		case msg := <-h.unsubscribe:

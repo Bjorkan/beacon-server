@@ -127,7 +127,7 @@ func TestListPacketsBackfill_InvalidLimit(t *testing.T) {
 func TestListPackets_OK(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/packets", listPackets(stubReader{
-		listPackets: func(_ context.Context, _, _ []int16, _ []string, _ []string, _, _ time.Time, _ int64, _ int32) (api.Page[api.PacketSummary], error) {
+		listPackets: func(_ context.Context, _, _ []int16, _ []string, _ []string, _, _ time.Time, _ int64, _ int32, _ bool) (api.Page[api.PacketSummary], error) {
 			return api.Page[api.PacketSummary]{Items: []api.PacketSummary{{PacketHash: "deadbeef"}}}, nil
 		},
 	}))
@@ -144,7 +144,7 @@ func TestListPackets_PluralParams_PassedThrough(t *testing.T) {
 	var gotScopes []string
 	r := chi.NewRouter()
 	r.Get("/packets", listPackets(stubReader{
-		listPackets: func(_ context.Context, payloadTypes, routeTypes []int16, _ []string, scopes []string, _, _ time.Time, _ int64, _ int32) (api.Page[api.PacketSummary], error) {
+		listPackets: func(_ context.Context, payloadTypes, routeTypes []int16, _ []string, scopes []string, _, _ time.Time, _ int64, _ int32, _ bool) (api.Page[api.PacketSummary], error) {
 			gotPayloadTypes = payloadTypes
 			gotRouteTypes = routeTypes
 			gotScopes = scopes
@@ -173,7 +173,7 @@ func TestListPackets_SingularParams_StillWork(t *testing.T) {
 	var gotScopes []string
 	r := chi.NewRouter()
 	r.Get("/packets", listPackets(stubReader{
-		listPackets: func(_ context.Context, payloadTypes, routeTypes []int16, _ []string, scopes []string, _, _ time.Time, _ int64, _ int32) (api.Page[api.PacketSummary], error) {
+		listPackets: func(_ context.Context, payloadTypes, routeTypes []int16, _ []string, scopes []string, _, _ time.Time, _ int64, _ int32, _ bool) (api.Page[api.PacketSummary], error) {
 			gotPayloadTypes = payloadTypes
 			gotRouteTypes = routeTypes
 			gotScopes = scopes
@@ -203,7 +203,7 @@ func TestListPackets_PluralParams_TakePrecedenceOverSingular(t *testing.T) {
 	var gotPayloadTypes []int16
 	r := chi.NewRouter()
 	r.Get("/packets", listPackets(stubReader{
-		listPackets: func(_ context.Context, payloadTypes, _ []int16, _ []string, _ []string, _, _ time.Time, _ int64, _ int32) (api.Page[api.PacketSummary], error) {
+		listPackets: func(_ context.Context, payloadTypes, _ []int16, _ []string, _ []string, _, _ time.Time, _ int64, _ int32, _ bool) (api.Page[api.PacketSummary], error) {
 			gotPayloadTypes = payloadTypes
 			return api.Page[api.PacketSummary]{}, nil
 		},
@@ -241,6 +241,54 @@ func TestListPackets_InvalidRouteTypes(t *testing.T) {
 	}
 }
 
+func TestListPackets_ResolvedPathIncludePassedThrough(t *testing.T) {
+	var got bool
+	r := chi.NewRouter()
+	r.Get("/packets", listPackets(stubReader{
+		listPackets: func(_ context.Context, _, _ []int16, _ []string, _ []string, _, _ time.Time, _ int64, _ int32, includeResolvedPath bool) (api.Page[api.PacketSummary], error) {
+			got = includeResolvedPath
+			return api.Page[api.PacketSummary]{}, nil
+		},
+	}))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/packets?include=resolvedPath", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !got {
+		t.Fatal("expected include=resolvedPath to opt in")
+	}
+}
+
+func TestListPackets_RejectsUnknownInclude(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/packets", listPackets(stubReader{}))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/packets?include=everything", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestListPacketsBackfill_ResolvedPathIncludePassedThrough(t *testing.T) {
+	var got bool
+	r := chi.NewRouter()
+	r.Get("/packets/backfill", listPacketsBackfill(stubReader{
+		listPacketsAfterID: func(_ context.Context, _ int64, _, _ int16, _ []string, _ string, _ int32, includeResolvedPath bool) ([]api.PacketSummary, error) {
+			got = includeResolvedPath
+			return nil, nil
+		},
+	}))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/packets/backfill?afterObservationId=1&include=resolvedPath", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !got {
+		t.Fatal("expected backfill include=resolvedPath to opt in")
+	}
+}
+
 func TestGetPacket_OK(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/packets/{packetHash}", getPacket(stubReader{
@@ -259,7 +307,7 @@ func TestGetPacket_OK(t *testing.T) {
 func TestListPacketsBackfill_OK(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/packets/backfill", listPacketsBackfill(stubReader{
-		listPacketsAfterID: func(_ context.Context, _ int64, _, _ int16, _ []string, _ string, _ int32) ([]api.PacketSummary, error) {
+		listPacketsAfterID: func(_ context.Context, _ int64, _, _ int16, _ []string, _ string, _ int32, _ bool) ([]api.PacketSummary, error) {
 			return []api.PacketSummary{{PacketHash: "deadbeef"}}, nil
 		},
 	}))

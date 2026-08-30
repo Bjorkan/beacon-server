@@ -17,13 +17,11 @@ type PacketLatestObserver struct {
 	ID          uuid.UUID `json:"id"`
 	DisplayName *string   `json:"displayName,omitempty"`
 	IATA        string    `json:"iata"`
-	// PathLength/PathBytes are cheap -- already-stored columns on packet_observations -- and
-	// populated everywhere PacketLatestObserver appears: the REST list/backfill endpoints and
-	// the WS feed alike. ResolvedPath/ResolvedSource/ResolvedDestination require a per-hash DB
-	// resolution lookup; they're populated on the WS feed (already computed once at ingest, so
-	// effectively free there) but deliberately left nil on the REST endpoints, which are
-	// paginated/high-volume and used only for scrollback and reconnect-gap backfill -- full
-	// resolution stays a GET /packets/{packetHash}-only feature.
+	// PathLength/PathBytes are cheap stored columns and are populated everywhere this summary
+	// appears. ResolvedPath is opt-in on REST packet list/backfill endpoints (include=resolvedPath)
+	// and is resolved in bounded page batches; the non-opt-in fast path remains unchanged. The WS
+	// feed can include the same data when the connection enables resolvePath. Endpoint resolution
+	// remains detail/WS-only because inline packet-list UX primarily needs relay path identity.
 	PathLength          *PacketPathLength `json:"pathLength,omitempty"`
 	PathBytes           *string           `json:"pathBytes,omitempty"` // hex-encoded accumulated path hashes
 	ResolvedPath        []ResolvedHop     `json:"resolvedPath,omitempty"`

@@ -84,9 +84,86 @@ func buildLatestObserverPath(pathLengthByte, hashSize, hopCount *int16, pathByte
 	return pathLength, pathBytesHex
 }
 
-func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32) (api.Page[api.PacketSummary], error) {
+func packetSummaryPathHashes(item *api.PacketSummary) [][]byte {
+	observer := item.LatestObserver
+	if observer == nil || observer.PathLength == nil || observer.PathBytes == nil {
+		return nil
+	}
+	if item.PayloadType == int16(meshcore.PayloadTypeTrace) {
+		// TRACE's observation path field carries per-hop SNR samples; packet detail reconstructs the
+		// trace route from the payload instead. Do not misrepresent those samples as path hashes here.
+		return nil
+	}
+	hashSize := int(observer.PathLength.HashSize)
+	hopCount := int(observer.PathLength.HopCount)
+	if hashSize < 1 || hashSize > 4 || hopCount <= 0 {
+		return nil
+	}
+	pathBytes, err := hex.DecodeString(*observer.PathBytes)
+	if err != nil || len(pathBytes) != hashSize*hopCount {
+		return nil
+	}
+	hashes := make([][]byte, 0, hopCount)
+	for i := 0; i < len(pathBytes); i += hashSize {
+		hash := make([]byte, hashSize)
+		copy(hash, pathBytes[i:i+hashSize])
+		hashes = append(hashes, hash)
+	}
+	return hashes
+}
+
+// resolvePacketSummaryPaths enriches a page in bounded batches. All unique prefixes are grouped by
+// width and resolved with at most one query per width (1-4 bytes), so include=resolvedPath never
+// turns a packet page into one resolution query per row. Existing callers that do not opt in never
+// enter this function and keep the original cheap list path.
+func (s *Store) resolvePacketSummaryPaths(ctx context.Context, items []api.PacketSummary) error {
+	uniqueByWidth := make(map[int]map[string][]byte)
+	pathsByItem := make([][][]byte, len(items))
+	for i := range items {
+		hashes := packetSummaryPathHashes(&items[i])
+		pathsByItem[i] = hashes
+		for _, hash := range hashes {
+			width := len(hash)
+			if uniqueByWidth[width] == nil {
+				uniqueByWidth[width] = make(map[string][]byte)
+			}
+			key := hex.EncodeToString(hash)
+			if _, exists := uniqueByWidth[width][key]; !exists {
+				uniqueByWidth[width][key] = hash
+			}
+		}
+	}
+
+	resolvedByWidth := make(map[int]map[string][]api.ResolvedPathEntry, len(uniqueByWidth))
+	for width := 1; width <= 4; width++ {
+		unique := uniqueByWidth[width]
+		if len(unique) == 0 {
+			continue
+		}
+		hashes := make([][]byte, 0, len(unique))
+		for _, hash := range unique {
+			hashes = append(hashes, hash)
+		}
+		resolved, err := s.ResolvePathHashes(ctx, hashes)
+		if err != nil {
+			return err
+		}
+		resolvedByWidth[width] = resolved
+	}
+
+	for i := range items {
+		hashes := pathsByItem[i]
+		if len(hashes) == 0 || items[i].LatestObserver == nil {
+			continue
+		}
+		items[i].LatestObserver.ResolvedPath = api.BuildResolvedPath(hashes, resolvedByWidth[len(hashes[0])])
+	}
+	return nil
+}
+
+func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32, includeResolvedPath bool) (api.Page[api.PacketSummary], error) {
 	if len(iatas) > 0 {
-		return s.listPacketsByIATAs(ctx, payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit)
+		return s.listPacketsByIATAs(ctx, payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit, includeResolvedPath)
 	}
 	var cursorTS pgtype.Timestamptz
 	if cursor > 0 {
@@ -146,6 +223,11 @@ func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int1
 		last := items[len(items)-1].LastHeardAt
 		nextCursor = &last
 	}
+	if includeResolvedPath {
+		if err := s.resolvePacketSummaryPaths(ctx, items); err != nil {
+			return api.Page[api.PacketSummary]{}, err
+		}
+	}
 	return api.Page[api.PacketSummary]{
 		Items:      items,
 		NextCursor: nextCursor,
@@ -153,7 +235,7 @@ func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int1
 	}, nil
 }
 
-func (s *Store) listPacketsByIATAs(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32) (api.Page[api.PacketSummary], error) {
+func (s *Store) listPacketsByIATAs(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32, includeResolvedPath bool) (api.Page[api.PacketSummary], error) {
 	var cursorTS pgtype.Timestamptz
 	if cursor > 0 {
 		cursorTS = pgtype.Timestamptz{Time: time.UnixMilli(cursor), Valid: true}
@@ -218,6 +300,11 @@ func (s *Store) listPacketsByIATAs(ctx context.Context, payloadTypes, routeTypes
 		last := rows[len(rows)-1].SiteHeardAt.Time.UnixMilli()
 		nextCursor = &last
 	}
+	if includeResolvedPath {
+		if err := s.resolvePacketSummaryPaths(ctx, items); err != nil {
+			return api.Page[api.PacketSummary]{}, err
+		}
+	}
 	return api.Page[api.PacketSummary]{
 		Items:      items,
 		NextCursor: nextCursor,
@@ -225,7 +312,7 @@ func (s *Store) listPacketsByIATAs(ctx context.Context, payloadTypes, routeTypes
 	}, nil
 }
 
-func (s *Store) ListPacketsAfterID(ctx context.Context, afterObservationID int64, payloadType, routeType int16, iatas []string, scope string, limit int32) ([]api.PacketSummary, error) {
+func (s *Store) ListPacketsAfterID(ctx context.Context, afterObservationID int64, payloadType, routeType int16, iatas []string, scope string, limit int32, includeResolvedPath bool) ([]api.PacketSummary, error) {
 	rows, err := s.q.ListPacketsAfterID(ctx, sqlc.ListPacketsAfterIDParams{
 		ID:      afterObservationID,
 		Column2: payloadType,
@@ -263,6 +350,11 @@ func (s *Store) ListPacketsAfterID(ctx context.Context, afterObservationID int64
 			)
 		}
 		items = append(items, item)
+	}
+	if includeResolvedPath {
+		if err := s.resolvePacketSummaryPaths(ctx, items); err != nil {
+			return nil, err
+		}
 	}
 	return items, nil
 }

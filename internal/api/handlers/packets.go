@@ -5,6 +5,7 @@ package handlers
 
 import (
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +14,28 @@ import (
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/go-chi/chi/v5"
 )
+
+const packetIncludeResolvedPath = "resolvedPath"
+
+func parsePacketIncludes(r *http.Request) (bool, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("include"))
+	if raw == "" {
+		return false, nil
+	}
+	includeResolvedPath := false
+	for _, part := range strings.Split(raw, ",") {
+		include := strings.TrimSpace(part)
+		switch include {
+		case "":
+			continue
+		case packetIncludeResolvedPath:
+			includeResolvedPath = true
+		default:
+			return false, fmt.Errorf("unsupported include %q", include)
+		}
+	}
+	return includeResolvedPath, nil
+}
 
 // PacketsRouter mounts all /packets routes onto a subrouter.
 //
@@ -46,7 +69,8 @@ func PacketsRouter(reader api.Reader) http.Handler {
 //	@Param		until			query		int		false	"Filter by first_heard_at <= until (epoch ms)"
 //	@Param		cursor			query		int		false	"epoch ms of last item for pagination; last_heard_at, or site-local heard_at when iatas is set"
 //	@Param		limit			query		int		false	"Max results (default 50)"
-//	@Success	200				{object}	object
+//	@Param		include			query		string	false	"Optional summary enrichment: resolvedPath"
+//	@Success	200				{object}	api.Page[api.PacketSummary]
 //	@Failure	400				{object}	handlers.APIError
 //	@Failure	500				{object}	handlers.APIError
 //	@Router		/packets [get]
@@ -112,7 +136,12 @@ func listPackets(reader api.Reader) http.HandlerFunc {
 			iatas = append(iatas, regionIATAs...)
 		}
 		scopes := parseCSVOrSingle(r, "scopes", "scope")
-		packets, err := reader.ListPackets(r.Context(), payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit)
+		includeResolvedPath, err := parsePacketIncludes(r)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		packets, err := reader.ListPackets(r.Context(), payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit, includeResolvedPath)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -135,6 +164,7 @@ func listPackets(reader api.Reader) http.HandlerFunc {
 //	@Param		regionId			query		int		false	"Filter by region ID"
 //	@Param		scope				query		string	false	"Filter by transport scope name"
 //	@Param		limit				query		int		false	"Max results (default 100)"
+//	@Param		include				query		string	false	"Optional summary enrichment: resolvedPath"
 //	@Success	200					{object}	[]api.PacketSummary
 //	@Failure	400					{object}	handlers.APIError
 //	@Failure	500					{object}	handlers.APIError
@@ -186,7 +216,12 @@ func listPacketsBackfill(reader api.Reader) http.HandlerFunc {
 			iatas = append(iatas, regionIATAs...)
 		}
 		scope := r.URL.Query().Get("scope")
-		packets, err := reader.ListPacketsAfterID(r.Context(), afterID, payloadType, routeType, iatas, scope, limit)
+		includeResolvedPath, err := parsePacketIncludes(r)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		packets, err := reader.ListPacketsAfterID(r.Context(), afterID, payloadType, routeType, iatas, scope, limit, includeResolvedPath)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return

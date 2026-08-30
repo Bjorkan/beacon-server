@@ -4,11 +4,11 @@ package docs
 import "github.com/swaggo/swag"
 
 const docTemplate = `{
-    "schemes": [[ marshal .Schemes ]],
+    "schemes": {{ marshal .Schemes }},
     "swagger": "2.0",
     "info": {
-        "description": "[[escape .Description]]",
-        "title": "[[.Title]]",
+        "description": "{{escape .Description}}",
+        "title": "{{.Title}}",
         "termsOfService": "https://github.com/MeshCore-Beacon/beacon-server",
         "contact": {
             "name": "MeshCore Beacon",
@@ -17,10 +17,10 @@ const docTemplate = `{
         "license": {
             "name": "AGPL-3-or-later"
         },
-        "version": "[[.Version]]"
+        "version": "{{.Version}}"
     },
-    "host": "[[.Host]]",
-    "basePath": "[[.BasePath]]",
+    "host": "{{.Host}}",
+    "basePath": "{{.BasePath}}",
     "paths": {
         "/brokers": {
             "get": {
@@ -1130,13 +1130,19 @@ const docTemplate = `{
                         "description": "Max results (default 50)",
                         "name": "limit",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional summary enrichment: resolvedPath",
+                        "name": "include",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.Page-github_com_MeshCore-Beacon_beacon-server_internal_api_PacketSummary"
                         }
                     },
                     "400": {
@@ -1217,6 +1223,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "Max results (default 100)",
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional summary enrichment: resolvedPath",
+                        "name": "include",
                         "in": "query"
                     }
                 ],
@@ -3181,7 +3193,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "pathLength": {
-                    "description": "PathLength/PathBytes are cheap -- already-stored columns on packet_observations -- and\npopulated everywhere PacketLatestObserver appears: the REST list/backfill endpoints and\nthe WS feed alike. ResolvedPath/ResolvedSource/ResolvedDestination require a per-hash DB\nresolution lookup; they're populated on the WS feed (already computed once at ingest, so\neffectively free there) but deliberately left nil on the REST endpoints, which are\npaginated/high-volume and used only for scrollback and reconnect-gap backfill -- full\nresolution stays a GET /packets/{packetHash}-only feature.",
+                    "description": "PathLength/PathBytes are cheap stored columns and are populated everywhere this summary\nappears. ResolvedPath is opt-in on REST packet list/backfill endpoints (include=resolvedPath)\nand is resolved in bounded page batches; the non-opt-in fast path remains unchanged. The WS\nfeed can include the same data when the connection enables resolvePath. Endpoint resolution\nremains detail/WS-only because inline packet-list UX primarily needs relay path identity.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.PacketPathLength"
@@ -3401,6 +3413,9 @@ const docTemplate = `{
                 },
                 "nextCursor": {
                     "type": "integer"
+                },
+                "nextPageToken": {
+                    "type": "string"
                 }
             }
         },
@@ -3418,6 +3433,9 @@ const docTemplate = `{
                 },
                 "nextCursor": {
                     "type": "integer"
+                },
+                "nextPageToken": {
+                    "type": "string"
                 }
             }
         },
@@ -3475,6 +3493,29 @@ const docTemplate = `{
                 },
                 "nextCursor": {
                     "type": "integer"
+                },
+                "nextPageToken": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_MeshCore-Beacon_beacon-server_internal_api.Page-github_com_MeshCore-Beacon_beacon-server_internal_api_PacketSummary": {
+            "type": "object",
+            "properties": {
+                "hasMore": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.PacketSummary"
+                    }
+                },
+                "nextCursor": {
+                    "type": "integer"
+                },
+                "nextPageToken": {
+                    "type": "string"
                 }
             }
         },
@@ -3978,8 +4019,8 @@ var SwaggerInfo = &swag.Spec{
 	Description:      "MeshCore network observation backend. Ingests LoRa packets from MQTT brokers, stores in PostgreSQL, and streams live events via WebSocket.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
-	LeftDelim:        "[[",
-	RightDelim:       "]]",
+	LeftDelim:        "{{",
+	RightDelim:       "}}",
 }
 
 func init() {

@@ -10,6 +10,7 @@ import (
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
 	mockdb "github.com/MeshCore-Beacon/beacon-server/db/sqlc/mock"
+	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/MeshCore-Beacon/beacon-server/internal/ingest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -80,7 +81,7 @@ func TestListPackets_Pagination(t *testing.T) {
 		Return(rows, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 2)
+	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 2, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestListPackets_LatestObserverNil(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10)
+	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -145,7 +146,7 @@ func TestListPackets_LatestObserverSet(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10)
+	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,7 +185,7 @@ func TestListPackets_LatestObserverPathFields(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10)
+	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -204,9 +205,100 @@ func TestListPackets_LatestObserverPathFields(t *testing.T) {
 	if obs.PathBytes == nil || *obs.PathBytes != "a1b2" {
 		t.Errorf("expected pathBytes a1b2, got %v", obs.PathBytes)
 	}
-	// Resolution stays a detail-view-only feature on this list endpoint -- deliberately unset.
+	// The non-opt-in fast path deliberately leaves resolution unset.
 	if obs.ResolvedPath != nil || obs.ResolvedSource != nil || obs.ResolvedDestination != nil {
 		t.Error("expected no resolved path/source/destination on the list endpoint")
+	}
+}
+
+func TestListPackets_ResolvedPathOptInBatchesByHashWidth(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+	heardAt := pgtype.Timestamptz{Time: time.UnixMilli(1700000000000), Valid: true}
+	observerID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	nodeA := uuid.MustParse("00000000-0000-0000-0000-00000000000a")
+	nodeB := uuid.MustParse("00000000-0000-0000-0000-00000000000b")
+	nameA, nameB := "Lambhov", "Branch Stn"
+
+	mock.EXPECT().ListPackets(gomock.Any(), gomock.Any()).Return([]sqlc.ListPacketsRow{
+		{
+			PacketHash: []byte{0xde, 0xad}, PayloadType: 2, FirstHeardAt: heardAt, LastHeardAt: heardAt,
+			LatestObserverID: observerID, LatestObserverPathLengthByte: 0x42,
+			LatestObserverHashSize: 1, LatestObserverHopCount: 2, LatestObserverPathBytes: []byte{0xa1, 0xb2},
+		},
+		{
+			PacketHash: []byte{0xbe, 0xef}, PayloadType: 2, FirstHeardAt: heardAt, LastHeardAt: heardAt,
+			LatestObserverID: observerID, LatestObserverPathLengthByte: 0x41,
+			LatestObserverHashSize: 1, LatestObserverHopCount: 1, LatestObserverPathBytes: []byte{0xa1},
+		},
+	}, nil)
+	// a1 is shared by both rows but is resolved only once in the one bounded P1 query.
+	mock.EXPECT().ResolvePathHashesP1(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, hashes [][]byte) ([]sqlc.ResolvePathHashesP1Row, error) {
+			if len(hashes) != 2 {
+				t.Fatalf("expected two unique hashes in one batch, got %d: %x", len(hashes), hashes)
+			}
+			return []sqlc.ResolvePathHashesP1Row{
+				{Hash: []byte{0xa1, 0, 0, 0}, NodeID: nodeA, Name: &nameA, PublicKey: []byte{0xa1, 1}},
+				{Hash: []byte{0xb2, 0, 0, 0}, NodeID: nodeB, Name: &nameB, PublicKey: []byte{0xb2, 2}},
+			}, nil
+		},
+	)
+
+	store := &Store{q: mock}
+	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 50, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("expected two items, got %d", len(page.Items))
+	}
+	first := page.Items[0].LatestObserver.ResolvedPath
+	if len(first) != 2 || first[0].Confidence != "high" || first[1].Confidence != "high" {
+		t.Fatalf("unexpected first resolved path: %#v", first)
+	}
+	if first[0].Nodes[0].Name == nil || *first[0].Nodes[0].Name != nameA {
+		t.Fatalf("expected %s", nameA)
+	}
+	second := page.Items[1].LatestObserver.ResolvedPath
+	if len(second) != 1 || second[0].Nodes[0].Name == nil || *second[0].Nodes[0].Name != nameA {
+		t.Fatalf("expected repeated a1 to reuse resolution: %#v", second)
+	}
+}
+
+func TestResolvePacketSummaryPaths_PreservesAmbiguousAndNoneConfidence(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+	name1, name2 := "One", "Two"
+	mock.EXPECT().ResolvePathHashesP1(gomock.Any(), gomock.Any()).Return([]sqlc.ResolvePathHashesP1Row{
+		{Hash: []byte{0xaa, 0, 0, 0}, NodeID: uuid.New(), Name: &name1, PublicKey: []byte{0xaa, 1}},
+		{Hash: []byte{0xaa, 0, 0, 0}, NodeID: uuid.New(), Name: &name2, PublicKey: []byte{0xaa, 2}},
+	}, nil)
+	pathBytes := "aabb"
+	items := []api.PacketSummary{{PayloadType: 2, LatestObserver: &api.PacketLatestObserver{
+		PathLength: &api.PacketPathLength{HashSize: 1, HopCount: 2}, PathBytes: &pathBytes,
+	}}}
+	store := &Store{q: mock}
+	if err := store.resolvePacketSummaryPaths(context.Background(), items); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	path := items[0].LatestObserver.ResolvedPath
+	if len(path) != 2 || path[0].Confidence != "ambiguous" || path[1].Confidence != "none" {
+		t.Fatalf("expected ambiguous then none, got %#v", path)
+	}
+}
+
+func TestResolvePacketSummaryPaths_SkipsTracePhysicalPath(t *testing.T) {
+	pathBytes := "0102"
+	items := []api.PacketSummary{{PayloadType: 9, LatestObserver: &api.PacketLatestObserver{
+		PathLength: &api.PacketPathLength{HashSize: 1, HopCount: 2}, PathBytes: &pathBytes,
+	}}}
+	store := &Store{q: mockdb.NewMockQuerier(gomock.NewController(t))}
+	if err := store.resolvePacketSummaryPaths(context.Background(), items); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if items[0].LatestObserver.ResolvedPath != nil {
+		t.Fatalf("TRACE list path must remain unresolved, got %#v", items[0].LatestObserver.ResolvedPath)
 	}
 }
 
@@ -399,7 +491,7 @@ func TestListPacketsAfterID_PassesIATAsAsArray(t *testing.T) {
 		Return([]sqlc.ListPacketsAfterIDRow{}, nil)
 
 	store := &Store{q: mock}
-	_, err := store.ListPacketsAfterID(context.Background(), 0, -1, -1, []string{"ALF", "YYZ"}, "", 50)
+	_, err := store.ListPacketsAfterID(context.Background(), 0, -1, -1, []string{"ALF", "YYZ"}, "", 50, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -428,7 +520,7 @@ func TestListPacketsAfterID_LatestObserverPathFields(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	items, err := store.ListPacketsAfterID(context.Background(), 0, -1, -1, nil, "", 50)
+	items, err := store.ListPacketsAfterID(context.Background(), 0, -1, -1, nil, "", 50, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -441,6 +533,53 @@ func TestListPacketsAfterID_LatestObserverPathFields(t *testing.T) {
 	}
 	if obs.PathBytes == nil || *obs.PathBytes != "a1b2" {
 		t.Errorf("expected pathBytes a1b2, got %v", obs.PathBytes)
+	}
+}
+
+func TestListPacketsAfterID_ResolvedPathOptIn(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	heardAt := pgtype.Timestamptz{Time: time.UnixMilli(1700000000000), Valid: true}
+	observerID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-00000000000a")
+	name := "Backfill Relay"
+
+	mock.EXPECT().
+		ListPacketsAfterID(gomock.Any(), gomock.Any()).
+		Return([]sqlc.ListPacketsAfterIDRow{{
+			PacketHash:                   []byte{0xde, 0xad},
+			PayloadType:                  2,
+			FirstHeardAt:                 heardAt,
+			LastHeardAt:                  heardAt,
+			LatestObserverID:             observerID,
+			LatestObserverPathLengthByte: 0x41,
+			LatestObserverHashSize:       1,
+			LatestObserverHopCount:       1,
+			LatestObserverPathBytes:      []byte{0xa1},
+		}}, nil)
+	mock.EXPECT().ResolvePathHashesP1(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, hashes [][]byte) ([]sqlc.ResolvePathHashesP1Row, error) {
+			if len(hashes) != 1 || len(hashes[0]) != 1 || hashes[0][0] != 0xa1 {
+				t.Fatalf("unexpected backfill resolution batch: %x", hashes)
+			}
+			return []sqlc.ResolvePathHashesP1Row{{
+				Hash: []byte{0xa1, 0, 0, 0}, NodeID: nodeID, Name: &name, PublicKey: []byte{0xa1, 1},
+			}}, nil
+		},
+	)
+
+	store := &Store{q: mock}
+	items, err := store.ListPacketsAfterID(context.Background(), 0, -1, -1, nil, "", 50, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 1 || items[0].LatestObserver == nil {
+		t.Fatalf("unexpected backfill items: %#v", items)
+	}
+	path := items[0].LatestObserver.ResolvedPath
+	if len(path) != 1 || path[0].Confidence != "high" || len(path[0].Nodes) != 1 || path[0].Nodes[0].Name == nil || *path[0].Nodes[0].Name != name {
+		t.Fatalf("unexpected resolved backfill path: %#v", path)
 	}
 }
 
@@ -514,7 +653,7 @@ func TestListPackets_IATAFilterRoutesToObservationIndex(t *testing.T) {
 		})
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), nil, nil, []string{"ALF"}, nil, time.Time{}, time.Time{}, 0, 1)
+	page, err := store.ListPackets(context.Background(), nil, nil, []string{"ALF"}, nil, time.Time{}, time.Time{}, 0, 1, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -537,7 +676,7 @@ func TestListPackets_UnfilteredKeepsGlobalQuery(t *testing.T) {
 		Return([]sqlc.ListPacketsRow{}, nil)
 
 	store := &Store{q: mock}
-	if _, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 50); err != nil {
+	if _, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 50, false); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

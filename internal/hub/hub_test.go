@@ -290,6 +290,30 @@ func TestHub_ResolvePath_OptedIn_GetsResolvedPayload(t *testing.T) {
 	}
 }
 
+func TestHub_SetResolvePath_IsAppliedBeforeReturn(t *testing.T) {
+	h := runHub(t)
+	c := h.NewClient()
+	h.AddScope(c, "sub1", Scope{Events: []EventType{EventPacketObservation}})
+	h.SetResolvePath(c, true)
+
+	// No timing sleep: returning from SetResolvePath is the protocol boundary used before the
+	// configured acknowledgement, so the very next broadcast must use the resolved payload.
+	h.Broadcast(Event{
+		Type:            EventPacketObservation,
+		Payload:         json.RawMessage(`{"resolvedPath":null}`),
+		PayloadResolved: json.RawMessage(`{"resolvedPath":[{"confidence":"high"}]}`),
+	})
+
+	select {
+	case evt := <-c.Send:
+		if string(evt.Payload) != `{"resolvedPath":[{"confidence":"high"}]}` {
+			t.Fatalf("expected resolvePath to be active before SetResolvePath returned, got %s", evt.Payload)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected event, timed out")
+	}
+}
+
 func TestHub_ResolvePath_DefaultOff_GetsBasePayload(t *testing.T) {
 	h := runHub(t)
 	c := h.NewClient()
