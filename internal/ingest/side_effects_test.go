@@ -75,6 +75,23 @@ func TestHandlePayloadTypeSideEffects_Advert_ValidSignature_UpsertsNode(t *testi
 	}
 }
 
+func TestHandlePayloadTypeSideEffects_Advert_MovedNodeInvalidatesAllNodeCaches(t *testing.T) {
+	w, db := newTestWorker()
+	db.nodeCoordinatesChanged = true
+	invalidations := 0
+	w.SetCacheInvalidators(
+		func(context.Context, uuid.UUID) {},
+		func(context.Context) { invalidations++ },
+		func(context.Context, uuid.UUID) {},
+	)
+
+	w.handlePayloadTypeSideEffects(context.Background(), buildAdvertPacket(t, false), "TEST", []byte{0x01}, RadioSettings{}, nil, nil, nil, 0)
+
+	if invalidations != 1 {
+		t.Errorf("expected one full node-cache invalidation, got %d", invalidations)
+	}
+}
+
 func TestHandlePayloadTypeSideEffects_Advert_InvalidSignature_SkipsUpsert(t *testing.T) {
 	w, db := newTestWorker()
 	packet := buildAdvertPacket(t, true)

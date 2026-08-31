@@ -80,6 +80,13 @@ func (cr *CachedReader) InvalidateNode(ctx context.Context, nodeID uuid.UUID) {
 	cr.c.del(ctx, keyNodePrefix+id, keyNodeNeighborsPrefix+id)
 }
 
+// InvalidateAllNodes removes node detail and neighbor entries after a location change. Neighbor
+// responses are keyed by their source node but embed the moved endpoint's coordinates, so clearing
+// only the moved node's own keys would leave stale map markers in other cached responses.
+func (cr *CachedReader) InvalidateAllNodes(ctx context.Context) {
+	cr.c.delPrefix(ctx, keyNodePrefix)
+}
+
 // InvalidateObserver removes the cached entries for an observer by UUID.
 // Should be called from the ingest path after an observer upsert.
 func (cr *CachedReader) InvalidateObserver(ctx context.Context, observerID uuid.UUID) {

@@ -75,6 +75,23 @@ func (c *Client) del(ctx context.Context, keys ...string) {
 	c.rdb.Del(ctx, keys...)
 }
 
+func (c *Client) delPrefix(ctx context.Context, prefix string) {
+	var cursor uint64
+	for {
+		keys, next, err := c.rdb.Scan(ctx, cursor, prefix+"*", 100).Result()
+		if err != nil {
+			return
+		}
+		if len(keys) > 0 {
+			c.rdb.Del(ctx, keys...)
+		}
+		cursor = next
+		if cursor == 0 {
+			return
+		}
+	}
+}
+
 // getOrSet retrieves a cached value by key, deserialising it into T.
 // On a cache miss it calls fetch, stores the result under key with the given
 // TTL, and returns it. If Redis is unavailable or returns an unexpected error,

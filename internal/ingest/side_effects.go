@@ -98,7 +98,7 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 		if packet.PathHashCount() == 0 {
 			nodeRadio = radio
 		}
-		nodeID, err := w.db.UpsertNode(ctx, params, nodeRadio)
+		nodeID, coordinatesChanged, err := w.db.UpsertNode(ctx, params, nodeRadio)
 		if err != nil {
 			log.Printf("ingest[%s]: db: upsert node failed: %v", w.cfg.BrokerName, err)
 			return
@@ -106,6 +106,9 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 		// invalidate cache for this node
 		if w.onNodeUpsert != nil {
 			w.onNodeUpsert(ctx, nodeID)
+		}
+		if coordinatesChanged && w.onNodeMoved != nil {
+			w.onNodeMoved(ctx)
 		}
 		// Advertiser neighbor edges (origin -> first relay) are derived
 		// generically from 3-byte path hashes in handlePacket, for every

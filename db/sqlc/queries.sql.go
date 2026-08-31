@@ -4113,21 +4113,37 @@ func (q *Queries) UpsertKnownRoute(ctx context.Context, arg UpsertKnownRoutePara
 
 const upsertNode = `-- name: UpsertNode :one
 
-INSERT INTO nodes (public_key, node_type, name, latitude, longitude, location_source, last_advert_at, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz, device_clock_drift_seconds)
-VALUES ($1, $2, $3, $4, $5, 'advert', NOW(), NOW(), $6, $7, $8, $9)
-ON CONFLICT (public_key) DO UPDATE SET
-  node_type       = EXCLUDED.node_type,
-  name            = COALESCE(EXCLUDED.name, nodes.name),
-  latitude        = COALESCE(EXCLUDED.latitude, nodes.latitude),
-  longitude       = COALESCE(EXCLUDED.longitude, nodes.longitude),
-  location_source = CASE WHEN EXCLUDED.latitude IS NOT NULL THEN 'advert' ELSE nodes.location_source END,
-  last_advert_at  = NOW(),
-  last_seen       = NOW(),
-  radio_freq_mhz  = EXCLUDED.radio_freq_mhz,
-  radio_sf        = EXCLUDED.radio_sf,
-  radio_bw_khz    = EXCLUDED.radio_bw_khz,
-  device_clock_drift_seconds = EXCLUDED.device_clock_drift_seconds
-RETURNING id, public_key, node_type, name, latitude, longitude, location_source, last_advert_at, supports_multibyte_paths, supports_multibyte_traces, default_scope_id, min_firmware_version, first_seen, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz, metadata, device_clock_drift_seconds
+WITH previous AS MATERIALIZED (
+  SELECT n.id, n.latitude, n.longitude FROM nodes n WHERE n.public_key = $1
+), upserted AS (
+  INSERT INTO nodes (public_key, node_type, name, latitude, longitude, location_source, last_advert_at, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz, device_clock_drift_seconds)
+  VALUES ($1, $2, $3, $4, $5, 'advert', NOW(), NOW(), $6, $7, $8, $9)
+  ON CONFLICT (public_key) DO UPDATE SET
+    node_type       = EXCLUDED.node_type,
+    name            = COALESCE(EXCLUDED.name, nodes.name),
+    latitude        = COALESCE(EXCLUDED.latitude, nodes.latitude),
+    longitude       = COALESCE(EXCLUDED.longitude, nodes.longitude),
+    location_source = CASE WHEN EXCLUDED.latitude IS NOT NULL THEN 'advert' ELSE nodes.location_source END,
+    last_advert_at  = NOW(),
+    last_seen       = NOW(),
+    radio_freq_mhz  = EXCLUDED.radio_freq_mhz,
+    radio_sf        = EXCLUDED.radio_sf,
+    radio_bw_khz    = EXCLUDED.radio_bw_khz,
+    device_clock_drift_seconds = EXCLUDED.device_clock_drift_seconds
+  RETURNING id, public_key, node_type, name, latitude, longitude, location_source, last_advert_at, supports_multibyte_paths, supports_multibyte_traces, default_scope_id, min_firmware_version, first_seen, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz, metadata, device_clock_drift_seconds
+), location_change AS MATERIALIZED (
+  SELECT u.id
+  FROM upserted u
+  JOIN previous p ON p.id = u.id
+  WHERE p.latitude IS DISTINCT FROM u.latitude
+     OR p.longitude IS DISTINCT FROM u.longitude
+), deleted_neighbors AS (
+  DELETE FROM node_neighbors nn
+  USING location_change changed
+  WHERE nn.node_id = changed.id OR nn.neighbor_id = changed.id
+)
+SELECT u.id, u.public_key, u.node_type, u.name, u.latitude, u.longitude, u.location_source, u.last_advert_at, u.supports_multibyte_paths, u.supports_multibyte_traces, u.default_scope_id, u.min_firmware_version, u.first_seen, u.last_seen, u.radio_freq_mhz, u.radio_sf, u.radio_bw_khz, u.metadata, u.device_clock_drift_seconds, EXISTS (SELECT 1 FROM location_change) AS coordinates_changed
+FROM upserted u
 `
 
 type UpsertNodeParams struct {
@@ -4142,10 +4158,33 @@ type UpsertNodeParams struct {
 	DeviceClockDriftSeconds *int32   `json:"device_clock_drift_seconds"`
 }
 
+type UpsertNodeRow struct {
+	ID                      uuid.UUID          `json:"id"`
+	PublicKey               []byte             `json:"public_key"`
+	NodeType                int16              `json:"node_type"`
+	Name                    *string            `json:"name"`
+	Latitude                *float64           `json:"latitude"`
+	Longitude               *float64           `json:"longitude"`
+	LocationSource          *string            `json:"location_source"`
+	LastAdvertAt            pgtype.Timestamptz `json:"last_advert_at"`
+	SupportsMultibytePaths  bool               `json:"supports_multibyte_paths"`
+	SupportsMultibyteTraces bool               `json:"supports_multibyte_traces"`
+	DefaultScopeID          *int32             `json:"default_scope_id"`
+	MinFirmwareVersion      *string            `json:"min_firmware_version"`
+	FirstSeen               pgtype.Timestamptz `json:"first_seen"`
+	LastSeen                pgtype.Timestamptz `json:"last_seen"`
+	RadioFreqMhz            *float32           `json:"radio_freq_mhz"`
+	RadioSf                 *int16             `json:"radio_sf"`
+	RadioBwKhz              *float32           `json:"radio_bw_khz"`
+	Metadata                []byte             `json:"metadata"`
+	DeviceClockDriftSeconds *int32             `json:"device_clock_drift_seconds"`
+	CoordinatesChanged      bool               `json:"coordinates_changed"`
+}
+
 // ============================================================
 // NODES
 // ============================================================
-func (q *Queries) UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, error) {
+func (q *Queries) UpsertNode(ctx context.Context, arg UpsertNodeParams) (UpsertNodeRow, error) {
 	row := q.db.QueryRow(ctx, upsertNode,
 		arg.PublicKey,
 		arg.NodeType,
@@ -4157,7 +4196,7 @@ func (q *Queries) UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, e
 		arg.RadioBwKhz,
 		arg.DeviceClockDriftSeconds,
 	)
-	var i Node
+	var i UpsertNodeRow
 	err := row.Scan(
 		&i.ID,
 		&i.PublicKey,
@@ -4178,6 +4217,7 @@ func (q *Queries) UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, e
 		&i.RadioBwKhz,
 		&i.Metadata,
 		&i.DeviceClockDriftSeconds,
+		&i.CoordinatesChanged,
 	)
 	return i, err
 }

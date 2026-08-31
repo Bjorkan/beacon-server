@@ -19,7 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func (s *Store) UpsertNode(ctx context.Context, n ingest.UpsertNodeParams, radio ingest.RadioSettings) (uuid.UUID, error) {
+func (s *Store) UpsertNode(ctx context.Context, n ingest.UpsertNodeParams, radio ingest.RadioSettings) (uuid.UUID, bool, error) {
 	// advert.Timestamp is only meaningful when the advert actually decoded (AdvertTimestamp
 	// is left at its zero value otherwise); a zero epoch timestamp would misreport as ~55
 	// years of drift, so only compute/store a delta when it's non-zero.
@@ -43,9 +43,9 @@ func (s *Store) UpsertNode(ctx context.Context, n ingest.UpsertNodeParams, radio
 	}
 	row, err := s.q.UpsertNode(ctx, params)
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, false, err
 	}
-	return row.ID, nil
+	return row.ID, row.CoordinatesChanged, nil
 }
 
 func (s *Store) UpsertNodeIATA(ctx context.Context, nodeID uuid.UUID, iata string) error {

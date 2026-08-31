@@ -29,10 +29,10 @@ func TestUpsertNode_WithRadio(t *testing.T) {
 
 	mock.EXPECT().
 		UpsertNode(gomock.Any(), gomock.Any()).
-		Return(sqlc.Node{ID: nodeID}, nil)
+		Return(sqlc.UpsertNodeRow{ID: nodeID}, nil)
 
 	store := &Store{q: mock}
-	id, err := store.UpsertNode(context.Background(), ingest.UpsertNodeParams{
+	id, changed, err := store.UpsertNode(context.Background(), ingest.UpsertNodeParams{
 		PublicKey: []byte{0x01},
 		NodeType:  1,
 		Name:      "test-node",
@@ -42,6 +42,9 @@ func TestUpsertNode_WithRadio(t *testing.T) {
 	}
 	if id != nodeID {
 		t.Errorf("expected ID %s, got %s", nodeID, id)
+	}
+	if changed {
+		t.Error("expected unchanged coordinates")
 	}
 }
 
@@ -55,13 +58,13 @@ func TestUpsertNode_ComputesClockDrift(t *testing.T) {
 	var captured sqlc.UpsertNodeParams
 	mock.EXPECT().
 		UpsertNode(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, p sqlc.UpsertNodeParams) (sqlc.Node, error) {
+		DoAndReturn(func(_ context.Context, p sqlc.UpsertNodeParams) (sqlc.UpsertNodeRow, error) {
 			captured = p
-			return sqlc.Node{ID: nodeID}, nil
+			return sqlc.UpsertNodeRow{ID: nodeID}, nil
 		})
 
 	store := &Store{q: mock}
-	_, err := store.UpsertNode(context.Background(), ingest.UpsertNodeParams{
+	_, _, err := store.UpsertNode(context.Background(), ingest.UpsertNodeParams{
 		PublicKey:       []byte{0x01},
 		NodeType:        2, // repeater
 		Name:            "test-repeater",
@@ -89,13 +92,13 @@ func TestUpsertNode_NoAdvertTimestamp_OmitsDrift(t *testing.T) {
 	var captured sqlc.UpsertNodeParams
 	mock.EXPECT().
 		UpsertNode(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, p sqlc.UpsertNodeParams) (sqlc.Node, error) {
+		DoAndReturn(func(_ context.Context, p sqlc.UpsertNodeParams) (sqlc.UpsertNodeRow, error) {
 			captured = p
-			return sqlc.Node{ID: nodeID}, nil
+			return sqlc.UpsertNodeRow{ID: nodeID}, nil
 		})
 
 	store := &Store{q: mock}
-	_, err := store.UpsertNode(context.Background(), ingest.UpsertNodeParams{
+	_, _, err := store.UpsertNode(context.Background(), ingest.UpsertNodeParams{
 		PublicKey: []byte{0x01},
 		NodeType:  2, // repeater, but AdvertTimestamp left zero (e.g. decode failed upstream)
 		Name:      "test-repeater",
@@ -116,10 +119,10 @@ func TestUpsertNode_WithoutRadio(t *testing.T) {
 
 	mock.EXPECT().
 		UpsertNode(gomock.Any(), gomock.Any()).
-		Return(sqlc.Node{ID: nodeID}, nil)
+		Return(sqlc.UpsertNodeRow{ID: nodeID, CoordinatesChanged: true}, nil)
 
 	store := &Store{q: mock}
-	id, err := store.UpsertNode(context.Background(), ingest.UpsertNodeParams{
+	id, changed, err := store.UpsertNode(context.Background(), ingest.UpsertNodeParams{
 		PublicKey: []byte{0x01},
 		NodeType:  1,
 		Name:      "test-node",
@@ -129,6 +132,9 @@ func TestUpsertNode_WithoutRadio(t *testing.T) {
 	}
 	if id != nodeID {
 		t.Errorf("expected ID %s, got %s", nodeID, id)
+	}
+	if !changed {
+		t.Error("expected coordinate change to propagate from the query")
 	}
 }
 

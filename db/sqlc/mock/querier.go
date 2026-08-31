@@ -1469,10 +1469,10 @@ func (mr *MockQuerierMockRecorder) UpsertKnownRoute(ctx, arg any) *gomock.Call {
 }
 
 // UpsertNode mocks base method.
-func (m *MockQuerier) UpsertNode(ctx context.Context, arg db.UpsertNodeParams) (db.Node, error) {
+func (m *MockQuerier) UpsertNode(ctx context.Context, arg db.UpsertNodeParams) (db.UpsertNodeRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertNode", ctx, arg)
-	ret0, _ := ret[0].(db.Node)
+	ret0, _ := ret[0].(db.UpsertNodeRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

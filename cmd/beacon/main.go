@@ -250,8 +250,8 @@ func main() {
 	)
 
 	if cr, ok := reader.(*cache.CachedReader); ok {
-		broker1.SetCacheInvalidators(cr.InvalidateNode, cr.InvalidateObserver)
-		broker2.SetCacheInvalidators(cr.InvalidateNode, cr.InvalidateObserver)
+		broker1.SetCacheInvalidators(cr.InvalidateNode, cr.InvalidateAllNodes, cr.InvalidateObserver)
+		broker2.SetCacheInvalidators(cr.InvalidateNode, cr.InvalidateAllNodes, cr.InvalidateObserver)
 	}
 
 	go broker1.Start(ctx)

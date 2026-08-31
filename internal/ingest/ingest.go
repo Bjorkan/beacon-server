@@ -115,7 +115,9 @@ type DB interface {
 	SetNodeDefaultScope(ctx context.Context, nodeID uuid.UUID, scopeID int32) error
 
 	// UpsertNode upserts a nodes row from an advert payload.
-	UpsertNode(ctx context.Context, n UpsertNodeParams, r RadioSettings) (uuid.UUID, error)
+	// coordinatesChanged is true when a stored advert position moved; in that case the store also
+	// removes every neighbor edge where the node is either endpoint.
+	UpsertNode(ctx context.Context, n UpsertNodeParams, r RadioSettings) (nodeID uuid.UUID, coordinatesChanged bool, err error)
 
 	// GetNodeByPubkey returns the node ID for a given public key, or an
 	// error (sql.ErrNoRows-equivalent) if no node exists yet for that key.
@@ -229,6 +231,7 @@ type Worker struct {
 	scopes           ScopeStore
 	client           mqtt.Client
 	onNodeUpsert     func(ctx context.Context, nodeID uuid.UUID)
+	onNodeMoved      func(ctx context.Context)
 	onObserverUpsert func(ctx context.Context, observerID uuid.UUID)
 }
 
@@ -286,8 +289,13 @@ func (w *Worker) IsConnected() bool {
 	return w.client.IsConnected()
 }
 
-func (w *Worker) SetCacheInvalidators(onNode, onObserver func(ctx context.Context, id uuid.UUID)) {
+func (w *Worker) SetCacheInvalidators(
+	onNode func(ctx context.Context, id uuid.UUID),
+	onNodeMoved func(ctx context.Context),
+	onObserver func(ctx context.Context, id uuid.UUID),
+) {
 	w.onNodeUpsert = onNode
+	w.onNodeMoved = onNodeMoved
 	w.onObserverUpsert = onObserver
 }
 

@@ -250,7 +250,7 @@ type Querier interface {
 	// ============================================================
 	// NODES
 	// ============================================================
-	UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, error)
+	UpsertNode(ctx context.Context, arg UpsertNodeParams) (UpsertNodeRow, error)
 	// ============================================================
 	// NODE IATAS
 	// ============================================================

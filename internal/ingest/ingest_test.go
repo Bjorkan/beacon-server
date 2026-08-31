@@ -176,6 +176,7 @@ type stubDB struct {
 	setCapabilityCalls []setCapabilityCall
 
 	upsertNodeCalls            int
+	nodeCoordinatesChanged     bool
 	upsertChannelCalls         int
 	upsertChannelHashOnlyCalls int
 	upsertChannelIATACalls     int
@@ -223,9 +224,9 @@ func (s *stubDB) InsertObservation(_ context.Context, _ InsertObservationParams)
 	return s.observationInserted, nil
 }
 func (s *stubDB) SetNodeDefaultScope(_ context.Context, _ uuid.UUID, _ int32) error { return nil }
-func (s *stubDB) UpsertNode(_ context.Context, _ UpsertNodeParams, _ RadioSettings) (uuid.UUID, error) {
+func (s *stubDB) UpsertNode(_ context.Context, _ UpsertNodeParams, _ RadioSettings) (uuid.UUID, bool, error) {
 	s.upsertNodeCalls++
-	return uuid.Nil, nil
+	return uuid.Nil, s.nodeCoordinatesChanged, nil
 }
 func (s *stubDB) UpsertNodeIATA(_ context.Context, _ uuid.UUID, _ string) error { return nil }
 func (s *stubDB) UpsertNodeShortID(_ context.Context, _ uuid.UUID, _ string, _ []byte) error {

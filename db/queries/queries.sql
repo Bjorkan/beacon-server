@@ -631,21 +631,37 @@ ORDER BY po.heard_at ASC;
 -- ============================================================
 
 -- name: UpsertNode :one
-INSERT INTO nodes (public_key, node_type, name, latitude, longitude, location_source, last_advert_at, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz, device_clock_drift_seconds)
-VALUES ($1, $2, $3, $4, $5, 'advert', NOW(), NOW(), $6, $7, $8, $9)
-ON CONFLICT (public_key) DO UPDATE SET
-  node_type       = EXCLUDED.node_type,
-  name            = COALESCE(EXCLUDED.name, nodes.name),
-  latitude        = COALESCE(EXCLUDED.latitude, nodes.latitude),
-  longitude       = COALESCE(EXCLUDED.longitude, nodes.longitude),
-  location_source = CASE WHEN EXCLUDED.latitude IS NOT NULL THEN 'advert' ELSE nodes.location_source END,
-  last_advert_at  = NOW(),
-  last_seen       = NOW(),
-  radio_freq_mhz  = EXCLUDED.radio_freq_mhz,
-  radio_sf        = EXCLUDED.radio_sf,
-  radio_bw_khz    = EXCLUDED.radio_bw_khz,
-  device_clock_drift_seconds = EXCLUDED.device_clock_drift_seconds
-RETURNING *;
+WITH previous AS MATERIALIZED (
+  SELECT n.id, n.latitude, n.longitude FROM nodes n WHERE n.public_key = $1
+), upserted AS (
+  INSERT INTO nodes (public_key, node_type, name, latitude, longitude, location_source, last_advert_at, last_seen, radio_freq_mhz, radio_sf, radio_bw_khz, device_clock_drift_seconds)
+  VALUES ($1, $2, $3, $4, $5, 'advert', NOW(), NOW(), $6, $7, $8, $9)
+  ON CONFLICT (public_key) DO UPDATE SET
+    node_type       = EXCLUDED.node_type,
+    name            = COALESCE(EXCLUDED.name, nodes.name),
+    latitude        = COALESCE(EXCLUDED.latitude, nodes.latitude),
+    longitude       = COALESCE(EXCLUDED.longitude, nodes.longitude),
+    location_source = CASE WHEN EXCLUDED.latitude IS NOT NULL THEN 'advert' ELSE nodes.location_source END,
+    last_advert_at  = NOW(),
+    last_seen       = NOW(),
+    radio_freq_mhz  = EXCLUDED.radio_freq_mhz,
+    radio_sf        = EXCLUDED.radio_sf,
+    radio_bw_khz    = EXCLUDED.radio_bw_khz,
+    device_clock_drift_seconds = EXCLUDED.device_clock_drift_seconds
+  RETURNING *
+), location_change AS MATERIALIZED (
+  SELECT u.id
+  FROM upserted u
+  JOIN previous p ON p.id = u.id
+  WHERE p.latitude IS DISTINCT FROM u.latitude
+     OR p.longitude IS DISTINCT FROM u.longitude
+), deleted_neighbors AS (
+  DELETE FROM node_neighbors nn
+  USING location_change changed
+  WHERE nn.node_id = changed.id OR nn.neighbor_id = changed.id
+)
+SELECT u.*, EXISTS (SELECT 1 FROM location_change) AS coordinates_changed
+FROM upserted u;
 
 -- name: SetNodeMultibytePaths :exec
 UPDATE nodes SET supports_multibyte_paths = TRUE

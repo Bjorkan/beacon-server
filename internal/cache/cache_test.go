@@ -370,6 +370,23 @@ func TestCachedReader_InvalidateNode(t *testing.T) {
 	}
 }
 
+func TestCachedReader_InvalidateAllNodes(t *testing.T) {
+	c, mr := newTestClient(t)
+	mr.Set(keyNodePrefix+"one", `"cached"`)
+	mr.Set(keyNodeNeighborsPrefix+"two", `"cached"`)
+	mr.Set(keyObserverPrefix+"keep", `"cached"`)
+
+	cr := &CachedReader{inner: &stubReader{}, c: c, ttl: CacheTTLs{}}
+	cr.InvalidateAllNodes(context.Background())
+
+	if mr.Exists(keyNodePrefix+"one") || mr.Exists(keyNodeNeighborsPrefix+"two") {
+		t.Error("expected every node and neighbor key to be deleted")
+	}
+	if !mr.Exists(keyObserverPrefix + "keep") {
+		t.Error("expected non-node keys to remain")
+	}
+}
+
 func TestCachedReader_InvalidateObserver(t *testing.T) {
 	c, mr := newTestClient(t)
 	observerID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
