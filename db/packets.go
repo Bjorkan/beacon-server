@@ -161,37 +161,40 @@ func (s *Store) resolvePacketSummaryPaths(ctx context.Context, items []api.Packe
 	return nil
 }
 
-func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32, includeResolvedPath bool) (api.Page[api.PacketSummary], error) {
-	if len(iatas) > 0 {
-		return s.listPacketsByIATAs(ctx, payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit, includeResolvedPath)
+func (s *Store) ListPackets(ctx context.Context, params api.PacketListParams) (api.Page[api.PacketSummary], error) {
+	if len(params.IATAs) > 0 {
+		return s.listPacketsByIATAs(ctx, params)
 	}
 	var cursorTS pgtype.Timestamptz
-	if cursor > 0 {
-		cursorTS = pgtype.Timestamptz{Time: time.UnixMilli(cursor), Valid: true}
+	if params.LegacyCursor > 0 {
+		cursorTS = pgtype.Timestamptz{Time: time.UnixMilli(params.LegacyCursor), Valid: true}
 	}
 	var sinceTS pgtype.Timestamptz
-	if !since.IsZero() {
-		sinceTS = pgtype.Timestamptz{Time: since, Valid: true}
+	if !params.Since.IsZero() {
+		sinceTS = pgtype.Timestamptz{Time: params.Since, Valid: true}
 	}
 	var untilTS pgtype.Timestamptz
-	if !until.IsZero() {
-		untilTS = pgtype.Timestamptz{Time: until, Valid: true}
+	if !params.Until.IsZero() {
+		untilTS = pgtype.Timestamptz{Time: params.Until, Valid: true}
 	}
 	rows, err := s.q.ListPackets(ctx, sqlc.ListPacketsParams{
-		Column1: payloadTypes,
-		Column2: routeTypes,
-		Column3: sinceTS,
-		Column4: untilTS,
-		Column5: cursorTS,
-		Limit:   limit + 1,
-		Column7: scopes,
+		Column1:  params.PayloadTypes,
+		Column2:  params.RouteTypes,
+		Column3:  sinceTS,
+		Column4:  untilTS,
+		Column5:  cursorTS,
+		Limit:    params.Limit + 1,
+		Column7:  params.Scopes,
+		Column8:  params.ObserverIDs,
+		Column9:  params.SearchField,
+		Column10: params.Search,
 	})
 	if err != nil {
 		return api.Page[api.PacketSummary]{}, err
 	}
-	hasMore := len(rows) > int(limit)
+	hasMore := len(rows) > int(params.Limit)
 	if hasMore {
-		rows = rows[:limit]
+		rows = rows[:params.Limit]
 	}
 	items := make([]api.PacketSummary, 0, len(rows))
 	for _, v := range rows {
@@ -223,7 +226,7 @@ func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int1
 		last := items[len(items)-1].LastHeardAt
 		nextCursor = &last
 	}
-	if includeResolvedPath {
+	if params.IncludeResolvedPath {
 		if err := s.resolvePacketSummaryPaths(ctx, items); err != nil {
 			return api.Page[api.PacketSummary]{}, err
 		}
@@ -235,39 +238,42 @@ func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int1
 	}, nil
 }
 
-func (s *Store) listPacketsByIATAs(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32, includeResolvedPath bool) (api.Page[api.PacketSummary], error) {
+func (s *Store) listPacketsByIATAs(ctx context.Context, params api.PacketListParams) (api.Page[api.PacketSummary], error) {
 	var cursorTS pgtype.Timestamptz
-	if cursor > 0 {
-		cursorTS = pgtype.Timestamptz{Time: time.UnixMilli(cursor), Valid: true}
+	if params.LegacyCursor > 0 {
+		cursorTS = pgtype.Timestamptz{Time: time.UnixMilli(params.LegacyCursor), Valid: true}
 	}
 	var sinceTS pgtype.Timestamptz
-	if !since.IsZero() {
-		sinceTS = pgtype.Timestamptz{Time: since, Valid: true}
+	if !params.Since.IsZero() {
+		sinceTS = pgtype.Timestamptz{Time: params.Since, Valid: true}
 	}
 	var untilTS pgtype.Timestamptz
-	if !until.IsZero() {
-		untilTS = pgtype.Timestamptz{Time: until, Valid: true}
+	if !params.Until.IsZero() {
+		untilTS = pgtype.Timestamptz{Time: params.Until, Valid: true}
 	}
 	// A packet appears once per observer that heard it at a site
 	// ((packet_hash, observer_id) is unique), so scan deep enough per site
 	// to still fill the page after collapsing those duplicates.
 	rows, err := s.q.ListPacketsByIATAs(ctx, sqlc.ListPacketsByIATAsParams{
-		Iatas:        iatas,
-		ScanDepth:    (limit + 1) * 8,
+		Iatas:        params.IATAs,
+		ScanDepth:    (params.Limit + 1) * 8,
 		CursorTs:     cursorTS,
-		PayloadTypes: payloadTypes,
-		RouteTypes:   routeTypes,
+		PayloadTypes: params.PayloadTypes,
+		RouteTypes:   params.RouteTypes,
 		SinceTs:      sinceTS,
 		UntilTs:      untilTS,
-		ScopeNames:   scopes,
-		PageLimit:    limit + 1,
+		ScopeNames:   params.Scopes,
+		ObserverIds:  params.ObserverIDs,
+		SearchField:  params.SearchField,
+		SearchQuery:  params.Search,
+		PageLimit:    params.Limit + 1,
 	})
 	if err != nil {
 		return api.Page[api.PacketSummary]{}, err
 	}
-	hasMore := len(rows) > int(limit)
+	hasMore := len(rows) > int(params.Limit)
 	if hasMore {
-		rows = rows[:limit]
+		rows = rows[:params.Limit]
 	}
 	items := make([]api.PacketSummary, 0, len(rows))
 	for _, v := range rows {
@@ -300,7 +306,7 @@ func (s *Store) listPacketsByIATAs(ctx context.Context, payloadTypes, routeTypes
 		last := rows[len(rows)-1].SiteHeardAt.Time.UnixMilli()
 		nextCursor = &last
 	}
-	if includeResolvedPath {
+	if params.IncludeResolvedPath {
 		if err := s.resolvePacketSummaryPaths(ctx, items); err != nil {
 			return api.Page[api.PacketSummary]{}, err
 		}

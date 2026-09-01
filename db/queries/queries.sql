@@ -457,6 +457,24 @@ WHERE
   AND ($4::timestamptz IS NULL OR p.first_heard_at <= $4)
   AND ($5::timestamptz IS NULL OR p.last_heard_at < $5)
   AND (COALESCE(cardinality($7::text[]), 0) = 0 OR ts.name = ANY($7::text[]))
+  AND (COALESCE(cardinality($8::uuid[]), 0) = 0 OR EXISTS (
+    SELECT 1 FROM packet_observations pof
+    WHERE pof.packet_hash = p.packet_hash AND pof.observer_id = ANY($8::uuid[])
+  ))
+  AND ($10::text = '' OR CASE $9::text
+    WHEN 'hash' THEN strpos(encode(p.packet_hash, 'hex'), lower($10::text)) > 0
+    WHEN 'path' THEN EXISTS (
+      SELECT 1 FROM packet_observations pos
+      WHERE pos.packet_hash = p.packet_hash
+        AND pos.path_bytes IS NOT NULL
+        AND strpos(encode(pos.path_bytes, 'hex'), lower($10::text)) > 0
+    )
+    WHEN 'payload' THEN
+      strpos(lower(encode(p.raw_payload, 'escape')), lower($10::text)) > 0
+      OR strpos(encode(p.raw_payload, 'hex'), lower($10::text)) > 0
+      OR strpos(lower(COALESCE(p.parsed_payload::text, '')), lower($10::text)) > 0
+    ELSE FALSE
+  END)
 ORDER BY p.last_heard_at DESC
 LIMIT $6;
 
@@ -503,6 +521,22 @@ FROM (
       AND (COALESCE(cardinality(@scope_names::text[]), 0) = 0 OR EXISTS (
         SELECT 1 FROM transport_scopes ts2
         WHERE ts2.id = p2.scope_id AND ts2.name = ANY(@scope_names::text[])))
+      AND (COALESCE(cardinality(@observer_ids::uuid[]), 0) = 0 OR EXISTS (
+        SELECT 1 FROM packet_observations pof
+        WHERE pof.packet_hash = p2.packet_hash AND pof.observer_id = ANY(@observer_ids::uuid[])))
+      AND (@search_query::text = '' OR CASE @search_field::text
+        WHEN 'hash' THEN strpos(encode(p2.packet_hash, 'hex'), lower(@search_query::text)) > 0
+        WHEN 'path' THEN EXISTS (
+          SELECT 1 FROM packet_observations pos
+          WHERE pos.packet_hash = p2.packet_hash
+            AND pos.path_bytes IS NOT NULL
+            AND strpos(encode(pos.path_bytes, 'hex'), lower(@search_query::text)) > 0)
+        WHEN 'payload' THEN
+          strpos(lower(encode(p2.raw_payload, 'escape')), lower(@search_query::text)) > 0
+          OR strpos(encode(p2.raw_payload, 'hex'), lower(@search_query::text)) > 0
+          OR strpos(lower(COALESCE(p2.parsed_payload::text, '')), lower(@search_query::text)) > 0
+        ELSE FALSE
+      END)
     ORDER BY po3.heard_at DESC
     LIMIT @scan_depth
   ) hits
@@ -1191,13 +1225,32 @@ ON CONFLICT (iata, path_key) DO UPDATE SET
   observation_count = known_routes.observation_count + 1;
 
 -- name: ListKnownRoutes :many
-SELECT id, node_ids, hash_prefix, iata, hop_count, first_seen, last_seen, observation_count
-FROM known_routes
-WHERE ($1 = '' OR iata = $1)
-  AND ($2 = 0 OR hop_count = $2)
-  AND ($3::timestamptz IS NULL OR last_seen < $3)
-ORDER BY last_seen DESC
-LIMIT $4;
+WITH route_keyed AS (
+  SELECT id, node_ids, hash_prefix, iata, hop_count, first_seen, last_seen, observation_count,
+    CASE $4::text
+      WHEN 'iata' THEN lower(iata::text)
+      WHEN 'hops' THEN lpad(hop_count::text, 20, '0')
+      WHEN 'observations' THEN lpad(observation_count::text, 20, '0')
+      WHEN 'first_seen' THEN lpad((extract(epoch from first_seen) * 1000)::bigint::text, 20, '0')
+      ELSE lpad((extract(epoch from last_seen) * 1000)::bigint::text, 20, '0')
+    END::text AS page_sort_key
+  FROM known_routes
+  WHERE (COALESCE(cardinality($1::bpchar[]), 0) = 0 OR iata = ANY($1::bpchar[]))
+    AND ($2 = 0 OR hop_count = $2)
+    AND ($3::timestamptz IS NULL OR last_seen < $3)
+)
+SELECT id, node_ids, hash_prefix, iata, hop_count, first_seen, last_seen, observation_count,
+       page_sort_key
+FROM route_keyed
+WHERE NOT $6::bool
+  OR ($5::text = 'asc' AND (page_sort_key > $7::text OR (page_sort_key = $7::text AND id > $8::bigint)))
+  OR ($5::text = 'desc' AND (page_sort_key < $7::text OR (page_sort_key = $7::text AND id < $8::bigint)))
+ORDER BY
+  CASE WHEN $5::text = 'asc' THEN page_sort_key END ASC,
+  CASE WHEN $5::text = 'desc' THEN page_sort_key END DESC,
+  CASE WHEN $5::text = 'asc' THEN id END ASC,
+  CASE WHEN $5::text = 'desc' THEN id END DESC
+LIMIT $9;
 
 -- name: SearchKnownRoutes :many
 -- Returns known routes containing a subsequence from source to destination hash prefix.

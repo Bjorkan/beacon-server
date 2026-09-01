@@ -81,7 +81,7 @@ func TestListPackets_Pagination(t *testing.T) {
 		Return(rows, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 2, false)
+	page, err := store.ListPackets(context.Background(), api.PacketListParams{Limit: 2})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestListPackets_LatestObserverNil(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10, false)
+	page, err := store.ListPackets(context.Background(), api.PacketListParams{Limit: 10})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestListPackets_LatestObserverSet(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10, false)
+	page, err := store.ListPackets(context.Background(), api.PacketListParams{Limit: 10})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestListPackets_LatestObserverPathFields(t *testing.T) {
 		}, nil)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10, false)
+	page, err := store.ListPackets(context.Background(), api.PacketListParams{Limit: 10})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestListPackets_ResolvedPathOptInBatchesByHashWidth(t *testing.T) {
 	)
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 50, true)
+	page, err := store.ListPackets(context.Background(), api.PacketListParams{Limit: 50, IncludeResolvedPath: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -653,7 +653,7 @@ func TestListPackets_IATAFilterRoutesToObservationIndex(t *testing.T) {
 		})
 
 	store := &Store{q: mock}
-	page, err := store.ListPackets(context.Background(), nil, nil, []string{"ALF"}, nil, time.Time{}, time.Time{}, 0, 1, false)
+	page, err := store.ListPackets(context.Background(), api.PacketListParams{IATAs: []string{"ALF"}, Limit: 1})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -676,7 +676,33 @@ func TestListPackets_UnfilteredKeepsGlobalQuery(t *testing.T) {
 		Return([]sqlc.ListPacketsRow{}, nil)
 
 	store := &Store{q: mock}
-	if _, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 50, false); err != nil {
+	if _, err := store.ListPackets(context.Background(), api.PacketListParams{Limit: 50}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestListPackets_PassesObserverAndSearchFilters(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+	observerID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+	mock.EXPECT().ListPackets(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, params sqlc.ListPacketsParams) ([]sqlc.ListPacketsRow, error) {
+			if len(params.Column8) != 1 || params.Column8[0] != observerID {
+				t.Fatalf("unexpected observer filter: %v", params.Column8)
+			}
+			if params.Column9 != api.PacketSearchPayload || params.Column10 != "hello" {
+				t.Fatalf("unexpected search params: %q %q", params.Column9, params.Column10)
+			}
+			return nil, nil
+		},
+	)
+
+	store := &Store{q: mock}
+	_, err := store.ListPackets(context.Background(), api.PacketListParams{
+		ObserverIDs: []uuid.UUID{observerID}, SearchField: api.PacketSearchPayload, Search: "hello", Limit: 50,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

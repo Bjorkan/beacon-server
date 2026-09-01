@@ -14,6 +14,7 @@ import (
 	mockdb "github.com/MeshCore-Beacon/beacon-server/db/sqlc/mock"
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/mock/gomock"
 )
 
@@ -110,5 +111,46 @@ func TestExtractFromNode_Empty(t *testing.T) {
 	result := extractFromNode(nil, uuid.New())
 	if len(result) != 0 {
 		t.Errorf("expected empty result for nil hops")
+	}
+}
+
+func TestListKnownRoutes_UsesKeysetSortAndIATAFilter(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+	first := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	last := first.Add(time.Hour)
+
+	mock.EXPECT().ListKnownRoutes(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, params sqlc.ListKnownRoutesParams) ([]sqlc.ListKnownRoutesRow, error) {
+			if len(params.Column1) != 2 || params.Column1[0] != "YVR" || params.Column1[1] != "YYJ" {
+				t.Fatalf("unexpected IATA filter: %v", params.Column1)
+			}
+			if params.Column4 != api.RouteSortHops || params.Column5 != string(api.SortAsc) || params.Limit != 2 {
+				t.Fatalf("unexpected sort/page params: %#v", params)
+			}
+			return []sqlc.ListKnownRoutesRow{
+				{ID: 11, Iata: "YVR", HopCount: 1, FirstSeen: pgtype.Timestamptz{Time: first, Valid: true}, LastSeen: pgtype.Timestamptz{Time: last, Valid: true}, PageSortKey: "00000000000000000001"},
+				{ID: 12, Iata: "YYJ", HopCount: 2, FirstSeen: pgtype.Timestamptz{Time: first, Valid: true}, LastSeen: pgtype.Timestamptz{Time: last, Valid: true}, PageSortKey: "00000000000000000002"},
+			}, nil
+		},
+	)
+	mock.EXPECT().GetNodesByIDs(gomock.Any(), gomock.Cond(func(ids []uuid.UUID) bool { return len(ids) == 0 })).Return([]sqlc.GetNodesByIDsRow{}, nil)
+
+	store := &Store{q: mock}
+	page, err := store.ListKnownRoutes(context.Background(), api.RouteListParams{
+		IATAs: []string{"YVR", "YYJ"}, Sort: api.RouteSortHops, Direction: api.SortAsc, Limit: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || !page.HasMore || page.NextPageToken == nil {
+		t.Fatalf("unexpected page: %#v", page)
+	}
+	token, err := api.DecodePageToken(*page.NextPageToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token.Collection != api.PageCollectionRoutes || token.Sort != api.RouteSortHops || token.Direction != api.SortAsc || token.Key != "00000000000000000001" || token.NumericID != 11 {
+		t.Fatalf("unexpected token: %#v", token)
 	}
 }

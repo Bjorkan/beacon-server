@@ -37,19 +37,41 @@ func (s *Store) UpsertKnownRoute(ctx context.Context, nodeIDs []uuid.UUID, hashP
 	})
 }
 
-func (s *Store) ListKnownRoutes(ctx context.Context, iata string, hopCount int32, cursor time.Time, limit int32) ([]api.KnownRoute, error) {
+func (s *Store) ListKnownRoutes(ctx context.Context, params api.RouteListParams) (api.Page[api.KnownRoute], error) {
+	if params.Sort == "" {
+		params.Sort = api.RouteSortLastSeen
+	}
+	if params.Direction == "" {
+		params.Direction = api.SortDesc
+	}
 	var cursorTS pgtype.Timestamptz
-	if !cursor.IsZero() {
-		cursorTS = pgtype.Timestamptz{Time: cursor, Valid: true}
+	if !params.LegacyCursor.IsZero() {
+		cursorTS = pgtype.Timestamptz{Time: params.LegacyCursor, Valid: true}
+	}
+	cursorValid := params.PageToken != nil
+	var cursorKey string
+	var cursorID int64
+	if params.PageToken != nil {
+		cursorKey = params.PageToken.Key
+		cursorID = params.PageToken.NumericID
 	}
 	sqlRows, err := s.q.ListKnownRoutes(ctx, sqlc.ListKnownRoutesParams{
-		Column1: iata,
-		Column2: hopCount,
+		Column1: params.IATAs,
+		Column2: params.HopCount,
 		Column3: cursorTS,
-		Limit:   limit,
+		Column4: params.Sort,
+		Column5: string(params.Direction),
+		Column6: cursorValid,
+		Column7: cursorKey,
+		Column8: cursorID,
+		Limit:   params.Limit + 1,
 	})
 	if err != nil {
-		return nil, err
+		return api.Page[api.KnownRoute]{}, err
+	}
+	hasMore := len(sqlRows) > int(params.Limit)
+	if hasMore {
+		sqlRows = sqlRows[:params.Limit]
 	}
 	rows := make([]knownRouteRow, len(sqlRows))
 	for i, r := range sqlRows {
@@ -58,9 +80,24 @@ func (s *Store) ListKnownRoutes(ctx context.Context, iata string, hopCount int32
 	ids := collectNodeIDs(rows)
 	nodes, err := s.GetNodesByIDs(ctx, ids)
 	if err != nil {
-		return nil, err
+		return api.Page[api.KnownRoute]{}, err
 	}
-	return toKnownRoutes(rows, nodes), nil
+	items := toKnownRoutes(rows, nodes)
+	var nextToken *string
+	var nextCursor *int64
+	if hasMore && len(sqlRows) > 0 {
+		last := sqlRows[len(sqlRows)-1]
+		token := api.EncodePageToken(api.PageToken{
+			Version: api.PageTokenVersion, Collection: api.PageCollectionRoutes,
+			Sort: params.Sort, Direction: params.Direction, Key: last.PageSortKey, NumericID: last.ID,
+		})
+		nextToken = &token
+		if params.Sort == api.RouteSortLastSeen && params.Direction == api.SortDesc {
+			legacy := last.LastSeen.Time.UnixMilli()
+			nextCursor = &legacy
+		}
+	}
+	return api.Page[api.KnownRoute]{Items: items, NextCursor: nextCursor, NextPageToken: nextToken, HasMore: hasMore}, nil
 }
 
 func (s *Store) SearchKnownRoutes(ctx context.Context, iata, fromHash, toHash string) ([]api.KnownRoute, error) {

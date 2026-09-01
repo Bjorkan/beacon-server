@@ -37,7 +37,7 @@ type stubReader struct {
 	getNode                      func(ctx context.Context, nodeID uuid.UUID) (*api.Node, error)
 	getNodeNeighbors             func(ctx context.Context, nodeID uuid.UUID) ([]api.NodeNeighbor, error)
 	listNodeObservations         func(ctx context.Context, nodeID uuid.UUID, cursor int64, limit int32) (api.Page[api.PacketObservationSummary], error)
-	listPackets                  func(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32, includeResolvedPath bool) (api.Page[api.PacketSummary], error)
+	listPackets                  func(ctx context.Context, params api.PacketListParams) (api.Page[api.PacketSummary], error)
 	listPacketsAfterID           func(ctx context.Context, afterObservationID int64, payloadType, routeType int16, iatas []string, scope string, limit int32, includeResolvedPath bool) ([]api.PacketSummary, error)
 	getPacket                    func(ctx context.Context, packetHash []byte) (*api.Packet, error)
 	getRadioPresets              func(ctx context.Context, preset string, iatas []string) ([]api.RadioPreset, error)
@@ -56,7 +56,7 @@ type stubReader struct {
 	getScopeByName               func(ctx context.Context, name string) (*api.ScopeDetail, error)
 	listTraceTags                func(ctx context.Context, iatas []string, scope, traceType string, since, until time.Time, cursor time.Time, limit int32) ([]api.TraceTagSummary, error)
 	getTraceByTag                func(ctx context.Context, tag string) (*api.TraceDetail, error)
-	listKnownRoutes              func(ctx context.Context, iata string, hopCount int32, cursor time.Time, limit int32) ([]api.KnownRoute, error)
+	listKnownRoutes              func(ctx context.Context, params api.RouteListParams) (api.Page[api.KnownRoute], error)
 	searchKnownRoutes            func(ctx context.Context, iata, fromHash, toHash string) ([]api.KnownRoute, error)
 	getKnownRoutesByNode         func(ctx context.Context, iata string, nodeID uuid.UUID) ([]api.KnownRoute, error)
 	getCrossIATANeighbors        func(ctx context.Context, nodeID uuid.UUID, iata string) ([]api.NodeNeighbor, error)
@@ -211,9 +211,9 @@ func (s stubReader) ListNodeObservations(ctx context.Context, nodeID uuid.UUID, 
 	return api.Page[api.PacketObservationSummary]{}, nil
 }
 
-func (s stubReader) ListPackets(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32, includeResolvedPath bool) (api.Page[api.PacketSummary], error) {
+func (s stubReader) ListPackets(ctx context.Context, params api.PacketListParams) (api.Page[api.PacketSummary], error) {
 	if s.listPackets != nil {
-		return s.listPackets(ctx, payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit, includeResolvedPath)
+		return s.listPackets(ctx, params)
 	}
 	return api.Page[api.PacketSummary]{}, nil
 }
@@ -344,11 +344,11 @@ func (s stubReader) GetTraceByTag(ctx context.Context, tag string) (*api.TraceDe
 	return nil, nil
 }
 
-func (s stubReader) ListKnownRoutes(ctx context.Context, iata string, hopCount int32, cursor time.Time, limit int32) ([]api.KnownRoute, error) {
+func (s stubReader) ListKnownRoutes(ctx context.Context, params api.RouteListParams) (api.Page[api.KnownRoute], error) {
 	if s.listKnownRoutes != nil {
-		return s.listKnownRoutes(ctx, iata, hopCount, cursor, limit)
+		return s.listKnownRoutes(ctx, params)
 	}
-	return nil, nil
+	return api.Page[api.KnownRoute]{}, nil
 }
 
 func (s stubReader) SearchKnownRoutes(ctx context.Context, iata, fromHash, toHash string) ([]api.KnownRoute, error) {

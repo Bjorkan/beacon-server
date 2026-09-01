@@ -129,7 +129,7 @@ type Reader interface {
 	// cursor is epoch ms in either case; pass 0 to start from the beginning.
 	// payloadTypes/routeTypes/scopes are OR'd within each filter, ANDed across filters; pass
 	// nil/empty to skip a filter.
-	ListPackets(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32, includeResolvedPath bool) (Page[PacketSummary], error)
+	ListPackets(ctx context.Context, params PacketListParams) (Page[PacketSummary], error)
 
 	// ListPacketsAfterID returns packets with observations after the given observation ID,
 	// ordered oldest first. Used for WS reconnect backfill.
@@ -207,7 +207,7 @@ type Reader interface {
 	GetTraceByTag(ctx context.Context, tag string) (*TraceDetail, error)
 
 	// ListKnownRoutes returns known routes filtered by IATA and optional hop count.
-	ListKnownRoutes(ctx context.Context, iata string, hopCount int32, cursor time.Time, limit int32) ([]KnownRoute, error)
+	ListKnownRoutes(ctx context.Context, params RouteListParams) (Page[KnownRoute], error)
 
 	// SearchKnownRoutes returns known routes containing a path from source to destination hash.
 	SearchKnownRoutes(ctx context.Context, iata, fromHash, toHash string) ([]KnownRoute, error)

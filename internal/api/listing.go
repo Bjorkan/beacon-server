@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -30,6 +31,7 @@ type PageToken struct {
 	Empty      bool          `json:"e,omitempty"`
 	Key        string        `json:"k"`
 	ID         uuid.UUID     `json:"i"`
+	NumericID  int64         `json:"n,omitempty"`
 }
 
 var ErrInvalidPageToken = errors.New("invalid page token")
@@ -38,6 +40,7 @@ const (
 	PageTokenVersion        = 1
 	PageCollectionNodes     = "nodes"
 	PageCollectionObservers = "observers"
+	PageCollectionRoutes    = "routes"
 )
 
 func EncodePageToken(token PageToken) string {
@@ -54,7 +57,7 @@ func DecodePageToken(encoded string) (*PageToken, error) {
 		return nil, ErrInvalidPageToken
 	}
 	var token PageToken
-	if err := json.Unmarshal(b, &token); err != nil || token.Version != PageTokenVersion || token.Collection == "" || token.Sort == "" || token.ID == uuid.Nil || (!token.Empty && token.Key == "") || (token.Direction != SortAsc && token.Direction != SortDesc) {
+	if err := json.Unmarshal(b, &token); err != nil || token.Version != PageTokenVersion || token.Collection == "" || token.Sort == "" || (token.ID == uuid.Nil && token.NumericID == 0) || (!token.Empty && token.Key == "") || (token.Direction != SortAsc && token.Direction != SortDesc) {
 		return nil, ErrInvalidPageToken
 	}
 	return &token, nil
@@ -97,6 +100,40 @@ func ValidObserverSort(sort string) bool {
 	}
 }
 
+// Packet search fields accepted by GET /packets.
+const (
+	PacketSearchHash    = "hash"
+	PacketSearchPath    = "path"
+	PacketSearchPayload = "payload"
+)
+
+func ValidPacketSearchField(field string) bool {
+	switch field {
+	case PacketSearchHash, PacketSearchPath, PacketSearchPayload:
+		return true
+	default:
+		return false
+	}
+}
+
+// Route list sort keys.
+const (
+	RouteSortIATA         = "iata"
+	RouteSortHops         = "hops"
+	RouteSortObservations = "observations"
+	RouteSortFirstSeen    = "first_seen"
+	RouteSortLastSeen     = "last_seen"
+)
+
+func ValidRouteSort(sort string) bool {
+	switch sort {
+	case RouteSortIATA, RouteSortHops, RouteSortObservations, RouteSortFirstSeen, RouteSortLastSeen:
+		return true
+	default:
+		return false
+	}
+}
+
 type NodeListParams struct {
 	NodeType                int16
 	IATAs                   []string
@@ -122,6 +159,31 @@ type ObserverListParams struct {
 	Name         string
 	Scope        string
 	LegacyCursor int64
+	PageToken    *PageToken
+	Sort         string
+	Direction    SortDirection
+	Limit        int32
+}
+
+type PacketListParams struct {
+	PayloadTypes        []int16
+	RouteTypes          []int16
+	IATAs               []string
+	Scopes              []string
+	ObserverIDs         []uuid.UUID
+	SearchField         string
+	Search              string
+	Since               time.Time
+	Until               time.Time
+	LegacyCursor        int64
+	Limit               int32
+	IncludeResolvedPath bool
+}
+
+type RouteListParams struct {
+	IATAs        []string
+	HopCount     int32
+	LegacyCursor time.Time
 	PageToken    *PageToken
 	Sort         string
 	Direction    SortDirection

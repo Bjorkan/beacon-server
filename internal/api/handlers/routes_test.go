@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/go-chi/chi/v5"
@@ -63,8 +62,8 @@ func TestSearchCrossIATARoutes_MissingParams(t *testing.T) {
 func TestListKnownRoutes_OK(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/routes", listKnownRoutes(stubReader{
-		listKnownRoutes: func(_ context.Context, _ string, _ int32, _ time.Time, _ int32) ([]api.KnownRoute, error) {
-			return []api.KnownRoute{{IATA: "YVR"}}, nil
+		listKnownRoutes: func(_ context.Context, _ api.RouteListParams) (api.Page[api.KnownRoute], error) {
+			return api.Page[api.KnownRoute]{Items: []api.KnownRoute{{IATA: "YVR"}}}, nil
 		},
 	}))
 	req := httptest.NewRequest(http.MethodGet, "/routes", nil)
@@ -72,6 +71,38 @@ func TestListKnownRoutes_OK(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestListKnownRoutes_PassesBackendFilterAndSort(t *testing.T) {
+	var got api.RouteListParams
+	r := chi.NewRouter()
+	r.Get("/routes", listKnownRoutes(stubReader{
+		listKnownRoutes: func(_ context.Context, params api.RouteListParams) (api.Page[api.KnownRoute], error) {
+			got = params
+			return api.Page[api.KnownRoute]{}, nil
+		},
+	}))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/routes?iatas=yvr,yyj&sort=hops&direction=asc&limit=25", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(got.IATAs) != 2 || got.IATAs[0] != "YVR" || got.IATAs[1] != "YYJ" {
+		t.Fatalf("unexpected IATAs: %v", got.IATAs)
+	}
+	if got.Sort != api.RouteSortHops || got.Direction != api.SortAsc || got.Limit != 25 {
+		t.Fatalf("unexpected sort params: %#v", got)
+	}
+}
+
+func TestListKnownRoutes_RejectsInvalidSort(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/routes", listKnownRoutes(stubReader{}))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/routes?sort=unknown", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }
 

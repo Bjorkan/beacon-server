@@ -30,16 +30,25 @@ func RoutesRouter(reader api.Reader) http.Handler {
 //	@Summary	List known routes
 //	@Tags		Routes
 //	@Produce	json
-//	@Param		iata		query		string	false	"Filter by IATA code"
+//	@Param		iata		query		string	false	"Filter by IATA code (legacy singular form)"
+//	@Param		iatas		query		string	false	"Filter by IATA codes, comma-separated"
 //	@Param		hopCount	query		int		false	"Filter by exact hop count"
 //	@Param		cursor		query		int		false	"Epoch ms timestamp of last item for pagination"
+//	@Param		pageToken	query		string	false	"Opaque keyset cursor returned as nextPageToken"
+//	@Param		sort		query		string	false	"Sort by iata, hops, observations, first_seen or last_seen"
+//	@Param		direction	query		string	false	"Sort direction: asc or desc"
 //	@Param		limit		query		int		false	"Max results (default 50)"
-//	@Success	200			{object}	[]api.KnownRoute
+//	@Success	200			{object}	api.Page[api.KnownRoute]
 //	@Failure	500			{object}	handlers.APIError
 //	@Router		/routes [get]
 func listKnownRoutes(reader api.Reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		iata := r.URL.Query().Get("iata")
+		sort, direction, pageToken, err := parseSortablePage(r, api.PageCollectionRoutes, api.RouteSortLastSeen, api.SortDesc, api.ValidRouteSort)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		iatas := parseIATAs(r)
 		var hopCount int32
 		if v := r.URL.Query().Get("hopCount"); v != "" {
 			if h, err := strconv.ParseInt(v, 10, 32); err == nil {
@@ -58,7 +67,10 @@ func listKnownRoutes(reader api.Reader) http.HandlerFunc {
 				limit = int32(l)
 			}
 		}
-		routes, err := reader.ListKnownRoutes(r.Context(), iata, hopCount, cursor, limit)
+		routes, err := reader.ListKnownRoutes(r.Context(), api.RouteListParams{
+			IATAs: iatas, HopCount: hopCount, LegacyCursor: cursor, PageToken: pageToken,
+			Sort: sort, Direction: direction, Limit: limit,
+		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return

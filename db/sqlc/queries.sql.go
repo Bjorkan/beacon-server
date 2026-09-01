@@ -2121,19 +2121,43 @@ func (q *Queries) ListIATAs(ctx context.Context) ([]IataCode, error) {
 }
 
 const listKnownRoutes = `-- name: ListKnownRoutes :many
-SELECT id, node_ids, hash_prefix, iata, hop_count, first_seen, last_seen, observation_count
-FROM known_routes
-WHERE ($1 = '' OR iata = $1)
-  AND ($2 = 0 OR hop_count = $2)
-  AND ($3::timestamptz IS NULL OR last_seen < $3)
-ORDER BY last_seen DESC
-LIMIT $4
+WITH route_keyed AS (
+  SELECT id, node_ids, hash_prefix, iata, hop_count, first_seen, last_seen, observation_count,
+    CASE $4::text
+      WHEN 'iata' THEN lower(iata::text)
+      WHEN 'hops' THEN lpad(hop_count::text, 20, '0')
+      WHEN 'observations' THEN lpad(observation_count::text, 20, '0')
+      WHEN 'first_seen' THEN lpad((extract(epoch from first_seen) * 1000)::bigint::text, 20, '0')
+      ELSE lpad((extract(epoch from last_seen) * 1000)::bigint::text, 20, '0')
+    END::text AS page_sort_key
+  FROM known_routes
+  WHERE (COALESCE(cardinality($1::bpchar[]), 0) = 0 OR iata = ANY($1::bpchar[]))
+    AND ($2 = 0 OR hop_count = $2)
+    AND ($3::timestamptz IS NULL OR last_seen < $3)
+)
+SELECT id, node_ids, hash_prefix, iata, hop_count, first_seen, last_seen, observation_count,
+       page_sort_key
+FROM route_keyed
+WHERE NOT $6::bool
+  OR ($5::text = 'asc' AND (page_sort_key > $7::text OR (page_sort_key = $7::text AND id > $8::bigint)))
+  OR ($5::text = 'desc' AND (page_sort_key < $7::text OR (page_sort_key = $7::text AND id < $8::bigint)))
+ORDER BY
+  CASE WHEN $5::text = 'asc' THEN page_sort_key END ASC,
+  CASE WHEN $5::text = 'desc' THEN page_sort_key END DESC,
+  CASE WHEN $5::text = 'asc' THEN id END ASC,
+  CASE WHEN $5::text = 'desc' THEN id END DESC
+LIMIT $9
 `
 
 type ListKnownRoutesParams struct {
-	Column1 interface{}        `json:"column_1"`
+	Column1 []string           `json:"column_1"`
 	Column2 interface{}        `json:"column_2"`
 	Column3 pgtype.Timestamptz `json:"column_3"`
+	Column4 string             `json:"column_4"`
+	Column5 string             `json:"column_5"`
+	Column6 bool               `json:"column_6"`
+	Column7 string             `json:"column_7"`
+	Column8 int64              `json:"column_8"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -2146,6 +2170,7 @@ type ListKnownRoutesRow struct {
 	FirstSeen        pgtype.Timestamptz `json:"first_seen"`
 	LastSeen         pgtype.Timestamptz `json:"last_seen"`
 	ObservationCount int64              `json:"observation_count"`
+	PageSortKey      string             `json:"page_sort_key"`
 }
 
 func (q *Queries) ListKnownRoutes(ctx context.Context, arg ListKnownRoutesParams) ([]ListKnownRoutesRow, error) {
@@ -2153,6 +2178,11 @@ func (q *Queries) ListKnownRoutes(ctx context.Context, arg ListKnownRoutesParams
 		arg.Column1,
 		arg.Column2,
 		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+		arg.Column7,
+		arg.Column8,
 		arg.Limit,
 	)
 	if err != nil {
@@ -2171,6 +2201,7 @@ func (q *Queries) ListKnownRoutes(ctx context.Context, arg ListKnownRoutesParams
 			&i.FirstSeen,
 			&i.LastSeen,
 			&i.ObservationCount,
+			&i.PageSortKey,
 		); err != nil {
 			return nil, err
 		}
@@ -2850,18 +2881,39 @@ WHERE
   AND ($4::timestamptz IS NULL OR p.first_heard_at <= $4)
   AND ($5::timestamptz IS NULL OR p.last_heard_at < $5)
   AND (COALESCE(cardinality($7::text[]), 0) = 0 OR ts.name = ANY($7::text[]))
+  AND (COALESCE(cardinality($8::uuid[]), 0) = 0 OR EXISTS (
+    SELECT 1 FROM packet_observations pof
+    WHERE pof.packet_hash = p.packet_hash AND pof.observer_id = ANY($8::uuid[])
+  ))
+  AND ($10::text = '' OR CASE $9::text
+    WHEN 'hash' THEN strpos(encode(p.packet_hash, 'hex'), lower($10::text)) > 0
+    WHEN 'path' THEN EXISTS (
+      SELECT 1 FROM packet_observations pos
+      WHERE pos.packet_hash = p.packet_hash
+        AND pos.path_bytes IS NOT NULL
+        AND strpos(encode(pos.path_bytes, 'hex'), lower($10::text)) > 0
+    )
+    WHEN 'payload' THEN
+      strpos(lower(encode(p.raw_payload, 'escape')), lower($10::text)) > 0
+      OR strpos(encode(p.raw_payload, 'hex'), lower($10::text)) > 0
+      OR strpos(lower(COALESCE(p.parsed_payload::text, '')), lower($10::text)) > 0
+    ELSE FALSE
+  END)
 ORDER BY p.last_heard_at DESC
 LIMIT $6
 `
 
 type ListPacketsParams struct {
-	Column1 []int16            `json:"column_1"`
-	Column2 []int16            `json:"column_2"`
-	Column3 pgtype.Timestamptz `json:"column_3"`
-	Column4 pgtype.Timestamptz `json:"column_4"`
-	Column5 pgtype.Timestamptz `json:"column_5"`
-	Limit   int32              `json:"limit"`
-	Column7 []string           `json:"column_7"`
+	Column1  []int16            `json:"column_1"`
+	Column2  []int16            `json:"column_2"`
+	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column4  pgtype.Timestamptz `json:"column_4"`
+	Column5  pgtype.Timestamptz `json:"column_5"`
+	Limit    int32              `json:"limit"`
+	Column7  []string           `json:"column_7"`
+	Column8  []uuid.UUID        `json:"column_8"`
+	Column9  string             `json:"column_9"`
+	Column10 string             `json:"column_10"`
 }
 
 type ListPacketsRow struct {
@@ -2894,6 +2946,9 @@ func (q *Queries) ListPackets(ctx context.Context, arg ListPacketsParams) ([]Lis
 		arg.Column5,
 		arg.Limit,
 		arg.Column7,
+		arg.Column8,
+		arg.Column9,
+		arg.Column10,
 	)
 	if err != nil {
 		return nil, err
@@ -3062,8 +3117,24 @@ FROM (
       AND (COALESCE(cardinality($7::text[]), 0) = 0 OR EXISTS (
         SELECT 1 FROM transport_scopes ts2
         WHERE ts2.id = p2.scope_id AND ts2.name = ANY($7::text[])))
+      AND (COALESCE(cardinality($8::uuid[]), 0) = 0 OR EXISTS (
+        SELECT 1 FROM packet_observations pof
+        WHERE pof.packet_hash = p2.packet_hash AND pof.observer_id = ANY($8::uuid[])))
+      AND ($9::text = '' OR CASE $10::text
+        WHEN 'hash' THEN strpos(encode(p2.packet_hash, 'hex'), lower($9::text)) > 0
+        WHEN 'path' THEN EXISTS (
+          SELECT 1 FROM packet_observations pos
+          WHERE pos.packet_hash = p2.packet_hash
+            AND pos.path_bytes IS NOT NULL
+            AND strpos(encode(pos.path_bytes, 'hex'), lower($9::text)) > 0)
+        WHEN 'payload' THEN
+          strpos(lower(encode(p2.raw_payload, 'escape')), lower($9::text)) > 0
+          OR strpos(encode(p2.raw_payload, 'hex'), lower($9::text)) > 0
+          OR strpos(lower(COALESCE(p2.parsed_payload::text, '')), lower($9::text)) > 0
+        ELSE FALSE
+      END)
     ORDER BY po3.heard_at DESC
-    LIMIT $8
+    LIMIT $11
   ) hits
   GROUP BY hits.packet_hash
   HAVING ($2::timestamptz IS NULL OR NOT EXISTS (
@@ -3072,7 +3143,7 @@ FROM (
       AND px.iata = ANY($1::bpchar[])
       AND px.heard_at >= $2))
   ORDER BY site_heard_at DESC
-  LIMIT $9
+  LIMIT $12
 ) sh
 JOIN packets p ON p.packet_hash = sh.packet_hash
 LEFT JOIN LATERAL (
@@ -3095,6 +3166,9 @@ type ListPacketsByIATAsParams struct {
 	SinceTs      pgtype.Timestamptz `json:"since_ts"`
 	UntilTs      pgtype.Timestamptz `json:"until_ts"`
 	ScopeNames   []string           `json:"scope_names"`
+	ObserverIds  []uuid.UUID        `json:"observer_ids"`
+	SearchQuery  string             `json:"search_query"`
+	SearchField  string             `json:"search_field"`
 	ScanDepth    int32              `json:"scan_depth"`
 	PageLimit    int32              `json:"page_limit"`
 }
@@ -3136,6 +3210,9 @@ func (q *Queries) ListPacketsByIATAs(ctx context.Context, arg ListPacketsByIATAs
 		arg.SinceTs,
 		arg.UntilTs,
 		arg.ScopeNames,
+		arg.ObserverIds,
+		arg.SearchQuery,
+		arg.SearchField,
 		arg.ScanDepth,
 		arg.PageLimit,
 	)

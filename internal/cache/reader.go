@@ -425,8 +425,8 @@ func (cr *CachedReader) ListObserverAdverts(ctx context.Context, observerID uuid
 }
 
 // ListPackets implements [api.Reader].
-func (cr *CachedReader) ListPackets(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32, includeResolvedPath bool) (api.Page[api.PacketSummary], error) {
-	return cr.inner.ListPackets(ctx, payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit, includeResolvedPath)
+func (cr *CachedReader) ListPackets(ctx context.Context, params api.PacketListParams) (api.Page[api.PacketSummary], error) {
+	return cr.inner.ListPackets(ctx, params)
 }
 
 // ListPacketsAfterID implements [api.Reader].
@@ -435,8 +435,8 @@ func (cr *CachedReader) ListPacketsAfterID(ctx context.Context, afterObservation
 }
 
 // ListKnownRoutes implements [api.Reader].
-func (cr *CachedReader) ListKnownRoutes(ctx context.Context, iata string, hopCount int32, cursor time.Time, limit int32) ([]api.KnownRoute, error) {
-	return cr.inner.ListKnownRoutes(ctx, iata, hopCount, cursor, limit)
+func (cr *CachedReader) ListKnownRoutes(ctx context.Context, params api.RouteListParams) (api.Page[api.KnownRoute], error) {
+	return cr.inner.ListKnownRoutes(ctx, params)
 }
 
 // SearchKnownRoutes implements [api.Reader].

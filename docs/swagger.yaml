@@ -790,6 +790,19 @@ definitions:
       nextPageToken:
         type: string
     type: object
+  github_com_MeshCore-Beacon_beacon-server_internal_api.Page-github_com_MeshCore-Beacon_beacon-server_internal_api_KnownRoute:
+    properties:
+      hasMore:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.KnownRoute'
+        type: array
+      nextCursor:
+        type: integer
+      nextPageToken:
+        type: string
+    type: object
   github_com_MeshCore-Beacon_beacon-server_internal_api.Page-github_com_MeshCore-Beacon_beacon-server_internal_api_NodeSummary:
     properties:
       hasMore:
@@ -1871,6 +1884,22 @@ paths:
         in: query
         name: scopes
         type: string
+      - description: Filter by observer UUID
+        in: query
+        name: observer
+        type: string
+      - description: Filter by multiple observer UUIDs, comma-separated
+        in: query
+        name: observers
+        type: string
+      - description: Search text
+        in: query
+        name: q
+        type: string
+      - description: 'Search field: hash, path or payload (default hash)'
+        in: query
+        name: searchField
+        type: string
       - description: Filter by region ID, expands to member IATAs
         in: query
         name: regionId
@@ -2061,9 +2090,13 @@ paths:
   /routes:
     get:
       parameters:
-      - description: Filter by IATA code
+      - description: Filter by IATA code (legacy singular form)
         in: query
         name: iata
+        type: string
+      - description: Filter by IATA codes, comma-separated
+        in: query
+        name: iatas
         type: string
       - description: Filter by exact hop count
         in: query
@@ -2073,6 +2106,18 @@ paths:
         in: query
         name: cursor
         type: integer
+      - description: Opaque keyset cursor returned as nextPageToken
+        in: query
+        name: pageToken
+        type: string
+      - description: Sort by iata, hops, observations, first_seen or last_seen
+        in: query
+        name: sort
+        type: string
+      - description: 'Sort direction: asc or desc'
+        in: query
+        name: direction
+        type: string
       - description: Max results (default 50)
         in: query
         name: limit
@@ -2083,9 +2128,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.KnownRoute'
-            type: array
+            $ref: '#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.Page-github_com_MeshCore-Beacon_beacon-server_internal_api_KnownRoute'
         "500":
           description: Internal Server Error
           schema:

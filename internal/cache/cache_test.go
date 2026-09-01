@@ -169,7 +169,7 @@ func (s *stubReader) ListObserverAdverts(_ context.Context, _ uuid.UUID, _ int64
 	return api.Page[api.AdvertObservation]{}, nil
 }
 
-func (s *stubReader) ListPackets(_ context.Context, _, _ []int16, _ []string, _ []string, _, _ time.Time, _ int64, _ int32, _ bool) (api.Page[api.PacketSummary], error) {
+func (s *stubReader) ListPackets(_ context.Context, _ api.PacketListParams) (api.Page[api.PacketSummary], error) {
 	return api.Page[api.PacketSummary]{}, nil
 }
 
@@ -177,8 +177,8 @@ func (s *stubReader) ListPacketsAfterID(_ context.Context, _ int64, _, _ int16, 
 	return nil, nil
 }
 
-func (s *stubReader) ListKnownRoutes(_ context.Context, _ string, _ int32, _ time.Time, _ int32) ([]api.KnownRoute, error) {
-	return nil, nil
+func (s *stubReader) ListKnownRoutes(_ context.Context, _ api.RouteListParams) (api.Page[api.KnownRoute], error) {
+	return api.Page[api.KnownRoute]{}, nil
 }
 
 func (s *stubReader) SearchKnownRoutes(_ context.Context, _, _, _ string) ([]api.KnownRoute, error) {

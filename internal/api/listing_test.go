@@ -50,6 +50,20 @@ func TestPageTokenRoundTripEmptySortValue(t *testing.T) {
 	}
 }
 
+func TestPageTokenRoundTripNumericID(t *testing.T) {
+	want := PageToken{
+		Version: PageTokenVersion, Collection: PageCollectionRoutes, Sort: RouteSortHops,
+		Direction: SortAsc, Key: "00000000000000000002", NumericID: 42,
+	}
+	got, err := DecodePageToken(EncodePageToken(want))
+	if err != nil {
+		t.Fatalf("DecodePageToken() error = %v", err)
+	}
+	if got == nil || *got != want {
+		t.Fatalf("DecodePageToken() = %#v, want %#v", got, want)
+	}
+}
+
 func TestDecodePageTokenRejectsMalformedValues(t *testing.T) {
 	tests := []string{
 		"not-base64!",
@@ -85,5 +99,14 @@ func TestValidListSorts(t *testing.T) {
 	}
 	if ValidObserverSort("neighbors") {
 		t.Error("ValidObserverSort(neighbors) = true")
+	}
+
+	for _, sort := range []string{RouteSortIATA, RouteSortHops, RouteSortObservations, RouteSortFirstSeen, RouteSortLastSeen} {
+		if !ValidRouteSort(sort) {
+			t.Errorf("ValidRouteSort(%q) = false", sort)
+		}
+	}
+	if ValidRouteSort("route") {
+		t.Error("ValidRouteSort(route) = true")
 	}
 }

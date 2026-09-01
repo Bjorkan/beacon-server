@@ -1096,6 +1096,30 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "Filter by observer UUID",
+                        "name": "observer",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by multiple observer UUIDs, comma-separated",
+                        "name": "observers",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search text",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search field: hash, path or payload (default hash)",
+                        "name": "searchField",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "Filter by region ID, expands to member IATAs",
                         "name": "regionId",
@@ -1383,8 +1407,14 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Filter by IATA code",
+                        "description": "Filter by IATA code (legacy singular form)",
                         "name": "iata",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by IATA codes, comma-separated",
+                        "name": "iatas",
                         "in": "query"
                     },
                     {
@@ -1400,6 +1430,24 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "Opaque keyset cursor returned as nextPageToken",
+                        "name": "pageToken",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort by iata, hops, observations, first_seen or last_seen",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort direction: asc or desc",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "Max results (default 50)",
                         "name": "limit",
@@ -1410,10 +1458,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.KnownRoute"
-                            }
+                            "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.Page-github_com_MeshCore-Beacon_beacon-server_internal_api_KnownRoute"
                         }
                     },
                     "500": {
@@ -3429,6 +3474,26 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ChannelSummary"
+                    }
+                },
+                "nextCursor": {
+                    "type": "integer"
+                },
+                "nextPageToken": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_MeshCore-Beacon_beacon-server_internal_api.Page-github_com_MeshCore-Beacon_beacon-server_internal_api_KnownRoute": {
+            "type": "object",
+            "properties": {
+                "hasMore": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.KnownRoute"
                     }
                 },
                 "nextCursor": {

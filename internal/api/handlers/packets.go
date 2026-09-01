@@ -10,9 +10,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 const packetIncludeResolvedPath = "resolvedPath"
@@ -63,6 +65,10 @@ func PacketsRouter(reader api.Reader) http.Handler {
 //	@Param		iatas			query		string	false	"Filter by multiple IATA codes, comma-separated e.g. YVR,YYJ"
 //	@Param		scope	query		string	false	"Filter by transport scope name e.g. %23bc (URL-encoded #bc)"
 //	@Param		scopes	query		string	false	"Filter by multiple transport scope names, comma-separated e.g. %23bc,%23west"
+//	@Param		observer	query		string	false	"Filter by observer UUID"
+//	@Param		observers	query		string	false	"Filter by multiple observer UUIDs, comma-separated"
+//	@Param		q	query		string	false	"Search text"
+//	@Param		searchField	query		string	false	"Search field: hash, path or payload (default hash)"
 //	@Param		regionId		query		int		false	"Filter by region ID, expands to member IATAs"
 //	@Param		region			query		string	false	"Filter by region slug, expands to member IATAs"
 //	@Param		since			query		int		false	"Filter by first_heard_at >= since (epoch ms)"
@@ -136,12 +142,44 @@ func listPackets(reader api.Reader) http.HandlerFunc {
 			iatas = append(iatas, regionIATAs...)
 		}
 		scopes := parseCSVOrSingle(r, "scopes", "scope")
+		observerValues := parseCSVOrSingle(r, "observers", "observer")
+		observerIDs := make([]uuid.UUID, 0, len(observerValues))
+		for _, value := range observerValues {
+			id, err := uuid.Parse(value)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "observer/observers must contain UUIDs")
+				return
+			}
+			observerIDs = append(observerIDs, id)
+		}
+		search := strings.TrimSpace(r.URL.Query().Get("q"))
+		searchField := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("searchField")))
+		if searchField == "" {
+			searchField = api.PacketSearchHash
+		}
+		if !api.ValidPacketSearchField(searchField) {
+			respondError(w, http.StatusBadRequest, "searchField must be hash, path or payload")
+			return
+		}
+		if searchField == api.PacketSearchHash || searchField == api.PacketSearchPath {
+			search = strings.Map(func(r rune) rune {
+				if unicode.IsSpace(r) || r == ':' || r == '-' {
+					return -1
+				}
+				return unicode.ToLower(r)
+			}, search)
+		}
 		includeResolvedPath, err := parsePacketIncludes(r)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		packets, err := reader.ListPackets(r.Context(), payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit, includeResolvedPath)
+		packets, err := reader.ListPackets(r.Context(), api.PacketListParams{
+			PayloadTypes: payloadTypes, RouteTypes: routeTypes, IATAs: iatas, Scopes: scopes,
+			ObserverIDs: observerIDs, SearchField: searchField, Search: search,
+			Since: since, Until: until, LegacyCursor: cursor, Limit: limit,
+			IncludeResolvedPath: includeResolvedPath,
+		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
