@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
@@ -296,7 +297,12 @@ func (s *Store) GetObserverActivity(ctx context.Context, observerID uuid.UUID, w
 			if r.SnrN > 0 {
 				avg := r.SnrSum / float32(r.SnrN)
 				min := r.SnrMin
-				p.SNRAvg, p.SNRMin = &avg, &min
+				if !math.IsNaN(float64(avg)) && !math.IsInf(float64(avg), 0) {
+					p.SNRAvg = &avg
+				}
+				if !math.IsNaN(float64(min)) && !math.IsInf(float64(min), 0) {
+					p.SNRMin = &min
+				}
 			}
 			if r.RssiN > 0 {
 				avg := float32(r.RssiSum) / float32(r.RssiN)
@@ -346,7 +352,12 @@ func (s *Store) GetObserverActivity(ctx context.Context, observerID uuid.UUID, w
 		}
 		if r.SnrN > 0 {
 			avg, min := r.SnrAvg, r.SnrMin
-			p.SNRAvg, p.SNRMin = &avg, &min
+			if !math.IsNaN(float64(avg)) && !math.IsInf(float64(avg), 0) {
+				p.SNRAvg = &avg
+			}
+			if !math.IsNaN(float64(min)) && !math.IsInf(float64(min), 0) {
+				p.SNRMin = &min
+			}
 		}
 		if r.RssiN > 0 {
 			avg := r.RssiAvg

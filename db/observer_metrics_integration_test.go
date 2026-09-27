@@ -3,6 +3,7 @@
 package db
 
 import (
+	"encoding/json"
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -30,7 +31,7 @@ func TestObserverMetricsPostgres(t *testing.T) {
  INSERT INTO observers (id,public_key) VALUES ('00000000-0000-0000-0000-000000000001','\x01');
  INSERT INTO packets(packet_hash,payload_type,last_heard_at,first_heard_at) SELECT int4send(i),4,NOW()-interval '5 days',NOW()-interval '5 days' FROM generate_series(1,3) i;
  INSERT INTO packet_observations(packet_hash,observer_id,iata,heard_at,path_length_byte,hash_size,hop_count,payload_type,snr,rssi)
- SELECT packet_hash,'00000000-0000-0000-0000-000000000001','YOW',date_trunc('hour',NOW())-interval '5 days',0,1,0,CASE WHEN packet_hash=int4send(1) THEN 4 END,0,-100 FROM packets;
+ SELECT packet_hash,'00000000-0000-0000-0000-000000000001','YOW',date_trunc('hour',NOW())-interval '5 days',0,1,0,CASE WHEN packet_hash=int4send(1) THEN 4 END,CASE WHEN packet_hash=int4send(2) THEN 'NaN'::real ELSE 0 END,-100 FROM packets;
  `); err != nil {
 		t.Fatal(err)
 	}
@@ -47,6 +48,9 @@ func TestObserverMetricsPostgres(t *testing.T) {
 	activity, err := store.GetObserverActivity(ctx, id, 7*24*time.Hour, time.Hour, until)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := json.Marshal(activity); err != nil {
+		t.Fatalf("non-finite sample leaked into JSON: %v", err)
 	}
 	if activity.Summary.RecordedPackets != 3 || len(activity.PayloadTypes) != 2 || activity.Summary.LatestRecordedAt != nil || activity.Summary.LastCompleteHour != 0 {
 		t.Fatalf("archive summary: %+v types=%+v", activity.Summary, activity.PayloadTypes)
