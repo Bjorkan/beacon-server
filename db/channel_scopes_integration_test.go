@@ -131,7 +131,7 @@ SELECT packet_hash,md5(n::text)::uuid,'YOW',NOW(),0,1,0 FROM packets CROSS JOIN 
 	router := chi.NewRouter()
 	router.Mount("/channels", handlers.ChannelsRouter(s))
 	router.Mount("/messages", handlers.MessagesRouter(s))
-	for _, path := range []string{"/channels/123/messages", "/messages", "/messages?channelHash=11", "/messages/backfill?after=0"} {
+	for _, path := range []string{"/channels/123/messages", "/messages", "/messages?channelHash=11", "/messages/backfill?afterId=0"} {
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, httptest.NewRequest("GET", path, nil).WithContext(ctx))
 		if response.Code != 200 {
