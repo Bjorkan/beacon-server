@@ -22,6 +22,10 @@ func TestRouteEvidenceQuery(t *testing.T) {
 	if err != nil || q.Limit != 50 || q.Until != now || q.Until.Sub(q.Since) != 24*time.Hour {
 		t.Fatalf("defaults: %+v %v", q, err)
 	}
+	week, err := routeEvidenceQuery(httptest.NewRequest("GET", "/?range=168h", nil), "YOW", evidenceKey, now)
+	if err != nil || !week.Until.Equal(now) || week.Until.Sub(week.Since) != 7*24*time.Hour {
+		t.Fatalf("server anchored range: %+v %v", week, err)
+	}
 	c := api.RouteEvidenceCursor{IATA: "YOW", PathKey: evidenceKey, Since: q.Since, Until: q.Until, HeardAt: q.Since.Add(time.Hour + 123*time.Microsecond), ID: 3}
 	next, err := routeEvidenceQuery(httptest.NewRequest("GET", "/?pageCursor="+url.QueryEscape(c.String())+"&limit=999", nil), "YOW", evidenceKey, now.Add(time.Hour))
 	if err != nil || next.Limit != 200 || !next.Until.Equal(now) || !next.Cursor.HeardAt.Equal(c.HeardAt) {
@@ -34,6 +38,11 @@ func TestRouteEvidenceQuery(t *testing.T) {
 	}
 	if _, err := routeEvidenceQuery(httptest.NewRequest("GET", "/?pageCursor="+url.QueryEscape(c.String()), nil), "YVR", evidenceKey, now); err == nil {
 		t.Fatal("cursor crossed IATA")
+	}
+	for _, query := range []string{"range=0h", "range=-1h", "range=721h", "range=1ns", "range=7d", "range=24h&range=168h", "range=24h&since=0&until=10", "range=24h&pageCursor=" + url.QueryEscape(c.String())} {
+		if _, err := routeEvidenceQuery(httptest.NewRequest("GET", "/?"+query, nil), "YOW", evidenceKey, now); err == nil {
+			t.Errorf("accepted %s", query)
+		}
 	}
 }
 
