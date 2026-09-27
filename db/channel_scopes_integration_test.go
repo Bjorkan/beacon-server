@@ -53,8 +53,8 @@ INSERT INTO transport_scopes(id,name,transport_key,key_fingerprint) VALUES
 (1,'#yow',decode(repeat('00',16),'hex'),decode(repeat('01',8),'hex')),
 (2,'#can',decode(repeat('02',16),'hex'),decode(repeat('03',8),'hex'));
 INSERT INTO channels(id,channel_hash,key_fingerprint,name,is_hashtag,key_known) VALUES (123,'\x11','\x01020304','#fixture',true,true);
-INSERT INTO packets(packet_hash,payload_type,payload_version,route_type,transport_codes_present,scope_id,raw_payload,raw_header)
-SELECT decode(lpad(to_hex(i),2,'0'),'hex'),5,0,1,transport,scope_id,'\x00','\x15'
+INSERT INTO packets(packet_hash,payload_type,payload_version,route_type,transport_codes_present,scope_id,raw_payload,raw_header,first_heard_at,last_heard_at)
+SELECT decode(lpad(to_hex(i),2,'0'),'hex'),5,0,1,transport,scope_id,'\x00','\x15',NOW(),NOW()
 FROM (VALUES(1,true,1),(2,true,NULL),(3,false,NULL),(4,NULL,NULL),(5,true,2),(6,false,NULL)) v(i,transport,scope_id);
 INSERT INTO packet_observations(packet_hash,observer_id,iata,heard_at,path_length_byte,hash_size,hop_count)
 SELECT packet_hash,md5(n::text)::uuid,'YOW',NOW(),0,1,0 FROM packets CROSS JOIN generate_series(1,2) n;
