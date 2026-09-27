@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -193,9 +194,10 @@ func TestNoRedirectAndResponseBounds(t *testing.T) {
 	targetCalls := 0
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { targetCalls++ }))
 	defer target.Close()
-	mode := "redirect"
+	var mode atomic.Value
+	mode.Store("redirect")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch mode {
+		switch mode.Load().(string) {
 		case "redirect":
 			http.Redirect(w, r, target.URL, 302)
 		case "oversize":
@@ -217,7 +219,7 @@ func TestNoRedirectAndResponseBounds(t *testing.T) {
 	}
 	imp.client.Timeout = 20 * time.Millisecond
 	for _, value := range []string{"redirect", "oversize", "timeout", "304"} {
-		mode = value
+		mode.Store(value)
 		if err := imp.refresh(context.Background(), &imp.sources[0], time.Now()); err != nil {
 			t.Fatal(err)
 		}
