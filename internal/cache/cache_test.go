@@ -366,7 +366,7 @@ func TestCachedReader_IATASortingForStableKey(t *testing.T) {
 		return &api.StatsOverview{TotalPackets: 42}, nil
 	})
 
-	// call CachedReader with reversed order — should hit same key
+	// call CachedReader with reversed order â€” should hit same key
 	_ = cr
 	result, err := getOrSet(context.Background(), c, "beacon:stats:overview:YVR,YYJ", time.Minute, func() (*api.StatsOverview, error) {
 		calls++
@@ -417,4 +417,8 @@ func TestCachedReader_InvalidateObserver(t *testing.T) {
 	if mr.Exists(keyObserverScopesPrefix + observerID.String()) {
 		t.Error("expected observer scopes key to be deleted")
 	}
+}
+
+func (s *stubReader) GetRouteEvidence(_ context.Context, _, _ string, _ api.RouteEvidenceQuery) (*api.RouteEvidence, error) {
+	return nil, nil
 }

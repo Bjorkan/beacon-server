@@ -467,6 +467,11 @@ func (cr *CachedReader) SearchKnownRoutes(ctx context.Context, iata, fromHash, t
 	return cr.inner.SearchKnownRoutes(ctx, iata, fromHash, toHash)
 }
 
+// Precise cursor/window combinations are intentionally passed through, like route lists.
+func (cr *CachedReader) GetRouteEvidence(ctx context.Context, iata, key string, query api.RouteEvidenceQuery) (*api.RouteEvidence, error) {
+	return cr.inner.GetRouteEvidence(ctx, iata, key, query)
+}
+
 // SearchCrossIATARoutes implements [api.Reader].
 func (cr *CachedReader) SearchCrossIATARoutes(ctx context.Context, fromHash, fromIATA, toHash, toIATA string) ([]api.CrossIATARoute, error) {
 	return cr.inner.SearchCrossIATARoutes(ctx, fromHash, fromIATA, toHash, toIATA)

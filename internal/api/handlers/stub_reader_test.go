@@ -16,6 +16,7 @@ import (
 // Unset fields return zero values. Use it for both validation tests
 // (leave all fields nil) and happy path tests (set only what you need).
 type stubReader struct {
+	getRouteEvidence             func(context.Context, string, string, api.RouteEvidenceQuery) (*api.RouteEvidence, error)
 	getObserverComparison        func(context.Context, uuid.UUID, uuid.UUID, time.Time, time.Time, []string) (*api.ObserverComparison, error)
 	listIATAs                    func(ctx context.Context) ([]api.IATA, error)
 	getIATA                      func(ctx context.Context, iata string) (*api.IATA, error)
@@ -406,6 +407,13 @@ func (s stubReader) SearchCrossIATARoutes(ctx context.Context, fromHash, fromIAT
 func (s stubReader) GetNodesByIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*api.ResolvedNode, error) {
 	if s.getNodesByIDs != nil {
 		return s.getNodesByIDs(ctx, ids)
+	}
+	return nil, nil
+}
+
+func (s stubReader) GetRouteEvidence(ctx context.Context, iata, key string, q api.RouteEvidenceQuery) (*api.RouteEvidence, error) {
+	if s.getRouteEvidence != nil {
+		return s.getRouteEvidence(ctx, iata, key, q)
 	}
 	return nil, nil
 }

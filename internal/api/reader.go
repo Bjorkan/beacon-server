@@ -23,6 +23,8 @@ type Page[T any] struct {
 }
 
 type Reader interface {
+	// GetRouteEvidence returns the full saved route and exact-prefix retained ordinary reports.
+	GetRouteEvidence(ctx context.Context, iata, pathKey string, query RouteEvidenceQuery) (*RouteEvidence, error)
 	// ListIATAs returns all known IATA codes with display name and coordinates.
 	// IATAs are auto-created on first packet arrival from that location.
 	ListIATAs(ctx context.Context) ([]IATA, error)

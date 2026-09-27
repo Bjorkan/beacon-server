@@ -87,6 +87,7 @@ type Querier interface {
 	GetRegion(ctx context.Context, id int32) (GetRegionRow, error)
 	GetRegionBySlug(ctx context.Context, slug string) (GetRegionBySlugRow, error)
 	GetRegionIATAs(ctx context.Context, regionID int32) ([]string, error)
+	GetRouteEvidenceRoute(ctx context.Context, arg GetRouteEvidenceRouteParams) (KnownRoute, error)
 	GetScopeByName(ctx context.Context, name string) (GetScopeByNameRow, error)
 	GetScopeNames(ctx context.Context) ([]string, error)
 	// Aggregate matching observations once, separately from node memberships to avoid
@@ -198,6 +199,10 @@ type Querier interface {
 	// REGIONS
 	// ============================================================
 	ListRegions(ctx context.Context) ([]ListRegionsRow, error)
+	// Leading index equalities and the time/ID boundary bound both custom and generic plans.
+	// Full-byte equality is required even when the compact digest matches. TRACE path bytes
+	// carry readings; unclassified legacy observations cannot be safely called ordinary paths.
+	ListRouteEvidence(ctx context.Context, arg ListRouteEvidenceParams) ([]ListRouteEvidenceRow, error)
 	// ============================================================
 	// TRACES
 	// ============================================================

@@ -2131,6 +2131,92 @@ const docTemplate = `{
                 }
             }
         },
+        "/routes/{iata}/{pathKey}/observations": {
+            "get": {
+                "description": "Matches the saved IATA, complete path bytes and hash width. Excludes TRACE and unclassified reports; other widths and search-result subsegments are not included. Byte matches do not prove hop identities or delivery. The route and its historical counter can outlive raw evidence. Cursors retain full timestamp precision and pin route/window scope.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Routes"
+                ],
+                "summary": "Get retained reports matching a full saved route prefix sequence",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Three-character IATA code",
+                        "name": "iata",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Stable 32-hex pathKey from a known-route response",
+                        "name": "pathKey",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Server-anchored duration (default 24h, max 720h); exclusive with since/until/pageCursor",
+                        "name": "range",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window start epoch ms; provide with until (default last 24h)",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Exclusive window end epoch ms; maximum span 30d, no future end",
+                        "name": "until",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque precise cursor from nextPageCursor; window is pinned",
+                        "name": "pageCursor",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 200,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Default 50; positive, capped at 200",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.RouteEvidence"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/scopes": {
             "get": {
                 "produces": [
@@ -3601,6 +3687,10 @@ const docTemplate = `{
                 },
                 "observationCount": {
                     "type": "integer"
+                },
+                "pathKey": {
+                    "description": "stable identity within this IATA; use for route evidence links",
+                    "type": "string"
                 }
             }
         },
@@ -4845,6 +4935,50 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_MeshCore-Beacon_beacon-server_internal_api.RouteEvidence": {
+            "type": "object",
+            "properties": {
+                "generatedAt": {
+                    "type": "integer"
+                },
+                "hasMore": {
+                    "type": "boolean"
+                },
+                "hashSize": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.RouteObservation"
+                    }
+                },
+                "matchAvailable": {
+                    "type": "boolean"
+                },
+                "matchType": {
+                    "type": "string"
+                },
+                "nextCursor": {
+                    "type": "integer"
+                },
+                "nextPageCursor": {
+                    "type": "string"
+                },
+                "pathBytes": {
+                    "type": "string"
+                },
+                "route": {
+                    "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.KnownRoute"
+                },
+                "windowEnd": {
+                    "type": "integer"
+                },
+                "windowStart": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_MeshCore-Beacon_beacon-server_internal_api.RouteHop": {
             "type": "object",
             "properties": {
@@ -4862,6 +4996,38 @@ const docTemplate = `{
                 },
                 "nodeId": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_MeshCore-Beacon_beacon-server_internal_api.RouteObservation": {
+            "type": "object",
+            "properties": {
+                "heardAt": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "observerId": {
+                    "type": "string"
+                },
+                "observerName": {
+                    "type": "string"
+                },
+                "packetHash": {
+                    "type": "string"
+                },
+                "payloadType": {
+                    "type": "integer"
+                },
+                "payloadTypeName": {
+                    "type": "string"
+                },
+                "rssi": {
+                    "type": "integer"
+                },
+                "snr": {
+                    "type": "number"
                 }
             }
         },

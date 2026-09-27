@@ -684,6 +684,21 @@ func (mr *MockQuerierMockRecorder) GetRegionIATAs(ctx, regionID any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRegionIATAs", reflect.TypeOf((*MockQuerier)(nil).GetRegionIATAs), ctx, regionID)
 }
 
+// GetRouteEvidenceRoute mocks base method.
+func (m *MockQuerier) GetRouteEvidenceRoute(ctx context.Context, arg db.GetRouteEvidenceRouteParams) (db.KnownRoute, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRouteEvidenceRoute", ctx, arg)
+	ret0, _ := ret[0].(db.KnownRoute)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRouteEvidenceRoute indicates an expected call of GetRouteEvidenceRoute.
+func (mr *MockQuerierMockRecorder) GetRouteEvidenceRoute(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouteEvidenceRoute", reflect.TypeOf((*MockQuerier)(nil).GetRouteEvidenceRoute), ctx, arg)
+}
+
 // GetScopeByName mocks base method.
 func (m *MockQuerier) GetScopeByName(ctx context.Context, name string) (db.GetScopeByNameRow, error) {
 	m.ctrl.T.Helper()
@@ -1221,6 +1236,21 @@ func (m *MockQuerier) ListRegions(ctx context.Context) ([]db.ListRegionsRow, err
 func (mr *MockQuerierMockRecorder) ListRegions(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRegions", reflect.TypeOf((*MockQuerier)(nil).ListRegions), ctx)
+}
+
+// ListRouteEvidence mocks base method.
+func (m *MockQuerier) ListRouteEvidence(ctx context.Context, arg db.ListRouteEvidenceParams) ([]db.ListRouteEvidenceRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListRouteEvidence", ctx, arg)
+	ret0, _ := ret[0].([]db.ListRouteEvidenceRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListRouteEvidence indicates an expected call of ListRouteEvidence.
+func (mr *MockQuerierMockRecorder) ListRouteEvidence(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRouteEvidence", reflect.TypeOf((*MockQuerier)(nil).ListRouteEvidence), ctx, arg)
 }
 
 // ListTraceTags mocks base method.
