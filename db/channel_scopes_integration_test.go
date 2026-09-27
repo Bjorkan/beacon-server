@@ -6,13 +6,16 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
+	"github.com/MeshCore-Beacon/beacon-server/internal/api/handlers"
 	"github.com/MeshCore-Beacon/beacon-server/internal/ingest"
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -125,6 +128,23 @@ SELECT packet_hash,md5(n::text)::uuid,'YOW',NOW(),0,1,0 FROM packets CROSS JOIN 
 		t.Fatal(err)
 	}
 	check(catchup)
+	router := chi.NewRouter()
+	router.Mount("/channels", handlers.ChannelsRouter(s))
+	router.Mount("/messages", handlers.MessagesRouter(s))
+	for _, path := range []string{"/channels/123/messages", "/messages", "/messages?channelHash=11", "/messages/backfill?after=0"} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest("GET", path, nil).WithContext(ctx))
+		if response.Code != 200 {
+			t.Fatalf("%s: %d %s", path, response.Code, response.Body.String())
+		}
+		var body struct {
+			Items []api.ChannelMessage `json:"items"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		check(body.Items)
+	}
 	filtered, err := s.ListChannelMessages(ctx, &ch, time.Time{}, 20, []string{"YOW"}, "#yow", 0)
 	if err != nil || len(filtered.Items) != 1 || filtered.Items[0].Scope == nil || *filtered.Items[0].Scope != "#yow" {
 		t.Fatal(filtered, err)
