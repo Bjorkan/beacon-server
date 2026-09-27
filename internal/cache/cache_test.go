@@ -148,7 +148,7 @@ func (s *stubReader) GetObserverTelemetryBucketed(_ context.Context, _ uuid.UUID
 	return nil, nil
 }
 
-func (s *stubReader) GetObserverActivity(_ context.Context, _ uuid.UUID, _, _ time.Duration) (*api.ObserverActivity, error) {
+func (s *stubReader) GetObserverActivity(_ context.Context, _ uuid.UUID, _, _ time.Duration, _ time.Time) (*api.ObserverActivity, error) {
 	return nil, nil
 }
 

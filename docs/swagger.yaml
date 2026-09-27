@@ -521,6 +521,7 @@ definitions:
         description: epoch ms
         type: integer
       observationCount:
+        description: legacy cumulative presence counter; includes non-packet events
         type: integer
       observerType:
         description: e.g. "meshcoretomqtt", "meshcoreha"
@@ -560,6 +561,9 @@ definitions:
     type: object
   github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverActivity:
     properties:
+      generatedAt:
+        description: response computation time, not proof of continuous coverage
+        type: integer
       interval:
         type: string
       payloadTypes:
@@ -574,6 +578,17 @@ definitions:
         $ref: '#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverActivityRadio'
       range:
         type: string
+      source:
+        description: raw or hourly; missing records do not prove an outage
+        type: string
+      summary:
+        $ref: '#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverActivitySummary'
+      windowEnd:
+        description: exclusive complete-bucket end, epoch ms
+        type: integer
+      windowStart:
+        description: inclusive complete-bucket start, epoch ms
+        type: integer
     type: object
   github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverActivityPoint:
     properties:
@@ -602,6 +617,19 @@ definitions:
       preambleSymbols:
         type: integer
       sf:
+        type: integer
+    type: object
+  github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverActivitySummary:
+    properties:
+      lastCompleteHour:
+        type: integer
+      lastCompleteHourEnd:
+        type: integer
+      lastCompleteHourStart:
+        type: integer
+      latestRecordedAt:
+        type: integer
+      recordedPackets:
         type: integer
     type: object
   github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverBroker:
@@ -2401,6 +2429,11 @@ paths:
         in: query
         name: interval
         type: string
+      - description: Optional exclusive end in epoch milliseconds; aligned down to
+          a complete bucket, at most 30 days old
+        in: query
+        name: until
+        type: integer
       produces:
       - application/json
       responses:

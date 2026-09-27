@@ -1468,6 +1468,12 @@ const docTemplate = `{
                         "description": "Bucket size: 5m, 15m, 1h, 6h or 24h (default 15m)",
                         "name": "interval",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Optional exclusive end in epoch milliseconds; aligned down to a complete bucket, at most 30 days old",
+                        "name": "until",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -3924,6 +3930,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "observationCount": {
+                    "description": "legacy cumulative presence counter; includes non-packet events",
                     "type": "integer"
                 },
                 "observerType": {
@@ -3979,6 +3986,10 @@ const docTemplate = `{
         "github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverActivity": {
             "type": "object",
             "properties": {
+                "generatedAt": {
+                    "description": "response computation time, not proof of continuous coverage",
+                    "type": "integer"
+                },
                 "interval": {
                     "type": "string"
                 },
@@ -3999,6 +4010,21 @@ const docTemplate = `{
                 },
                 "range": {
                     "type": "string"
+                },
+                "source": {
+                    "description": "raw or hourly; missing records do not prove an outage",
+                    "type": "string"
+                },
+                "summary": {
+                    "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverActivitySummary"
+                },
+                "windowEnd": {
+                    "description": "exclusive complete-bucket end, epoch ms",
+                    "type": "integer"
+                },
+                "windowStart": {
+                    "description": "inclusive complete-bucket start, epoch ms",
+                    "type": "integer"
                 }
             }
         },
@@ -4042,6 +4068,26 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "sf": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverActivitySummary": {
+            "type": "object",
+            "properties": {
+                "lastCompleteHour": {
+                    "type": "integer"
+                },
+                "lastCompleteHourEnd": {
+                    "type": "integer"
+                },
+                "lastCompleteHourStart": {
+                    "type": "integer"
+                },
+                "latestRecordedAt": {
+                    "type": "integer"
+                },
+                "recordedPackets": {
                     "type": "integer"
                 }
             }

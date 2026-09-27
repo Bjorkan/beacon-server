@@ -201,8 +201,10 @@ func (s *stubDB) SetNodeCapability(_ context.Context, nodeID uuid.UUID, paths, t
 func (s *stubDB) UpsertObserver(_ context.Context, _ []byte) (uuid.UUID, string, error) {
 	return uuid.Nil, "", nil
 }
-func (s *stubDB) UpsertObserverBroker(_ context.Context, _ uuid.UUID, _ string) error { return nil }
-func (s *stubDB) UpsertIATA(_ context.Context, _ string) error                        { return nil }
+func (s *stubDB) UpsertObserverBroker(_ context.Context, _ uuid.UUID, _ string, _ bool) error {
+	return nil
+}
+func (s *stubDB) UpsertIATA(_ context.Context, _ string) error { return nil }
 func (s *stubDB) UpsertPacket(_ context.Context, _ UpsertPacketParams) (bool, error) {
 	return false, nil
 }

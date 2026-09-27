@@ -550,3 +550,21 @@ sub-hour observer activity, exact observer comparison and current entity/scope
 counts continue to describe retained raw data or current entities, rather than
 claiming archived packet detail. Archived summaries expire without waiting for
 new packet deletions. A failed archive leaves its entire raw batch intact.
+
+### Observer monitoring metrics
+
+Observer activity returns complete buckets in `[windowStart, windowEnd)`, plus
+`generatedAt`, `source` (`raw` or `hourly`) and `summary`. `recordedPackets` is the
+sum of stored observations in those buckets; repeated broker delivery of the
+same retained packet/observer pair counts once. Unknown payload types appear as
+`-1` rather than disappearing. `lastCompleteHour` uses the previous complete UTC
+hour and includes its own start/end; `latestRecordedAt` is the latest retained
+reception timestamp. Missing records do not prove downtime. The optional `until`
+(epoch milliseconds, within the last 30 days) aligns two observers' charts.
+
+The existing observer `observationCount` remains a legacy cumulative presence
+counter for compatibility, including status/neighbour events. It is not a
+period packet total. Broker presence and packet-arrival timestamps are now
+updated separately; this cannot reconstruct previously overwritten timestamps.
+Migration 040 repairs archived unknown-type counts from the all-payload observer
+rollup; radio samples already discarded for those legacy rows remain unknown.

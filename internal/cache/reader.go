@@ -372,10 +372,10 @@ func (cr *CachedReader) GetObserverTelemetryBucketed(ctx context.Context, observ
 }
 
 // GetObserverActivity implements [api.Reader].
-func (cr *CachedReader) GetObserverActivity(ctx context.Context, observerID uuid.UUID, window, interval time.Duration) (*api.ObserverActivity, error) {
-	key := keyObserverActivityPrefix + observerID.String() + ":" + window.String() + ":" + interval.String()
+func (cr *CachedReader) GetObserverActivity(ctx context.Context, observerID uuid.UUID, window, interval time.Duration, until time.Time) (*api.ObserverActivity, error) {
+	key := keyObserverActivityPrefix + observerID.String() + ":" + window.String() + ":" + interval.String() + ":" + until.UTC().Format(time.RFC3339Nano)
 	return getOrSet(ctx, cr.c, key, observerActivityTTL, func() (*api.ObserverActivity, error) {
-		return cr.inner.GetObserverActivity(ctx, observerID, window, interval)
+		return cr.inner.GetObserverActivity(ctx, observerID, window, interval, until)
 	})
 }
 

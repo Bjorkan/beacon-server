@@ -324,7 +324,7 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 		w.log.Error(fmt.Sprintf("db: upsert observer failed with packet from %s/%s", iata, pubkeyHex), "error", err)
 		return
 	}
-	err = w.db.UpsertObserverBroker(ctx, id, w.cfg.BrokerName)
+	err = w.db.UpsertObserverBroker(ctx, id, w.cfg.BrokerName, true)
 	if err != nil {
 		w.log.Error(fmt.Sprintf("db: update observer broker failed with packet from %s/%s", iata, pubkeyHex), "error", err)
 		return

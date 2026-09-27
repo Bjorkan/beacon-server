@@ -58,6 +58,8 @@ type Querier interface {
 	// Hour-or-coarser buckets summed from the hourly rollup; same COALESCE-plus-count shape as the raw query.
 	GetObserverActivityHourly(ctx context.Context, arg GetObserverActivityHourlyParams) ([]GetObserverActivityHourlyRow, error)
 	GetObserverActivityHourlyPayloadTypes(ctx context.Context, arg GetObserverActivityHourlyPayloadTypesParams) ([]GetObserverActivityHourlyPayloadTypesRow, error)
+	// Two indexed ranges, bounded to one observer; no legacy presence counters.
+	GetObserverActivityLiveSummary(ctx context.Context, arg GetObserverActivityLiveSummaryParams) (GetObserverActivityLiveSummaryRow, error)
 	// Sub-hour activity buckets straight off idx_observations_observer; no join to packets.
 	// Aggregates are COALESCEd and paired with a count column: sqlc types a cast expression as
 	// NOT NULL, so the counts are what tell the store a bucket had no costed or no signal rows.

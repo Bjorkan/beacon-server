@@ -650,7 +650,7 @@ SELECT
   COALESCE(SUM(rssi_sum), 0)::bigint AS rssi_sum,
   SUM(rssi_n)::bigint AS rssi_n
 FROM mv_observer_activity_hourly
-WHERE observer_id = $1 AND bucket >= $2::timestamptz
+WHERE observer_id = $1 AND bucket >= $2::timestamptz AND bucket < $4::timestamptz
 GROUP BY 1
 ORDER BY 1
 `
@@ -659,6 +659,7 @@ type GetObserverActivityHourlyParams struct {
 	ObserverID uuid.UUID          `json:"observer_id"`
 	Column2    pgtype.Timestamptz `json:"column_2"`
 	Column3    pgtype.Interval    `json:"column_3"`
+	Until      pgtype.Timestamptz `json:"until"`
 }
 
 type GetObserverActivityHourlyRow struct {
@@ -675,7 +676,12 @@ type GetObserverActivityHourlyRow struct {
 
 // Hour-or-coarser buckets summed from the hourly rollup; same COALESCE-plus-count shape as the raw query.
 func (q *Queries) GetObserverActivityHourly(ctx context.Context, arg GetObserverActivityHourlyParams) ([]GetObserverActivityHourlyRow, error) {
-	rows, err := q.db.Query(ctx, getObserverActivityHourly, arg.ObserverID, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, getObserverActivityHourly,
+		arg.ObserverID,
+		arg.Column2,
+		arg.Column3,
+		arg.Until,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -707,7 +713,7 @@ func (q *Queries) GetObserverActivityHourly(ctx context.Context, arg GetObserver
 const getObserverActivityHourlyPayloadTypes = `-- name: GetObserverActivityHourlyPayloadTypes :many
 SELECT payload_type, SUM(observations)::bigint AS count
 FROM mv_observer_activity_hourly
-WHERE observer_id = $1 AND bucket >= $2::timestamptz
+WHERE observer_id = $1 AND bucket >= $2::timestamptz AND bucket < $3::timestamptz
 GROUP BY payload_type
 ORDER BY count DESC
 `
@@ -715,6 +721,7 @@ ORDER BY count DESC
 type GetObserverActivityHourlyPayloadTypesParams struct {
 	ObserverID uuid.UUID          `json:"observer_id"`
 	Column2    pgtype.Timestamptz `json:"column_2"`
+	Until      pgtype.Timestamptz `json:"until"`
 }
 
 type GetObserverActivityHourlyPayloadTypesRow struct {
@@ -723,7 +730,7 @@ type GetObserverActivityHourlyPayloadTypesRow struct {
 }
 
 func (q *Queries) GetObserverActivityHourlyPayloadTypes(ctx context.Context, arg GetObserverActivityHourlyPayloadTypesParams) ([]GetObserverActivityHourlyPayloadTypesRow, error) {
-	rows, err := q.db.Query(ctx, getObserverActivityHourlyPayloadTypes, arg.ObserverID, arg.Column2)
+	rows, err := q.db.Query(ctx, getObserverActivityHourlyPayloadTypes, arg.ObserverID, arg.Column2, arg.Until)
 	if err != nil {
 		return nil, err
 	}
@@ -754,7 +761,7 @@ SELECT
   COALESCE(AVG(rssi) FILTER (WHERE NOT (COALESCE(rssi, 0) = 0 AND COALESCE(snr, 0) = 0)), 0)::real AS rssi_avg,
   COUNT(rssi)        FILTER (WHERE NOT (COALESCE(rssi, 0) = 0 AND COALESCE(snr, 0) = 0))::bigint AS rssi_n
 FROM packet_observations
-WHERE observer_id = $1 AND heard_at >= $2::timestamptz
+WHERE observer_id = $1 AND heard_at >= $2::timestamptz AND heard_at < $4::timestamptz
 GROUP BY bucket
 ORDER BY bucket
 `
@@ -763,6 +770,7 @@ type GetObserverActivityRawParams struct {
 	ObserverID uuid.UUID          `json:"observer_id"`
 	Column2    pgtype.Timestamptz `json:"column_2"`
 	Column3    pgtype.Interval    `json:"column_3"`
+	Until      pgtype.Timestamptz `json:"until"`
 }
 
 type GetObserverActivityRawRow struct {
@@ -781,7 +789,12 @@ type GetObserverActivityRawRow struct {
 // Aggregates are COALESCEd and paired with a count column: sqlc types a cast expression as
 // NOT NULL, so the counts are what tell the store a bucket had no costed or no signal rows.
 func (q *Queries) GetObserverActivityRaw(ctx context.Context, arg GetObserverActivityRawParams) ([]GetObserverActivityRawRow, error) {
-	rows, err := q.db.Query(ctx, getObserverActivityRaw, arg.ObserverID, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, getObserverActivityRaw,
+		arg.ObserverID,
+		arg.Column2,
+		arg.Column3,
+		arg.Until,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -813,7 +826,7 @@ func (q *Queries) GetObserverActivityRaw(ctx context.Context, arg GetObserverAct
 const getObserverActivityRawPayloadTypes = `-- name: GetObserverActivityRawPayloadTypes :many
 SELECT payload_type, COUNT(*)::bigint AS count
 FROM packet_observations
-WHERE observer_id = $1 AND heard_at >= $2::timestamptz AND payload_type IS NOT NULL
+WHERE observer_id = $1 AND heard_at >= $2::timestamptz AND heard_at < $3::timestamptz
 GROUP BY payload_type
 ORDER BY count DESC
 `
@@ -821,6 +834,7 @@ ORDER BY count DESC
 type GetObserverActivityRawPayloadTypesParams struct {
 	ObserverID uuid.UUID          `json:"observer_id"`
 	Column2    pgtype.Timestamptz `json:"column_2"`
+	Until      pgtype.Timestamptz `json:"until"`
 }
 
 type GetObserverActivityRawPayloadTypesRow struct {
@@ -829,7 +843,7 @@ type GetObserverActivityRawPayloadTypesRow struct {
 }
 
 func (q *Queries) GetObserverActivityRawPayloadTypes(ctx context.Context, arg GetObserverActivityRawPayloadTypesParams) ([]GetObserverActivityRawPayloadTypesRow, error) {
-	rows, err := q.db.Query(ctx, getObserverActivityRawPayloadTypes, arg.ObserverID, arg.Column2)
+	rows, err := q.db.Query(ctx, getObserverActivityRawPayloadTypes, arg.ObserverID, arg.Column2, arg.Until)
 	if err != nil {
 		return nil, err
 	}
@@ -4422,11 +4436,12 @@ func (q *Queries) SetPacketDecrypted(ctx context.Context, packetHash []byte) err
 const touchObserverBrokers = `-- name: TouchObserverBrokers :exec
 UPDATE observer_brokers ob SET
   last_seen      = GREATEST(ob.last_seen, v.seen),
-  last_packet_at = GREATEST(ob.last_packet_at, v.seen)
+  last_packet_at = GREATEST(ob.last_packet_at, v.packet)
 FROM (
   SELECT unnest($1::uuid[]) AS observer_id,
          unnest($2::text[]) AS broker_name,
-         unnest($3::timestamptz[]) AS seen
+         unnest($3::timestamptz[]) AS seen,
+         unnest($4::timestamptz[]) AS packet
 ) v
 WHERE ob.observer_id = v.observer_id AND ob.broker_name = v.broker_name
 `
@@ -4435,10 +4450,16 @@ type TouchObserverBrokersParams struct {
 	Column1 []uuid.UUID          `json:"column_1"`
 	Column2 []string             `json:"column_2"`
 	Column3 []pgtype.Timestamptz `json:"column_3"`
+	Column4 []pgtype.Timestamptz `json:"column_4"`
 }
 
 func (q *Queries) TouchObserverBrokers(ctx context.Context, arg TouchObserverBrokersParams) error {
-	_, err := q.db.Exec(ctx, touchObserverBrokers, arg.Column1, arg.Column2, arg.Column3)
+	_, err := q.db.Exec(ctx, touchObserverBrokers,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+	)
 	return err
 }
 
@@ -4943,22 +4964,23 @@ func (q *Queries) UpsertObserver(ctx context.Context, publicKey []byte) (Observe
 const upsertObserverBroker = `-- name: UpsertObserverBroker :exec
 
 INSERT INTO observer_brokers (observer_id, broker_name, last_seen, last_packet_at)
-VALUES ($1, $2, NOW(), NOW())
+VALUES ($1, $2, NOW(), CASE WHEN $3::boolean THEN NOW() END)
 ON CONFLICT (observer_id, broker_name) DO UPDATE SET
-  last_seen      = NOW(),
-  last_packet_at = NOW()
+  last_seen = NOW(),
+  last_packet_at = COALESCE(EXCLUDED.last_packet_at, observer_brokers.last_packet_at)
 `
 
 type UpsertObserverBrokerParams struct {
 	ObserverID uuid.UUID `json:"observer_id"`
 	BrokerName string    `json:"broker_name"`
+	IsPacket   bool      `json:"is_packet"`
 }
 
 // ============================================================
 // OBSERVER BROKERS
 // ============================================================
 func (q *Queries) UpsertObserverBroker(ctx context.Context, arg UpsertObserverBrokerParams) error {
-	_, err := q.db.Exec(ctx, upsertObserverBroker, arg.ObserverID, arg.BrokerName)
+	_, err := q.db.Exec(ctx, upsertObserverBroker, arg.ObserverID, arg.BrokerName, arg.IsPacket)
 	return err
 }
 

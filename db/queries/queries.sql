@@ -275,14 +275,14 @@ SELECT
   COALESCE(AVG(rssi) FILTER (WHERE NOT (COALESCE(rssi, 0) = 0 AND COALESCE(snr, 0) = 0)), 0)::real AS rssi_avg,
   COUNT(rssi)        FILTER (WHERE NOT (COALESCE(rssi, 0) = 0 AND COALESCE(snr, 0) = 0))::bigint AS rssi_n
 FROM packet_observations
-WHERE observer_id = $1 AND heard_at >= $2::timestamptz
+WHERE observer_id = $1 AND heard_at >= $2::timestamptz AND heard_at < @until::timestamptz
 GROUP BY bucket
 ORDER BY bucket;
 
 -- name: GetObserverActivityRawPayloadTypes :many
 SELECT payload_type, COUNT(*)::bigint AS count
 FROM packet_observations
-WHERE observer_id = $1 AND heard_at >= $2::timestamptz AND payload_type IS NOT NULL
+WHERE observer_id = $1 AND heard_at >= $2::timestamptz AND heard_at < @until::timestamptz
 GROUP BY payload_type
 ORDER BY count DESC;
 
@@ -299,14 +299,14 @@ SELECT
   COALESCE(SUM(rssi_sum), 0)::bigint AS rssi_sum,
   SUM(rssi_n)::bigint AS rssi_n
 FROM mv_observer_activity_hourly
-WHERE observer_id = $1 AND bucket >= $2::timestamptz
+WHERE observer_id = $1 AND bucket >= $2::timestamptz AND bucket < @until::timestamptz
 GROUP BY 1
 ORDER BY 1;
 
 -- name: GetObserverActivityHourlyPayloadTypes :many
 SELECT payload_type, SUM(observations)::bigint AS count
 FROM mv_observer_activity_hourly
-WHERE observer_id = $1 AND bucket >= $2::timestamptz
+WHERE observer_id = $1 AND bucket >= $2::timestamptz AND bucket < @until::timestamptz
 GROUP BY payload_type
 ORDER BY count DESC;
 
@@ -363,19 +363,20 @@ RETURNING o.id;
 
 -- name: UpsertObserverBroker :exec
 INSERT INTO observer_brokers (observer_id, broker_name, last_seen, last_packet_at)
-VALUES ($1, $2, NOW(), NOW())
+VALUES ($1, $2, NOW(), CASE WHEN @is_packet::boolean THEN NOW() END)
 ON CONFLICT (observer_id, broker_name) DO UPDATE SET
-  last_seen      = NOW(),
-  last_packet_at = NOW();
+  last_seen = NOW(),
+  last_packet_at = COALESCE(EXCLUDED.last_packet_at, observer_brokers.last_packet_at);
 
 -- name: TouchObserverBrokers :exec
 UPDATE observer_brokers ob SET
   last_seen      = GREATEST(ob.last_seen, v.seen),
-  last_packet_at = GREATEST(ob.last_packet_at, v.seen)
+  last_packet_at = GREATEST(ob.last_packet_at, v.packet)
 FROM (
   SELECT unnest($1::uuid[]) AS observer_id,
          unnest($2::text[]) AS broker_name,
-         unnest($3::timestamptz[]) AS seen
+         unnest($3::timestamptz[]) AS seen,
+         unnest($4::timestamptz[]) AS packet
 ) v
 WHERE ob.observer_id = v.observer_id AND ob.broker_name = v.broker_name;
 

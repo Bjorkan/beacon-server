@@ -89,7 +89,7 @@ type DB interface {
 	UpsertObserver(ctx context.Context, pubkey []byte) (uuid.UUID, string, error)
 
 	// UpsertObserverBroker records that this observer was seen on brokerName.
-	UpsertObserverBroker(ctx context.Context, observerID uuid.UUID, brokerName string) error
+	UpsertObserverBroker(ctx context.Context, observerID uuid.UUID, brokerName string, isPacket bool) error
 
 	// UpsertIATA auto-creates an iata_codes row if it doesn't exist yet.
 	UpsertIATA(ctx context.Context, iata string) error
