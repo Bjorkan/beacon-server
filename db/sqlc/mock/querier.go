@@ -940,10 +940,10 @@ func (mr *MockQuerierMockRecorder) GetTransportScopes(ctx any) *gomock.Call {
 }
 
 // InsertChannelMessage mocks base method.
-func (m *MockQuerier) InsertChannelMessage(ctx context.Context, arg db.InsertChannelMessageParams) (int64, error) {
+func (m *MockQuerier) InsertChannelMessage(ctx context.Context, arg db.InsertChannelMessageParams) (db.InsertChannelMessageRow, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "InsertChannelMessage", ctx, arg)
-	ret0, _ := ret[0].(int64)
+	ret0, _ := ret[0].(db.InsertChannelMessageRow)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

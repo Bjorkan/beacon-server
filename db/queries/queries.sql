@@ -944,17 +944,25 @@ SELECT * FROM channels WHERE id = $1;
 -- ============================================================
 
 -- name: InsertChannelMessage :one
-INSERT INTO channel_messages (channel_id, packet_hash, sender_name, content, sent_at)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (packet_hash) DO NOTHING
-RETURNING id;
+-- Read the immutable first-packet scope in the same statement as insertion.
+-- A later reception's transport code must not give live and historical messages different tags.
+WITH inserted AS (
+  INSERT INTO channel_messages (channel_id, packet_hash, sender_name, content, sent_at)
+  VALUES ($1, $2, $3, $4, $5)
+  ON CONFLICT (packet_hash) DO NOTHING
+  RETURNING id, packet_hash
+)
+SELECT inserted.id, ts.name AS scope_name, p.transport_codes_present
+FROM inserted
+JOIN packets p ON p.packet_hash = inserted.packet_hash
+LEFT JOIN transport_scopes ts ON ts.id = p.scope_id;
 
 -- name: ListChannelMessages :many
 -- Returns messages for a channel identified by integer ID.
 -- Pass a zero/null timestamp for since to return all messages up to limit.
 -- Pass empty string for iata to skip IATA filtering.
 -- Pass cursor=0 to start from the beginning.
-SELECT DISTINCT ON (cm.id) cm.*, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash,
+SELECT DISTINCT ON (cm.id) cm.*, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash, ts.name AS scope_name, p.transport_codes_present,
 (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = cm.packet_hash) AS observation_count
 FROM channel_messages cm
 JOIN channels c ON c.id = cm.channel_id
@@ -973,7 +981,7 @@ LIMIT $6;
 -- Returns all messages across all channels with optional time, IATA, scope and cursor filters.
 -- Pass empty string for iata or scope to skip those filters.
 -- Pass cursor=0 to start from the beginning.
-SELECT DISTINCT ON (cm.id) cm.*, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash,
+SELECT DISTINCT ON (cm.id) cm.*, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash, ts.name AS scope_name, p.transport_codes_present,
 (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = cm.packet_hash) AS observation_count
 FROM channel_messages cm
 JOIN channels c ON c.id = cm.channel_id
@@ -992,7 +1000,7 @@ LIMIT $5;
 -- May return messages from multiple channels if the hash collides across different keys.
 -- Pass empty string for iata or scope to skip those filters.
 -- Pass cursor=0 to start from the beginning.
-SELECT DISTINCT ON (cm.id) cm.*, c.channel_hash,
+SELECT DISTINCT ON (cm.id) cm.*, c.channel_hash, ts.name AS scope_name, p.transport_codes_present,
   (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = cm.packet_hash) AS observation_count
 FROM channel_messages cm
 JOIN channels c ON c.id = cm.channel_id
@@ -1010,7 +1018,7 @@ LIMIT $6;
 -- name: ListMessagesAfterID :many
 -- Returns messages after the given message ID, ordered oldest first.
 -- Used for WS reconnect backfill.
-SELECT DISTINCT ON (cm.id) cm.*, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash,
+SELECT DISTINCT ON (cm.id) cm.*, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash, ts.name AS scope_name, p.transport_codes_present,
 (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = cm.packet_hash) AS observation_count
 FROM channel_messages cm
 JOIN channels c ON c.id = cm.channel_id

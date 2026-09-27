@@ -132,7 +132,7 @@ type DB interface {
 	UpsertNodeShortID(ctx context.Context, nodeID uuid.UUID, iata string, prefix4 []byte) error
 
 	// InsertChannelMessage stores a decrypted group text message. Returns insert success and an error.
-	InsertChannelMessage(ctx context.Context, m InsertChannelMessageParams) (bool, error)
+	InsertChannelMessage(ctx context.Context, m InsertChannelMessageParams) (*InsertedChannelMessage, error)
 
 	// UpdateObserverStatus updates the observer row from a /status message. Returns the OberserID
 	// and any error.

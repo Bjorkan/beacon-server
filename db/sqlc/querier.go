@@ -128,7 +128,9 @@ type Querier interface {
 	// ============================================================
 	// CHANNEL MESSAGES
 	// ============================================================
-	InsertChannelMessage(ctx context.Context, arg InsertChannelMessageParams) (int64, error)
+	// Read the immutable first-packet scope in the same statement as insertion.
+	// A later reception's transport code must not give live and historical messages different tags.
+	InsertChannelMessage(ctx context.Context, arg InsertChannelMessageParams) (InsertChannelMessageRow, error)
 	// ============================================================
 	// PACKET OBSERVATIONS
 	// ============================================================

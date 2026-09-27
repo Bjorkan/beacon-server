@@ -2110,10 +2110,16 @@ func (q *Queries) GetTransportScopes(ctx context.Context) ([]GetTransportScopesR
 
 const insertChannelMessage = `-- name: InsertChannelMessage :one
 
-INSERT INTO channel_messages (channel_id, packet_hash, sender_name, content, sent_at)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (packet_hash) DO NOTHING
-RETURNING id
+WITH inserted AS (
+  INSERT INTO channel_messages (channel_id, packet_hash, sender_name, content, sent_at)
+  VALUES ($1, $2, $3, $4, $5)
+  ON CONFLICT (packet_hash) DO NOTHING
+  RETURNING id, packet_hash
+)
+SELECT inserted.id, ts.name AS scope_name, p.transport_codes_present
+FROM inserted
+JOIN packets p ON p.packet_hash = inserted.packet_hash
+LEFT JOIN transport_scopes ts ON ts.id = p.scope_id
 `
 
 type InsertChannelMessageParams struct {
@@ -2124,10 +2130,18 @@ type InsertChannelMessageParams struct {
 	SentAt     pgtype.Timestamptz `json:"sent_at"`
 }
 
+type InsertChannelMessageRow struct {
+	ID                    int64   `json:"id"`
+	ScopeName             *string `json:"scope_name"`
+	TransportCodesPresent *bool   `json:"transport_codes_present"`
+}
+
 // ============================================================
 // CHANNEL MESSAGES
 // ============================================================
-func (q *Queries) InsertChannelMessage(ctx context.Context, arg InsertChannelMessageParams) (int64, error) {
+// Read the immutable first-packet scope in the same statement as insertion.
+// A later reception's transport code must not give live and historical messages different tags.
+func (q *Queries) InsertChannelMessage(ctx context.Context, arg InsertChannelMessageParams) (InsertChannelMessageRow, error) {
 	row := q.db.QueryRow(ctx, insertChannelMessage,
 		arg.ChannelID,
 		arg.PacketHash,
@@ -2135,9 +2149,9 @@ func (q *Queries) InsertChannelMessage(ctx context.Context, arg InsertChannelMes
 		arg.Content,
 		arg.SentAt,
 	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
+	var i InsertChannelMessageRow
+	err := row.Scan(&i.ID, &i.ScopeName, &i.TransportCodesPresent)
+	return i, err
 }
 
 const insertObservation = `-- name: InsertObservation :one
@@ -2309,7 +2323,7 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 }
 
 const listAllChannelMessages = `-- name: ListAllChannelMessages :many
-SELECT DISTINCT ON (cm.id) cm.id, cm.channel_id, cm.packet_hash, cm.sender_name, cm.sender_pubkey, cm.content, cm.sent_at, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash,
+SELECT DISTINCT ON (cm.id) cm.id, cm.channel_id, cm.packet_hash, cm.sender_name, cm.sender_pubkey, cm.content, cm.sent_at, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash, ts.name AS scope_name, p.transport_codes_present,
 (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = cm.packet_hash) AS observation_count
 FROM channel_messages cm
 JOIN channels c ON c.id = cm.channel_id
@@ -2333,16 +2347,18 @@ type ListAllChannelMessagesParams struct {
 }
 
 type ListAllChannelMessagesRow struct {
-	ID               int64              `json:"id"`
-	ChannelID        int32              `json:"channel_id"`
-	PacketHash       []byte             `json:"packet_hash"`
-	SenderName       *string            `json:"sender_name"`
-	SenderPubkey     []byte             `json:"sender_pubkey"`
-	Content          *string            `json:"content"`
-	SentAt           pgtype.Timestamptz `json:"sent_at"`
-	PacketHashHex    string             `json:"packet_hash_hex"`
-	ChannelHash      []byte             `json:"channel_hash"`
-	ObservationCount int64              `json:"observation_count"`
+	ID                    int64              `json:"id"`
+	ChannelID             int32              `json:"channel_id"`
+	PacketHash            []byte             `json:"packet_hash"`
+	SenderName            *string            `json:"sender_name"`
+	SenderPubkey          []byte             `json:"sender_pubkey"`
+	Content               *string            `json:"content"`
+	SentAt                pgtype.Timestamptz `json:"sent_at"`
+	PacketHashHex         string             `json:"packet_hash_hex"`
+	ChannelHash           []byte             `json:"channel_hash"`
+	ScopeName             *string            `json:"scope_name"`
+	TransportCodesPresent *bool              `json:"transport_codes_present"`
+	ObservationCount      int64              `json:"observation_count"`
 }
 
 // Returns all messages across all channels with optional time, IATA, scope and cursor filters.
@@ -2373,6 +2389,8 @@ func (q *Queries) ListAllChannelMessages(ctx context.Context, arg ListAllChannel
 			&i.SentAt,
 			&i.PacketHashHex,
 			&i.ChannelHash,
+			&i.ScopeName,
+			&i.TransportCodesPresent,
 			&i.ObservationCount,
 		); err != nil {
 			return nil, err
@@ -2386,7 +2404,7 @@ func (q *Queries) ListAllChannelMessages(ctx context.Context, arg ListAllChannel
 }
 
 const listChannelMessages = `-- name: ListChannelMessages :many
-SELECT DISTINCT ON (cm.id) cm.id, cm.channel_id, cm.packet_hash, cm.sender_name, cm.sender_pubkey, cm.content, cm.sent_at, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash,
+SELECT DISTINCT ON (cm.id) cm.id, cm.channel_id, cm.packet_hash, cm.sender_name, cm.sender_pubkey, cm.content, cm.sent_at, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash, ts.name AS scope_name, p.transport_codes_present,
 (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = cm.packet_hash) AS observation_count
 FROM channel_messages cm
 JOIN channels c ON c.id = cm.channel_id
@@ -2412,16 +2430,18 @@ type ListChannelMessagesParams struct {
 }
 
 type ListChannelMessagesRow struct {
-	ID               int64              `json:"id"`
-	ChannelID        int32              `json:"channel_id"`
-	PacketHash       []byte             `json:"packet_hash"`
-	SenderName       *string            `json:"sender_name"`
-	SenderPubkey     []byte             `json:"sender_pubkey"`
-	Content          *string            `json:"content"`
-	SentAt           pgtype.Timestamptz `json:"sent_at"`
-	PacketHashHex    string             `json:"packet_hash_hex"`
-	ChannelHash      []byte             `json:"channel_hash"`
-	ObservationCount int64              `json:"observation_count"`
+	ID                    int64              `json:"id"`
+	ChannelID             int32              `json:"channel_id"`
+	PacketHash            []byte             `json:"packet_hash"`
+	SenderName            *string            `json:"sender_name"`
+	SenderPubkey          []byte             `json:"sender_pubkey"`
+	Content               *string            `json:"content"`
+	SentAt                pgtype.Timestamptz `json:"sent_at"`
+	PacketHashHex         string             `json:"packet_hash_hex"`
+	ChannelHash           []byte             `json:"channel_hash"`
+	ScopeName             *string            `json:"scope_name"`
+	TransportCodesPresent *bool              `json:"transport_codes_present"`
+	ObservationCount      int64              `json:"observation_count"`
 }
 
 // Returns messages for a channel identified by integer ID.
@@ -2454,6 +2474,8 @@ func (q *Queries) ListChannelMessages(ctx context.Context, arg ListChannelMessag
 			&i.SentAt,
 			&i.PacketHashHex,
 			&i.ChannelHash,
+			&i.ScopeName,
+			&i.TransportCodesPresent,
 			&i.ObservationCount,
 		); err != nil {
 			return nil, err
@@ -2467,7 +2489,7 @@ func (q *Queries) ListChannelMessages(ctx context.Context, arg ListChannelMessag
 }
 
 const listChannelMessagesByHash = `-- name: ListChannelMessagesByHash :many
-SELECT DISTINCT ON (cm.id) cm.id, cm.channel_id, cm.packet_hash, cm.sender_name, cm.sender_pubkey, cm.content, cm.sent_at, c.channel_hash,
+SELECT DISTINCT ON (cm.id) cm.id, cm.channel_id, cm.packet_hash, cm.sender_name, cm.sender_pubkey, cm.content, cm.sent_at, c.channel_hash, ts.name AS scope_name, p.transport_codes_present,
   (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = cm.packet_hash) AS observation_count
 FROM channel_messages cm
 JOIN channels c ON c.id = cm.channel_id
@@ -2493,15 +2515,17 @@ type ListChannelMessagesByHashParams struct {
 }
 
 type ListChannelMessagesByHashRow struct {
-	ID               int64              `json:"id"`
-	ChannelID        int32              `json:"channel_id"`
-	PacketHash       []byte             `json:"packet_hash"`
-	SenderName       *string            `json:"sender_name"`
-	SenderPubkey     []byte             `json:"sender_pubkey"`
-	Content          *string            `json:"content"`
-	SentAt           pgtype.Timestamptz `json:"sent_at"`
-	ChannelHash      []byte             `json:"channel_hash"`
-	ObservationCount int64              `json:"observation_count"`
+	ID                    int64              `json:"id"`
+	ChannelID             int32              `json:"channel_id"`
+	PacketHash            []byte             `json:"packet_hash"`
+	SenderName            *string            `json:"sender_name"`
+	SenderPubkey          []byte             `json:"sender_pubkey"`
+	Content               *string            `json:"content"`
+	SentAt                pgtype.Timestamptz `json:"sent_at"`
+	ChannelHash           []byte             `json:"channel_hash"`
+	ScopeName             *string            `json:"scope_name"`
+	TransportCodesPresent *bool              `json:"transport_codes_present"`
+	ObservationCount      int64              `json:"observation_count"`
 }
 
 // Returns messages for all channels matching a hash byte.
@@ -2533,6 +2557,8 @@ func (q *Queries) ListChannelMessagesByHash(ctx context.Context, arg ListChannel
 			&i.Content,
 			&i.SentAt,
 			&i.ChannelHash,
+			&i.ScopeName,
+			&i.TransportCodesPresent,
 			&i.ObservationCount,
 		); err != nil {
 			return nil, err
@@ -2775,7 +2801,7 @@ func (q *Queries) ListKnownRoutes(ctx context.Context, arg ListKnownRoutesParams
 }
 
 const listMessagesAfterID = `-- name: ListMessagesAfterID :many
-SELECT DISTINCT ON (cm.id) cm.id, cm.channel_id, cm.packet_hash, cm.sender_name, cm.sender_pubkey, cm.content, cm.sent_at, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash,
+SELECT DISTINCT ON (cm.id) cm.id, cm.channel_id, cm.packet_hash, cm.sender_name, cm.sender_pubkey, cm.content, cm.sent_at, encode(cm.packet_hash, 'hex') as packet_hash_hex, c.channel_hash, ts.name AS scope_name, p.transport_codes_present,
 (SELECT COUNT(*) FROM packet_observations po2 WHERE po2.packet_hash = cm.packet_hash) AS observation_count
 FROM channel_messages cm
 JOIN channels c ON c.id = cm.channel_id
@@ -2797,16 +2823,18 @@ type ListMessagesAfterIDParams struct {
 }
 
 type ListMessagesAfterIDRow struct {
-	ID               int64              `json:"id"`
-	ChannelID        int32              `json:"channel_id"`
-	PacketHash       []byte             `json:"packet_hash"`
-	SenderName       *string            `json:"sender_name"`
-	SenderPubkey     []byte             `json:"sender_pubkey"`
-	Content          *string            `json:"content"`
-	SentAt           pgtype.Timestamptz `json:"sent_at"`
-	PacketHashHex    string             `json:"packet_hash_hex"`
-	ChannelHash      []byte             `json:"channel_hash"`
-	ObservationCount int64              `json:"observation_count"`
+	ID                    int64              `json:"id"`
+	ChannelID             int32              `json:"channel_id"`
+	PacketHash            []byte             `json:"packet_hash"`
+	SenderName            *string            `json:"sender_name"`
+	SenderPubkey          []byte             `json:"sender_pubkey"`
+	Content               *string            `json:"content"`
+	SentAt                pgtype.Timestamptz `json:"sent_at"`
+	PacketHashHex         string             `json:"packet_hash_hex"`
+	ChannelHash           []byte             `json:"channel_hash"`
+	ScopeName             *string            `json:"scope_name"`
+	TransportCodesPresent *bool              `json:"transport_codes_present"`
+	ObservationCount      int64              `json:"observation_count"`
 }
 
 // Returns messages after the given message ID, ordered oldest first.
@@ -2835,6 +2863,8 @@ func (q *Queries) ListMessagesAfterID(ctx context.Context, arg ListMessagesAfter
 			&i.SentAt,
 			&i.PacketHashHex,
 			&i.ChannelHash,
+			&i.ScopeName,
+			&i.TransportCodesPresent,
 			&i.ObservationCount,
 		); err != nil {
 			return nil, err

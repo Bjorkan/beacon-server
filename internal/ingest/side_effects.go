@@ -37,14 +37,24 @@ type InsertChannelMessageParams struct {
 	SentAt     time.Time
 }
 
+// InsertedChannelMessage is returned only for a new message, using its stored packet evidence.
+type InsertedChannelMessage struct {
+	ID          int64
+	Scope       *string
+	ScopeStatus api.ChannelScopeStatus
+}
+
 // channelMessageEvent is the JSON payload for a channelMessage WS event.
 type channelMessageEvent struct {
-	ChannelID   int    `json:"channelId"`
-	ChannelHash string `json:"channelHash"` // hex-encoded single byte
-	PacketHash  string `json:"packetHash"`  // hex-encoded
-	SenderName  string `json:"senderName"`
-	Content     string `json:"content"`
-	SentAt      int64  `json:"sentAt"` // epoch ms
+	ID          int64                  `json:"id"`
+	ChannelID   int                    `json:"channelId"`
+	ChannelHash string                 `json:"channelHash"` // hex-encoded single byte
+	PacketHash  string                 `json:"packetHash"`  // hex-encoded
+	SenderName  string                 `json:"senderName"`
+	Content     string                 `json:"content"`
+	SentAt      int64                  `json:"sentAt"` // epoch ms
+	Scope       *string                `json:"scope"`
+	ScopeStatus api.ChannelScopeStatus `json:"scopeStatus"`
 }
 
 // nodeUpdateEvent is the JSON payload for a nodeUpdate WS event.
@@ -207,6 +217,9 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 
 		if result.NewMessage {
 			evt := channelMessageEvent{
+				ID:          result.Message.ID,
+				Scope:       result.Message.Scope,
+				ScopeStatus: result.Message.ScopeStatus,
 				ChannelID:   result.ChannelID,
 				ChannelHash: hex.EncodeToString(channelHashBytes),
 				PacketHash:  hex.EncodeToString(packetHash),

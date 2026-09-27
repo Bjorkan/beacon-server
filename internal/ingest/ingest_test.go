@@ -231,8 +231,11 @@ func (s *stubDB) GetNodesByIDs(_ context.Context, _ []uuid.UUID) (map[uuid.UUID]
 	return nil, nil
 }
 
-func (s *stubDB) InsertChannelMessage(_ context.Context, _ InsertChannelMessageParams) (bool, error) {
-	return s.insertChannelMessageResult, nil
+func (s *stubDB) InsertChannelMessage(_ context.Context, _ InsertChannelMessageParams) (*InsertedChannelMessage, error) {
+	if !s.insertChannelMessageResult {
+		return nil, nil
+	}
+	return &InsertedChannelMessage{ID: 1, ScopeStatus: "unavailable"}, nil
 }
 
 func (s *stubDB) UpdateObserverStatus(_ context.Context, _ UpdateObserverStatusParams) (uuid.UUID, error) {

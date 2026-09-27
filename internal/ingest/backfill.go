@@ -32,6 +32,7 @@ type DecryptGroupTextResult struct {
 	// NewMessage is false if InsertChannelMessage found the message already existed
 	// (packet_hash is unique per message) -- e.g. re-running the backfill twice.
 	NewMessage bool
+	Message    *InsertedChannelMessage
 }
 
 // DecryptGroupText attempts to decrypt a GRP_TXT payload against keys and, on success,
@@ -77,7 +78,7 @@ func DecryptGroupText(ctx context.Context, db DB, keys ChannelKeyStore, packetHa
 	if err != nil {
 		return nil, fmt.Errorf("insert channel message: %w", err)
 	}
-	if newMsg {
+	if newMsg != nil {
 		// Non-fatal: the message is stored either way, so just log and continue -- matches
 		// the live ingest path's existing behavior of not treating this as a hard failure.
 		if err := db.SetPacketDecrypted(ctx, packetHash); err != nil {
@@ -89,7 +90,8 @@ func DecryptGroupText(ctx context.Context, db DB, keys ChannelKeyStore, packetHa
 		ChannelID:   channelID,
 		ChannelHash: channelHashBytes,
 		Entry:       usedEntry,
-		NewMessage:  newMsg,
+		NewMessage:  newMsg != nil,
+		Message:     newMsg,
 	}, nil
 }
 

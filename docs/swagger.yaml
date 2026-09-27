@@ -135,6 +135,17 @@ definitions:
       packetHash:
         description: hex-encoded packet hash for correlation with packet events
         type: string
+      scope:
+        description: matched scope on the first stored packet; null when none was
+          recorded
+        type: string
+      scopeStatus:
+        enum:
+        - matched
+        - unscoped
+        - unknown
+        - unavailable
+        type: string
       senderName:
         description: display name from the decrypted payload
         type: string

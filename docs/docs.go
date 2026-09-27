@@ -3481,6 +3481,19 @@ const docTemplate = `{
                     "description": "hex-encoded packet hash for correlation with packet events",
                     "type": "string"
                 },
+                "scope": {
+                    "description": "matched scope on the first stored packet; null when none was recorded",
+                    "type": "string"
+                },
+                "scopeStatus": {
+                    "type": "string",
+                    "enum": [
+                        "matched",
+                        "unscoped",
+                        "unknown",
+                        "unavailable"
+                    ]
+                },
                 "senderName": {
                     "description": "display name from the decrypted payload",
                     "type": "string"
