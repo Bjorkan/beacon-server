@@ -31,7 +31,7 @@ func TestObserverMetricsPostgres(t *testing.T) {
  INSERT INTO observers (id,public_key) VALUES ('00000000-0000-0000-0000-000000000001','\x01');
  INSERT INTO packets(packet_hash,payload_type,last_heard_at,first_heard_at) SELECT int4send(i),4,NOW()-interval '5 days',NOW()-interval '5 days' FROM generate_series(1,3) i;
  INSERT INTO packet_observations(packet_hash,observer_id,iata,heard_at,path_length_byte,hash_size,hop_count,payload_type,snr,rssi)
- SELECT packet_hash,'00000000-0000-0000-0000-000000000001','YOW',date_trunc('hour',NOW())-interval '5 days',0,1,0,CASE WHEN packet_hash=int4send(1) THEN 4 END,CASE WHEN packet_hash=int4send(2) THEN 'NaN'::real ELSE 0 END,-100 FROM packets;
+ SELECT packet_hash,'00000000-0000-0000-0000-000000000001','YOW',date_trunc('hour',NOW())-interval '5 days',0,1,0,CASE WHEN packet_hash=int4send(1) THEN 4 END,CASE WHEN packet_hash IN (int4send(1),int4send(2)) THEN 'NaN'::real ELSE 0 END,-100 FROM packets;
  `); err != nil {
 		t.Fatal(err)
 	}
@@ -59,13 +59,16 @@ func TestObserverMetricsPostgres(t *testing.T) {
 		t.Fatalf("window: %+v", activity)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO packets(packet_hash,last_heard_at) VALUES ('\xaa',NOW());
- INSERT INTO packet_observations(packet_hash,observer_id,iata,heard_at,path_length_byte,hash_size,hop_count,snr,rssi) VALUES ('\xaa','00000000-0000-0000-0000-000000000001','YOW',date_trunc('hour',NOW())-interval '30 minutes',0,1,0,0,-100);
+ INSERT INTO packet_observations(packet_hash,observer_id,iata,heard_at,path_length_byte,hash_size,hop_count,snr,rssi) VALUES ('\xaa','00000000-0000-0000-0000-000000000001','YOW',date_trunc('hour',NOW())-interval '30 minutes',0,1,0,'NaN'::real,-100);
  INSERT INTO packet_observations(packet_hash,observer_id,iata,heard_at) VALUES ('\xaa','00000000-0000-0000-0000-000000000001','YOW',NOW()) ON CONFLICT DO NOTHING;`); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := store.GetObserverActivity(ctx, id, time.Hour, 15*time.Minute, until)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := json.Marshal(raw); err != nil {
+		t.Fatalf("raw non-finite sample leaked into JSON: %v", err)
 	}
 	if raw.Summary.RecordedPackets != 1 || raw.Summary.LastCompleteHour != 1 || raw.Summary.LatestRecordedAt == nil || raw.PayloadTypes[0].PayloadType != -1 {
 		t.Fatalf("raw/duplicate: %+v", raw)
