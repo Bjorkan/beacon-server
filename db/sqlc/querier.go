@@ -89,6 +89,9 @@ type Querier interface {
 	GetRegionIATAs(ctx context.Context, regionID int32) ([]string, error)
 	GetRouteEvidenceRoute(ctx context.Context, arg GetRouteEvidenceRouteParams) (KnownRoute, error)
 	GetScopeByName(ctx context.Context, name string) (GetScopeByNameRow, error)
+	// Copyright 2026 Beacon Contributors
+	// SPDX-License-Identifier: AGPL-3.0-or-later
+	GetScopeCatalogue(ctx context.Context, arg GetScopeCatalogueParams) (MeshmapperScopeCatalogue, error)
 	GetScopeNames(ctx context.Context) ([]string, error)
 	// Aggregate matching observations once, separately from node memberships to avoid
 	// a cross-join. Empty IATAs keep the original global counts, including associations
@@ -250,6 +253,10 @@ type Querier interface {
 	ResolvePathHashesP2(ctx context.Context, arg ResolvePathHashesP2Params) ([]ResolvePathHashesP2Row, error)
 	ResolvePathHashesP3(ctx context.Context, arg ResolvePathHashesP3Params) ([]ResolvePathHashesP3Row, error)
 	ResolvePathHashesP4(ctx context.Context, arg ResolvePathHashesP4Params) ([]ResolvePathHashesP4Row, error)
+	// One statement commits the validated snapshot and its lookup identities together.
+	// Empty arrays insert nothing. NULL payload/checked_at retain last-known-good data
+	// after an error or 304. Imported names never replace existing manual metadata.
+	SaveScopeCatalogue(ctx context.Context, arg SaveScopeCatalogueParams) error
 	// Returns known routes containing a subsequence from source to destination hash prefix.
 	// Verifies source appears before destination in the route.
 	SearchKnownRoutes(ctx context.Context, arg SearchKnownRoutesParams) ([]SearchKnownRoutesRow, error)

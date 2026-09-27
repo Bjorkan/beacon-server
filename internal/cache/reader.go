@@ -80,6 +80,11 @@ func NewCachedReader(inner api.Reader, c *Client, ttl CacheTTLs) api.Reader {
 	}
 }
 
+// InvalidateScopeNames makes newly committed catalogue names available to filters.
+func (cr *CachedReader) InvalidateScopeNames(ctx context.Context) {
+	cr.c.del(ctx, keyScopeNames)
+}
+
 // InvalidateNode removes the cached entries for a node by UUID.
 // Should be called from the ingest path after a node upsert.
 func (cr *CachedReader) InvalidateNode(ctx context.Context, nodeID uuid.UUID) {

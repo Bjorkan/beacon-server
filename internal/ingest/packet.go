@@ -11,11 +11,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/MeshCore-Beacon/beacon-server/internal/lora"
+	"github.com/MeshCore-Beacon/beacon-server/internal/scopestore"
 	"github.com/google/uuid"
 	"github.com/meshcore-go/meshcore-go"
 )
@@ -694,14 +696,7 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 
 	var matchedScope *string
 	if packet.RouteType() == meshcore.RouteTypeTransportFlood || packet.RouteType() == meshcore.RouteTypeTransportDirect {
-		for _, entry := range w.scopes.Entries() {
-			code := computeTransportCode(entry.TransportKey, packet.PayloadType(), packet.Payload)
-			if code == packet.TransportCode1 {
-				s := entry.Name
-				matchedScope = &s
-				break
-			}
-		}
+		matchedScope = matchTransportScope(w.scopes.Entries(), iata, packet.PayloadType(), packet.Payload, packet.TransportCode1)
 	}
 	var scopeID *int32
 	if matchedScope != nil {
@@ -928,6 +923,26 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 		evt.Observation.ResolvedDestination = resolvedDestination
 		w.broadcastPacketObservation(iata, packet.PayloadType(), evt, resolvedPath, hex.EncodeToString(pubkeyBytes), repeat)
 	}
+}
+
+// matchTransportScope never treats catalogue membership as forwarding evidence.
+// Multiple candidate names matching the short code are ambiguous, not first-wins.
+func matchTransportScope(entries []scopestore.Entry, iata string, payloadType uint8, payload []byte, code uint16) *string {
+	var matched *string
+	for _, entry := range entries {
+		if entry.IATAs != nil && !slices.Contains(entry.IATAs, iata) {
+			continue
+		}
+		if computeTransportCode(entry.TransportKey, payloadType, payload) != code {
+			continue
+		}
+		if matched != nil && *matched != entry.Name {
+			return nil
+		}
+		name := entry.Name
+		matched = &name
+	}
+	return matched
 }
 
 // computeTransportCode derives transport_code_1 from a transport key and packet payload.

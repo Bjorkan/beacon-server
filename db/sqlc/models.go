@@ -234,6 +234,17 @@ type KnownRoute struct {
 	LastReconfirmedAt pgtype.Timestamptz `json:"last_reconfirmed_at"`
 }
 
+type MeshmapperScopeCatalogue struct {
+	Iata        string             `json:"iata"`
+	Url         string             `json:"url"`
+	Payload     []byte             `json:"payload"`
+	Etag        *string            `json:"etag"`
+	CheckedAt   pgtype.Timestamptz `json:"checked_at"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+	NextAttempt pgtype.Timestamptz `json:"next_attempt"`
+	LastError   string             `json:"last_error"`
+}
+
 type MvHourlyIataStat struct {
 	Iata             string             `json:"iata"`
 	Hour             pgtype.Timestamptz `json:"hour"`
@@ -528,4 +539,5 @@ type TransportScope struct {
 	TransportKey   []byte             `json:"transport_key"`
 	KeyFingerprint []byte             `json:"key_fingerprint"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ImportedOnly   bool               `json:"imported_only"`
 }

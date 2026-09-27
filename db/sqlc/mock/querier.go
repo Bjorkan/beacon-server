@@ -714,6 +714,21 @@ func (mr *MockQuerierMockRecorder) GetScopeByName(ctx, name any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetScopeByName", reflect.TypeOf((*MockQuerier)(nil).GetScopeByName), ctx, name)
 }
 
+// GetScopeCatalogue mocks base method.
+func (m *MockQuerier) GetScopeCatalogue(ctx context.Context, arg db.GetScopeCatalogueParams) (db.MeshmapperScopeCatalogue, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetScopeCatalogue", ctx, arg)
+	ret0, _ := ret[0].(db.MeshmapperScopeCatalogue)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetScopeCatalogue indicates an expected call of GetScopeCatalogue.
+func (mr *MockQuerierMockRecorder) GetScopeCatalogue(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetScopeCatalogue", reflect.TypeOf((*MockQuerier)(nil).GetScopeCatalogue), ctx, arg)
+}
+
 // GetScopeNames mocks base method.
 func (m *MockQuerier) GetScopeNames(ctx context.Context) ([]string, error) {
 	m.ctrl.T.Helper()
@@ -1540,6 +1555,20 @@ func (m *MockQuerier) ResolvePathHashesP4(ctx context.Context, arg db.ResolvePat
 func (mr *MockQuerierMockRecorder) ResolvePathHashesP4(ctx, arg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolvePathHashesP4", reflect.TypeOf((*MockQuerier)(nil).ResolvePathHashesP4), ctx, arg)
+}
+
+// SaveScopeCatalogue mocks base method.
+func (m *MockQuerier) SaveScopeCatalogue(ctx context.Context, arg db.SaveScopeCatalogueParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveScopeCatalogue", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SaveScopeCatalogue indicates an expected call of SaveScopeCatalogue.
+func (mr *MockQuerierMockRecorder) SaveScopeCatalogue(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveScopeCatalogue", reflect.TypeOf((*MockQuerier)(nil).SaveScopeCatalogue), ctx, arg)
 }
 
 // SearchKnownRoutes mocks base method.

@@ -2051,7 +2051,7 @@ func (q *Queries) GetTransportScopeByName(ctx context.Context, name string) (int
 }
 
 const getTransportScopes = `-- name: GetTransportScopes :many
-SELECT name, transport_key, key_fingerprint FROM transport_scopes ORDER BY name
+SELECT name, transport_key, key_fingerprint FROM transport_scopes WHERE NOT imported_only ORDER BY name
 `
 
 type GetTransportScopesRow struct {
@@ -5228,7 +5228,8 @@ VALUES ($1, $2, $3, $4)
 ON CONFLICT (name) DO UPDATE SET
   display_name    = EXCLUDED.display_name,
   transport_key   = EXCLUDED.transport_key,
-  key_fingerprint = EXCLUDED.key_fingerprint
+  key_fingerprint = EXCLUDED.key_fingerprint,
+  imported_only   = FALSE
 `
 
 type UpsertTransportScopeParams struct {
