@@ -137,13 +137,21 @@ SELECT packet_hash,md5(n::text)::uuid,'YOW',NOW(),0,1,0 FROM packets CROSS JOIN 
 		if response.Code != 200 {
 			t.Fatalf("%s: %d %s", path, response.Code, response.Body.String())
 		}
-		var body struct {
-			Items []api.ChannelMessage `json:"items"`
+		if path == "/messages/backfill?afterId=0" {
+			var items []api.ChannelMessage
+			if err := json.Unmarshal(response.Body.Bytes(), &items); err != nil {
+				t.Fatal(err)
+			}
+			check(items)
+		} else {
+			var body struct {
+				Items []api.ChannelMessage `json:"items"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			check(body.Items)
 		}
-		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-			t.Fatal(err)
-		}
-		check(body.Items)
 	}
 	filtered, err := s.ListChannelMessages(ctx, &ch, time.Time{}, 20, []string{"YOW"}, "#yow", 0)
 	if err != nil || len(filtered.Items) != 1 || filtered.Items[0].Scope == nil || *filtered.Items[0].Scope != "#yow" {
