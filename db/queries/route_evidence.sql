@@ -14,6 +14,7 @@ WHERE po.iata = @iata::bpchar
   AND po.hash_size = @hash_size::smallint
   AND decode(md5(po.path_bytes), 'hex') = @path_digest::bytea
   AND po.path_bytes = @path_bytes::bytea
+  AND po.hop_count >= 2
   AND po.hop_count = @hop_count::smallint
   AND po.path_bytes IS NOT NULL AND po.payload_type IS NOT NULL AND po.payload_type <> 9
   AND po.heard_at >= @since::timestamptz AND po.heard_at < @until::timestamptz

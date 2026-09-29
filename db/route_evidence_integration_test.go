@@ -180,7 +180,7 @@ func TestRouteEvidenceIndexPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _, _ = conn.Exec(context.Background(), "DROP SCHEMA "+ident+" CASCADE") }()
-	if _, err = conn.Exec(ctx, `CREATE TABLE packet_observations (id bigint,iata char(3),hash_size smallint,path_bytes bytea,heard_at timestamptz,payload_type smallint)`); err != nil {
+	if _, err = conn.Exec(ctx, `CREATE TABLE packet_observations (id bigint,iata char(3),hash_size smallint,path_bytes bytea,heard_at timestamptz,payload_type smallint,hop_count smallint)`); err != nil {
 		t.Fatal(err)
 	}
 	migration, err := migrationFiles.ReadFile("migrations/041_route_evidence_index.sql")
@@ -201,5 +201,14 @@ func TestRouteEvidenceIndexPostgres(t *testing.T) {
 	var valid bool
 	if err = conn.QueryRow(ctx, `SELECT indisvalid FROM pg_index WHERE indexrelid='idx_observations_route_evidence'::regclass`).Scan(&valid); err != nil || !valid {
 		t.Fatalf("invalid index after recovery: %v", err)
+	}
+	if _, err = conn.Exec(ctx, `INSERT INTO packet_observations(id,iata,hash_size,path_bytes,heard_at,payload_type,hop_count)
+SELECT n,'YOW',1,'\xaabb',NOW(),4,n FROM generate_series(0,2) n;
+ANALYZE packet_observations`); err != nil {
+		t.Fatal(err)
+	}
+	var indexed float32
+	if err = conn.QueryRow(ctx, `SELECT reltuples FROM pg_class WHERE oid='idx_observations_route_evidence'::regclass`).Scan(&indexed); err != nil || indexed != 1 {
+		t.Fatalf("0/1-hop rows entered the route index: %v %v", indexed, err)
 	}
 }

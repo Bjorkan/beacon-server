@@ -49,6 +49,7 @@ WHERE po.iata = $1::bpchar
   AND po.hash_size = $2::smallint
   AND decode(md5(po.path_bytes), 'hex') = $3::bytea
   AND po.path_bytes = $4::bytea
+  AND po.hop_count >= 2
   AND po.hop_count = $5::smallint
   AND po.path_bytes IS NOT NULL AND po.payload_type IS NOT NULL AND po.payload_type <> 9
   AND po.heard_at >= $6::timestamptz AND po.heard_at < $7::timestamptz

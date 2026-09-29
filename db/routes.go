@@ -224,7 +224,7 @@ func (s *Store) SearchCrossIATARoutes(ctx context.Context, fromHash, fromIATA, t
 		return nil, nil
 	}
 
-	// 5. find cross-IATA links â€” nodes at the boundary of source routes
+	// 5. find cross-IATA links — nodes at the boundary of source routes
 	//    that have neighbors in the target IATA at the start of target routes
 	var results []api.CrossIATARoute
 
@@ -250,7 +250,7 @@ func (s *Store) SearchCrossIATARoutes(ctx context.Context, fromHash, fromIATA, t
 					continue
 				}
 				if targetHops, ok := targetNodeSet[neighbor.ID]; ok {
-					// found a cross-IATA link â€” build the route
+					// found a cross-IATA link — build the route
 					sourceSegment := sr.Hops[:i+1]
 					targetSegment := extractFromNode(targetHops, neighbor.ID)
 
