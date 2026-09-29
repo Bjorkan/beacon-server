@@ -4019,7 +4019,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverActivitySummary"
                 },
                 "windowEnd": {
-                    "description": "exclusive complete-bucket end, epoch ms",
+                    "description": "exclusive end, epoch ms; live requests include the current partial bucket",
                     "type": "integer"
                 },
                 "windowStart": {
@@ -4088,6 +4088,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "recordedPackets": {
+                    "description": "stored observations within windowStart/windowEnd",
                     "type": "integer"
                 }
             }

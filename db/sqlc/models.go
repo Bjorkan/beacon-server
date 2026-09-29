@@ -32,7 +32,7 @@ type AnalyticsLiveHourlyIataStat struct {
 
 type AnalyticsLiveObserverActivityHourly struct {
 	ObserverID   uuid.UUID          `json:"observer_id"`
-	PayloadType  int16              `json:"payload_type"`
+	PayloadType  *int16             `json:"payload_type"`
 	Bucket       pgtype.Timestamptz `json:"bucket"`
 	Observations int64              `json:"observations"`
 	AirtimeMs    float32            `json:"airtime_ms"`

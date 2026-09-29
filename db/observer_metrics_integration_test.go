@@ -41,9 +41,10 @@ func TestObserverMetricsPostgres(t *testing.T) {
 	if err := store.DeleteOldPackets(ctx, time.Now().Add(-72*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	// Migration repairs the two unknown counts that 039 did not archive.
-	applyStatsMigration(t, ctx, tx, "040_observer_unknown_activity.sql")
-	applyStatsMigration(t, ctx, tx, "040_observer_unknown_activity.sql")
+	// The initial archive migration retains unknown payloads without a second rebuild.
+	if err := store.RefreshObserverActivity(ctx); err != nil {
+		t.Fatal(err)
+	}
 	until := time.Now().UTC().Truncate(time.Hour)
 	activity, err := store.GetObserverActivity(ctx, id, 7*24*time.Hour, time.Hour, until)
 	if err != nil {

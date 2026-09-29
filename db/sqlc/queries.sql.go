@@ -749,6 +749,45 @@ func (q *Queries) GetObserverActivityHourlyPayloadTypes(ctx context.Context, arg
 	return items, nil
 }
 
+const getObserverActivityLiveSummary = `-- name: GetObserverActivityLiveSummary :one
+WITH latest AS (
+ SELECT heard_at FROM packet_observations
+ WHERE observer_id = $1::uuid AND heard_at <= $2::timestamptz
+ ORDER BY heard_at DESC LIMIT 1
+), hourly AS (
+ SELECT COUNT(*)::bigint AS n FROM packet_observations
+ WHERE observer_id = $1::uuid
+ AND heard_at >= $3::timestamptz AND heard_at < $4::timestamptz
+)
+SELECT (SELECT heard_at FROM latest)::timestamptz AS latest_recorded_at,
+ hourly.n AS last_complete_hour FROM hourly
+`
+
+type GetObserverActivityLiveSummaryParams struct {
+	ObserverID  uuid.UUID          `json:"observer_id"`
+	GeneratedAt pgtype.Timestamptz `json:"generated_at"`
+	HourStart   pgtype.Timestamptz `json:"hour_start"`
+	HourEnd     pgtype.Timestamptz `json:"hour_end"`
+}
+
+type GetObserverActivityLiveSummaryRow struct {
+	LatestRecordedAt pgtype.Timestamptz `json:"latest_recorded_at"`
+	LastCompleteHour int64              `json:"last_complete_hour"`
+}
+
+// Two indexed ranges, bounded to one observer; no legacy presence counters.
+func (q *Queries) GetObserverActivityLiveSummary(ctx context.Context, arg GetObserverActivityLiveSummaryParams) (GetObserverActivityLiveSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getObserverActivityLiveSummary,
+		arg.ObserverID,
+		arg.GeneratedAt,
+		arg.HourStart,
+		arg.HourEnd,
+	)
+	var i GetObserverActivityLiveSummaryRow
+	err := row.Scan(&i.LatestRecordedAt, &i.LastCompleteHour)
+	return i, err
+}
+
 const getObserverActivityRaw = `-- name: GetObserverActivityRaw :many
 SELECT
   date_bin($3::interval, heard_at, TIMESTAMPTZ 'epoch')::timestamptz AS bucket,

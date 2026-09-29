@@ -553,11 +553,11 @@ new packet deletions. A failed archive leaves its entire raw batch intact.
 
 ### Observer monitoring metrics
 
-Observer activity returns complete buckets in `[windowStart, windowEnd)`, plus
+Observer activity returns buckets in `[windowStart, windowEnd)`, including the current partial bucket for live requests, plus
 `generatedAt`, `source` (`raw` or `hourly`) and `summary`. `recordedPackets` is the
 sum of stored observations in those buckets; repeated broker delivery of the
 same retained packet/observer pair counts once. Unknown payload types appear as
-`-1` rather than disappearing. `lastCompleteHour` uses the previous complete UTC
+`-1` rather than disappearing. Freshness fields are measured at `generatedAt` even for historical `until` requests; `recordedPackets` alone follows the selected window. `lastCompleteHour` uses the previous complete UTC
 hour and includes its own start/end; `latestRecordedAt` is the latest retained
 reception timestamp. Missing records do not prove downtime. The optional `until`
 (epoch milliseconds, within the last 30 days) aligns two observers' charts.
@@ -566,5 +566,6 @@ The existing observer `observationCount` remains a legacy cumulative presence
 counter for compatibility, including status/neighbour events. It is not a
 period packet total. Broker presence and packet-arrival timestamps are now
 updated separately; this cannot reconstruct previously overwritten timestamps.
-Migration 040 repairs archived unknown-type counts from the all-payload observer
-rollup; radio samples already discarded for those legacy rows remain unknown.
+The initial analytics archive migration includes unknown-type activity. Existing
+development previews that used the earlier draft require a separate operator repair;
+radio samples already discarded for those legacy rows cannot be recovered.

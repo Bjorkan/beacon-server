@@ -919,7 +919,7 @@ func TestGetObserverActivity_SinceAlignedToInterval(t *testing.T) {
 	if gotSince.Before(before) {
 		t.Errorf("since %s is before the window start %s", gotSince, before)
 	}
-	if !gotSince.Before(after.Add(interval)) {
+	if gotSince.After(after.Add(interval)) {
 		t.Errorf("since %s is more than one interval past the window start %s", gotSince, after)
 	}
 	if !gotInterval.Valid || gotInterval.Microseconds != interval.Microseconds() {

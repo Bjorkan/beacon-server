@@ -88,19 +88,21 @@ type ObserverActivityPoint struct {
 	RSSIAvg      *float32 `json:"rssiAvg"`
 }
 
-// ObserverActivity is the per-observer heard-activity response.
 // ObserverActivitySummary describes stored packet records, never MQTT presence events.
+// Freshness and lastCompleteHour are measured at generatedAt, even with an explicit until;
+// only recordedPackets follows the selected activity window.
 type ObserverActivitySummary struct {
-	RecordedPackets       int64  `json:"recordedPackets"`
+	RecordedPackets       int64  `json:"recordedPackets"` // stored observations within windowStart/windowEnd
 	LastCompleteHour      int64  `json:"lastCompleteHour"`
 	LastCompleteHourStart int64  `json:"lastCompleteHourStart"`
 	LastCompleteHourEnd   int64  `json:"lastCompleteHourEnd"`
 	LatestRecordedAt      *int64 `json:"latestRecordedAt"`
 }
 
+// ObserverActivity is the per-observer heard-activity response.
 type ObserverActivity struct {
 	WindowStart int64                    `json:"windowStart"` // inclusive complete-bucket start, epoch ms
-	WindowEnd   int64                    `json:"windowEnd"`   // exclusive complete-bucket end, epoch ms
+	WindowEnd   int64                    `json:"windowEnd"`   // exclusive end, epoch ms; live requests include the current partial bucket
 	GeneratedAt int64                    `json:"generatedAt"` // response computation time, not proof of continuous coverage
 	Source      string                   `json:"source"`      // raw or hourly; missing records do not prove an outage
 	Summary     *ObserverActivitySummary `json:"summary,omitempty"`

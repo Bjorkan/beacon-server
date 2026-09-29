@@ -239,8 +239,9 @@ func (s *Store) GetObserverActivity(ctx context.Context, observerID uuid.UUID, w
 	now := time.Now().UTC()
 	if until.IsZero() {
 		until = now
+	} else {
+		until = until.UTC().Truncate(interval)
 	}
-	until = until.UTC().Truncate(interval)
 	since := until.Add(-window)
 	if !since.Equal(since.Truncate(interval)) {
 		since = since.Truncate(interval).Add(interval)
