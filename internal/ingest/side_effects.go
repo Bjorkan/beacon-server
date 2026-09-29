@@ -54,7 +54,7 @@ type channelMessageEvent struct {
 	Content     string                 `json:"content"`
 	SentAt      int64                  `json:"sentAt"` // epoch ms
 	Scope       *string                `json:"scope"`
-	ScopeStatus api.ChannelScopeStatus `json:"scopeStatus"`
+	ScopeStatus api.ChannelScopeStatus `json:"scopeStatus" enums:"matched,unscoped,unknown,unavailable"`
 }
 
 // nodeUpdateEvent is the JSON payload for a nodeUpdate WS event.
@@ -215,7 +215,7 @@ func (w *Worker) handlePayloadTypeSideEffects(ctx context.Context, packet *meshc
 			return
 		}
 
-		if result.NewMessage {
+		if result.Message != nil {
 			evt := channelMessageEvent{
 				ID:          result.Message.ID,
 				Scope:       result.Message.Scope,

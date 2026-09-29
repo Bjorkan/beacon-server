@@ -131,7 +131,7 @@ type DB interface {
 	// UpsertNodeShortID upserts a node_short_ids row for path resolution.
 	UpsertNodeShortID(ctx context.Context, nodeID uuid.UUID, iata string, prefix4 []byte) error
 
-	// InsertChannelMessage stores a decrypted group text message. Returns insert success and an error.
+	// InsertChannelMessage stores a decrypted group text message. Returns the inserted message, nil for a duplicate, and an error.
 	InsertChannelMessage(ctx context.Context, m InsertChannelMessageParams) (*InsertedChannelMessage, error)
 
 	// UpdateObserverStatus updates the observer row from a /status message. Returns the OberserID
