@@ -1509,6 +1509,34 @@ func (q *Queries) GetScopeByName(ctx context.Context, name string) (GetScopeByNa
 	return i, err
 }
 
+const getScopeCatalogue = `-- name: GetScopeCatalogue :one
+
+SELECT iata, url, payload, etag, checked_at, attempted_at, next_attempt, last_error FROM meshmapper_scope_catalogues WHERE iata = $1 AND url = $2
+`
+
+type GetScopeCatalogueParams struct {
+	Iata string `json:"iata"`
+	Url  string `json:"url"`
+}
+
+// Copyright 2026 Beacon Contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+func (q *Queries) GetScopeCatalogue(ctx context.Context, arg GetScopeCatalogueParams) (MeshmapperScopeCatalogue, error) {
+	row := q.db.QueryRow(ctx, getScopeCatalogue, arg.Iata, arg.Url)
+	var i MeshmapperScopeCatalogue
+	err := row.Scan(
+		&i.Iata,
+		&i.Url,
+		&i.Payload,
+		&i.Etag,
+		&i.CheckedAt,
+		&i.AttemptedAt,
+		&i.NextAttempt,
+		&i.LastError,
+	)
+	return i, err
+}
+
 const getScopeNames = `-- name: GetScopeNames :many
 SELECT name FROM transport_scopes ORDER BY name
 `
@@ -4369,6 +4397,60 @@ func (q *Queries) ResolvePathHashesP4(ctx context.Context, arg ResolvePathHashes
 		return nil, err
 	}
 	return items, nil
+}
+
+const saveScopeCatalogue = `-- name: SaveScopeCatalogue :exec
+WITH inserted AS (
+    INSERT INTO transport_scopes (name, transport_key, key_fingerprint, imported_only)
+    SELECT entry.name, entry.key, entry.fingerprint, TRUE
+    FROM (SELECT unnest($9::text[]) AS name, unnest($10::bytea[]) AS key,
+                 unnest($11::bytea[]) AS fingerprint) AS entry
+    ON CONFLICT (name) DO NOTHING
+)
+INSERT INTO meshmapper_scope_catalogues (iata, url, payload, etag, checked_at, attempted_at, next_attempt, last_error)
+VALUES ($1, $2, $3::jsonb, $4::text,
+    $5::timestamptz, $6, $7, $8)
+ON CONFLICT (iata, url) DO UPDATE SET
+    payload = COALESCE(EXCLUDED.payload, meshmapper_scope_catalogues.payload),
+    etag = COALESCE(EXCLUDED.etag, meshmapper_scope_catalogues.etag),
+    checked_at = COALESCE(EXCLUDED.checked_at, meshmapper_scope_catalogues.checked_at),
+    attempted_at = EXCLUDED.attempted_at,
+    next_attempt = EXCLUDED.next_attempt,
+    last_error = EXCLUDED.last_error
+`
+
+type SaveScopeCatalogueParams struct {
+	Iata         string             `json:"iata"`
+	Url          string             `json:"url"`
+	Payload      []byte             `json:"payload"`
+	Etag         *string            `json:"etag"`
+	CheckedAt    pgtype.Timestamptz `json:"checked_at"`
+	AttemptedAt  pgtype.Timestamptz `json:"attempted_at"`
+	NextAttempt  pgtype.Timestamptz `json:"next_attempt"`
+	LastError    string             `json:"last_error"`
+	Names        []string           `json:"names"`
+	Keys         [][]byte           `json:"keys"`
+	Fingerprints [][]byte           `json:"fingerprints"`
+}
+
+// One statement commits the validated snapshot and its lookup identities together.
+// Empty arrays insert nothing. NULL payload/checked_at retain last-known-good data
+// after an error or 304. Imported names never replace existing manual metadata.
+func (q *Queries) SaveScopeCatalogue(ctx context.Context, arg SaveScopeCatalogueParams) error {
+	_, err := q.db.Exec(ctx, saveScopeCatalogue,
+		arg.Iata,
+		arg.Url,
+		arg.Payload,
+		arg.Etag,
+		arg.CheckedAt,
+		arg.AttemptedAt,
+		arg.NextAttempt,
+		arg.LastError,
+		arg.Names,
+		arg.Keys,
+		arg.Fingerprints,
+	)
+	return err
 }
 
 const searchKnownRoutes = `-- name: SearchKnownRoutes :many

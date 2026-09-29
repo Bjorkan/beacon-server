@@ -41,18 +41,16 @@ func New() *ScopeStore {
 	return &ScopeStore{}
 }
 
-// Load replaces all entries — call on startup after DB seeding.
+// Load publishes a new immutable snapshot. The caller must not mutate it after publication.
 func (s *ScopeStore) Load(entries []Entry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.entries = entries
 }
 
-// Entries returns a copy of all loaded entries.
+// Entries returns the current immutable snapshot. Callers must not modify it.
 func (s *ScopeStore) Entries() []Entry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	result := make([]Entry, len(s.entries))
-	copy(result, s.entries)
-	return result
+	return s.entries
 }

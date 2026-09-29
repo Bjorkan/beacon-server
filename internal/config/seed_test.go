@@ -8,9 +8,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/MeshCore-Beacon/beacon-server/internal/scopestore"
 	"os"
 	"testing"
+
+	"github.com/MeshCore-Beacon/beacon-server/internal/scopestore"
 )
 
 type stubSeeder struct {

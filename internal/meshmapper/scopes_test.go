@@ -253,3 +253,28 @@ func TestImportedSourcesOverlapWithoutGlobalMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestInvalidSavedCatalogueDoesNotBlockStartupOrRefresh(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") != "" {
+			t.Error("invalid saved catalogue must not accept a 304")
+		}
+		_, _ = w.Write(catalogue("yow"))
+	}))
+	defer server.Close()
+	store := &memoryStore{rows: map[string]Cache{"YOW" + server.URL: {Payload: []byte(`{"invalid":true}`), ETag: `"old"`}}}
+	scopes := scopestore.New()
+	imp, err := New(context.Background(), config.MeshMapperScopesConfig{Enabled: true, Sources: map[string]string{"YOW": server.URL}}, store, scopes, []scopestore.Entry{scopestore.FromName("manual")})
+	if err != nil || !reflect.DeepEqual(names(scopes), []string{"#manual"}) {
+		t.Fatal("invalid optional source blocked manual startup", err)
+	}
+	if err = imp.Refresh(context.Background()); err != nil || !reflect.DeepEqual(names(scopes), []string{"#manual", "#yow"}) {
+		t.Fatal("source did not recover on refresh", err, names(scopes))
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	imp.sources[0].cache.NextAttempt = time.Time{}
+	if err = imp.Refresh(ctx); err != nil {
+		t.Fatalf("normal shutdown is a task failure: %v", err)
+	}
+}

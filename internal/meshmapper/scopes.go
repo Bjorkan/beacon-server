@@ -88,7 +88,9 @@ func New(ctx context.Context, cfg config.MeshMapperScopesConfig, store Store, sc
 			if len(cached.Payload) > 0 {
 				s.entries, s.generated, err = decode(cached.Payload, key)
 				if err != nil {
-					return nil, fmt.Errorf("invalid saved scope catalogue %s: %w", key, err)
+					s.entries = nil
+					s.cache.Payload, s.cache.ETag = nil, ""
+					s.cache.LastError = "invalid saved catalogue; awaiting refresh"
 				}
 			}
 			if cached.LastError == "HTTP 429" && cached.NextAttempt.After(i.retryAfter) {
@@ -103,7 +105,13 @@ func New(ctx context.Context, cfg config.MeshMapperScopesConfig, store Store, sc
 }
 
 // Refresh checks only one due source. The scheduler serializes calls every 15s.
-func (i *Importer) Refresh(ctx context.Context) error {
+func (i *Importer) Refresh(ctx context.Context) (err error) {
+	parent := ctx
+	defer func() {
+		if parent.Err() != nil {
+			err = nil
+		}
+	}()
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	now := time.Now().UTC()

@@ -925,10 +925,10 @@ func (w *Worker) handlePacket(ctx context.Context, iata, pubkeyHex string, raw [
 	}
 }
 
-// matchTransportScope never treats catalogue membership as forwarding evidence.
-// Multiple candidate names matching the short code are ambiguous, not first-wins.
+// matchTransportScope preserves manual precedence; imported collisions remain unresolved.
 func matchTransportScope(entries []scopestore.Entry, iata string, payloadType uint8, payload []byte, code uint16) *string {
 	var matched *string
+	ambiguous := false
 	for _, entry := range entries {
 		if entry.IATAs != nil && !slices.Contains(entry.IATAs, iata) {
 			continue
@@ -936,11 +936,17 @@ func matchTransportScope(entries []scopestore.Entry, iata string, payloadType ui
 		if computeTransportCode(entry.TransportKey, payloadType, payload) != code {
 			continue
 		}
-		if matched != nil && *matched != entry.Name {
-			return nil
-		}
 		name := entry.Name
+		if entry.IATAs == nil {
+			return &name
+		}
+		if matched != nil && *matched != name {
+			ambiguous = true
+		}
 		matched = &name
+	}
+	if ambiguous {
+		return nil
 	}
 	return matched
 }

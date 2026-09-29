@@ -29,6 +29,7 @@ func TestTransportScopeRegionalAndAmbiguousMatches(t *testing.T) {
 	}
 	// Distinct keys with the same short code for this payload must remain unknown.
 	a, b := scopestore.FromName("collision-320"), scopestore.FromName("collision-322")
+	a.IATAs, b.IATAs = []string{"YOW"}, []string{"YOW"}
 	for _, entries := range [][]scopestore.Entry{{a, b}, {b, a}} {
 		if computeTransportCode(entries[0].TransportKey, 4, payload) != 37018 {
 			t.Fatal("collision fixture changed")
@@ -91,5 +92,22 @@ func BenchmarkTransportScopeCatalogue(b *testing.B) {
 				matchTransportScope(store.Entries(), "R00", 4, payload, 1234)
 			}
 		})
+	}
+}
+
+func TestManualScopeWinsTransportCodeCollision(t *testing.T) {
+	payload := []byte{0xde, 0xad, 0xbe, 0xef}
+	manual, imported := scopestore.FromName("collision-320"), scopestore.FromName("collision-322")
+	imported.IATAs = []string{"YOW"}
+	for _, entries := range [][]scopestore.Entry{{manual, imported}, {imported, manual}, {imported, scopestore.Entry{Name: "ambiguous", TransportKey: imported.TransportKey, IATAs: []string{"YOW"}}, manual}} {
+		if got := matchTransportScope(entries, "YOW", 4, payload, 37018); got == nil || *got != manual.Name {
+			t.Fatalf("manual match lost to imported collision: %v", got)
+		}
+	}
+	imported.IATAs = nil
+	for _, entries := range [][]scopestore.Entry{{manual, imported}, {imported, manual}} {
+		if got := matchTransportScope(entries, "YOW", 4, payload, 37018); got == nil || *got != entries[0].Name {
+			t.Fatalf("manual-only first-match behavior changed: %v", got)
+		}
 	}
 }
