@@ -321,10 +321,7 @@ func (s *Store) GetObserverActivity(ctx context.Context, observerID uuid.UUID, w
 		}
 		activity.PayloadTypes = make([]api.PayloadBreakdownItem, 0, len(typeRows))
 		for _, v := range typeRows {
-			payloadType := int16(-1)
-			if v.PayloadType != nil {
-				payloadType = *v.PayloadType
-			}
+			payloadType := v.PayloadType
 			activity.PayloadTypes = append(activity.PayloadTypes, api.PayloadBreakdownItem{
 				PayloadType:     payloadType,
 				PayloadTypeName: api.PayloadTypeName(payloadType),

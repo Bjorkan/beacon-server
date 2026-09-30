@@ -256,7 +256,7 @@ var activityIntervals = map[string]time.Duration{
 //	@Param		observerId	path		string	true	"Observer UUID"
 //	@Param		range		query		string	false	"Trailing window as a Go duration, max 720h (default 24h); max 48h when interval is under 1h"
 //	@Param		interval	query		string	false	"Bucket size: 5m, 15m, 1h, 6h or 24h (default 15m)"
-//	@Param		until	query		int	false	"Optional exclusive end in epoch milliseconds; aligned down to a complete bucket, at most 30 days old"
+//	@Param		until	query		int	false	"Optional exclusive end in epoch milliseconds; aligned down to a complete bucket, at most 30 days old. Activity uses this window; summary freshness/latestRecordedAt and the last complete hour are measured at response generation time, independently of until."
 //	@Success	200			{object}	api.ObserverActivity
 //	@Failure	400			{object}	handlers.APIError
 //	@Failure	404			{object}	handlers.APIError

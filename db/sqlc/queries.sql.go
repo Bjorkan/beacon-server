@@ -725,8 +725,8 @@ type GetObserverActivityHourlyPayloadTypesParams struct {
 }
 
 type GetObserverActivityHourlyPayloadTypesRow struct {
-	PayloadType *int16 `json:"payload_type"`
-	Count       int64  `json:"count"`
+	PayloadType int16 `json:"payload_type"`
+	Count       int64 `json:"count"`
 }
 
 func (q *Queries) GetObserverActivityHourlyPayloadTypes(ctx context.Context, arg GetObserverActivityHourlyPayloadTypesParams) ([]GetObserverActivityHourlyPayloadTypesRow, error) {
