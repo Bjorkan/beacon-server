@@ -588,8 +588,8 @@ func TestGetObserverActivity_HourlyFoldNoSignal(t *testing.T) {
 		}}, nil)
 	mock.EXPECT().GetObserverActivityHourlyPayloadTypes(gomock.Any(), gomock.Any()).
 		Return([]sqlc.GetObserverActivityHourlyPayloadTypesRow{
-			{PayloadType: i16(4), Count: 9},
-			{PayloadType: nil, Count: 3},
+			{PayloadType: 4, Count: 9},
+			{PayloadType: -1, Count: 3},
 		}, nil)
 
 	store := &Store{q: mock}
