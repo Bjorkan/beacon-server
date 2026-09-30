@@ -1471,7 +1471,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Optional exclusive end in epoch milliseconds; aligned down to a complete bucket, at most 30 days old",
+                        "description": "Optional exclusive end in epoch milliseconds; aligned down to a complete bucket, at most 30 days old. Activity uses this window; summary freshness/latestRecordedAt and the last complete hour are measured at response generation time, independently of until.",
                         "name": "until",
                         "in": "query"
                     }
