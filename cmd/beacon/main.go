@@ -318,6 +318,11 @@ func main() {
 	if scopeImporter != nil {
 		tasks = append(tasks, background.Task{Name: "meshmapper.scopes", Interval: meshmapper.PollInterval, Run: scopeImporter.Refresh})
 	}
+	profiles := configureProfiling(ctx, pool)
+	defer profiles.Stop()
+	for i := range tasks {
+		tasks[i].Run = profiles.WrapTask(tasks[i].Name, tasks[i].Run)
+	}
 	scheduler := background.New(tasks)
 	go scheduler.Start(ctx)
 
