@@ -2219,6 +2219,7 @@ const docTemplate = `{
         },
         "/scopes": {
             "get": {
+                "description": "The unfiltered list includes stored imported names after an importer is disabled or a source is removed. Those historical identities are retained indefinitely; listing them does not establish observed traffic or current source membership.",
                 "produces": [
                     "application/json"
                 ],
