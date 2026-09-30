@@ -1588,8 +1588,6 @@ WITH latest AS (
 SELECT (SELECT heard_at FROM latest)::timestamptz AS latest_recorded_at,
  hourly.n AS last_complete_hour FROM hourly;
 
--- Copyright 2026 Beacon Contributors
--- SPDX-License-Identifier: AGPL-3.0-or-later
 
 -- name: GetScopeCatalogue :one
 SELECT * FROM meshmapper_scope_catalogues WHERE iata = $1 AND url = $2;
