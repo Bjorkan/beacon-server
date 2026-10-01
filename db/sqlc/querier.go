@@ -13,6 +13,9 @@ import (
 )
 
 type Querier interface {
+	// An empty region places the channel Beacon-wide.
+	AddChannelConfigScopes(ctx context.Context, arg AddChannelConfigScopesParams) error
+	AddChannelMembers(ctx context.Context, arg AddChannelMembersParams) error
 	AddRegionIATAs(ctx context.Context, arg AddRegionIATAsParams) error
 	// Hop prefixes that match >1 node in an IATA, per width. Computed once per reconfirm run.
 	AmbiguousPrefixes(ctx context.Context) ([]AmbiguousPrefixesRow, error)
@@ -20,6 +23,9 @@ type Querier interface {
 	// Lock the current row before deciding the outcome, including when another
 	// deactivation commits while this statement is waiting for its row lock.
 	DeactivateAccount(ctx context.Context, id uuid.UUID) (DeactivateAccountRow, error)
+	DeleteAllChannelMembers(ctx context.Context) error
+	DeleteChannelConfigScopes(ctx context.Context) error
+	DeleteChannelMembersNotIn(ctx context.Context, arg DeleteChannelMembersNotInParams) error
 	// Keeps the channel IATA filter in step with packet retention.
 	DeleteOldChannelIATAs(ctx context.Context, lastHeard pgtype.Timestamptz) error
 	// Deletes nodes not seen since the given cutoff. node_iatas and node_neighbors cascade-
@@ -144,6 +150,7 @@ type Querier interface {
 	// Pass empty string for iata or scope to skip those filters.
 	// Pass cursor=0 to start from the beginning.
 	ListAllChannelMessages(ctx context.Context, arg ListAllChannelMessagesParams) ([]ListAllChannelMessagesRow, error)
+	ListChannelCatalogues(ctx context.Context) ([]MeshmapperChannelCatalogue, error)
 	// Returns messages for a channel identified by integer ID.
 	// Pass a zero/null timestamp for since to return all messages up to limit.
 	// Pass empty string for iata to skip IATA filtering.
@@ -154,8 +161,9 @@ type Querier interface {
 	// Pass empty string for iata or scope to skip those filters.
 	// Pass cursor=0 to start from the beginning.
 	ListChannelMessagesByHash(ctx context.Context, arg ListChannelMessagesByHashParams) ([]ListChannelMessagesByHashRow, error)
-	// Channels ordered by last seen, optionally filtered by hash and/or IATAs
-	// (membership via channel_iatas). NULL hash / empty array skip those filters.
+	// Channels ordered by last seen, optionally filtered by hash and/or IATAs.
+	// A channel belongs to an IATA when MeshMapper lists it there or config scopes it
+	// to a region containing it (or Beacon-wide). NULL hash / empty array skip those filters.
 	// Pass cursor=0 to start from the beginning (cursor is last_seen epoch ms).
 	ListChannels(ctx context.Context, arg ListChannelsParams) ([]Channel, error)
 	// Keep the non-null tuple boundary separate from the legacy optional cursor so
@@ -224,6 +232,8 @@ type Querier interface {
 	// to the config after they'd already been ingested -- see
 	// internal/ingest.BackfillChannelMessages.
 	ListUndecryptedGroupTextPackets(ctx context.Context) ([]ListUndecryptedGroupTextPacketsRow, error)
+	// Like ListUndecryptedGroupTextPackets, limited to channels that just gained a key.
+	ListUndecryptedGroupTextPacketsByHash(ctx context.Context, hashes [][]byte) ([]ListUndecryptedGroupTextPacketsByHashRow, error)
 	ListZoneBoundaries(ctx context.Context) ([]MeshmapperZoneBoundary, error)
 	ListZoneLists(ctx context.Context) ([]MeshmapperZoneList, error)
 	PruneImportedRegions(ctx context.Context, keep []string) ([]string, error)
@@ -265,6 +275,8 @@ type Querier interface {
 	ResolvePathHashesP2(ctx context.Context, arg ResolvePathHashesP2Params) ([]ResolvePathHashesP2Row, error)
 	ResolvePathHashesP3(ctx context.Context, arg ResolvePathHashesP3Params) ([]ResolvePathHashesP3Row, error)
 	ResolvePathHashesP4(ctx context.Context, arg ResolvePathHashesP4Params) ([]ResolvePathHashesP4Row, error)
+	// NULL payload/etag/checked_at retain the last good list after an error or 304.
+	SaveChannelCatalogue(ctx context.Context, arg SaveChannelCatalogueParams) error
 	// One statement commits the validated snapshot and its lookup identities together.
 	// Empty arrays insert nothing. NULL payload/checked_at retain last-known-good data
 	// after an error or 304. Imported names never replace existing manual metadata.

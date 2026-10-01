@@ -12,13 +12,28 @@ import (
 // MeshMapper rate-limits get_zones/get_geojson to one request per target per
 // 23.5h and get_scopes to one per region per 55m; minimums round up.
 const (
-	MinZonesRefresh  = 24 * time.Hour
-	MinScopesRefresh = time.Hour
+	MinZonesRefresh    = 24 * time.Hour
+	MinScopesRefresh   = time.Hour
+	MinChannelsRefresh = 24 * time.Hour // get_channels.php: one per region per 23.5h
 )
 
 type MeshMapperConfig struct {
-	Scopes MeshMapperScopesConfig `yaml:"scopes"`
-	Zones  MeshMapperZonesConfig  `yaml:"zones"`
+	Scopes   MeshMapperScopesConfig   `yaml:"scopes"`
+	Zones    MeshMapperZonesConfig    `yaml:"zones"`
+	Channels MeshMapperChannelsConfig `yaml:"channels"`
+}
+
+// MeshMapperChannelsConfig imports each known IATA's public hashtag channels.
+type MeshMapperChannelsConfig struct {
+	Enabled         bool     `yaml:"enabled"`
+	RefreshInterval duration `yaml:"refresh_interval"`
+}
+
+func (c MeshMapperChannelsConfig) Interval() time.Duration {
+	if c.RefreshInterval.Duration == 0 {
+		return MinChannelsRefresh
+	}
+	return c.RefreshInterval.Duration
 }
 
 // MeshMapperZonesConfig imports each known IATA's published boundary, overriding borderFile.
@@ -58,6 +73,9 @@ func (c *Config) validateMeshMapper() error {
 		if z.Interval() < MinZonesRefresh || z.Interval() > 7*24*time.Hour {
 			return fmt.Errorf("meshmapper.zones.refresh_interval must be between 24h and 168h")
 		}
+	}
+	if ch := c.MeshMapper.Channels; ch.Enabled && (ch.Interval() < MinChannelsRefresh || ch.Interval() > 7*24*time.Hour) {
+		return fmt.Errorf("meshmapper.channels.refresh_interval must be between 24h and 168h")
 	}
 	s := c.MeshMapper.Scopes
 	if !s.Enabled {

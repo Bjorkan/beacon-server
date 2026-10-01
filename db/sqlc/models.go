@@ -188,6 +188,11 @@ type Channel struct {
 	MessageCount   *int64             `json:"message_count"`
 }
 
+type ChannelConfigScope struct {
+	KeyFingerprint []byte  `json:"key_fingerprint"`
+	RegionSlug     *string `json:"region_slug"`
+}
+
 type ChannelIata struct {
 	ChannelHash []byte             `json:"channel_hash"`
 	Iata        string             `json:"iata"`
@@ -232,6 +237,22 @@ type KnownRoute struct {
 	LastSeen          pgtype.Timestamptz `json:"last_seen"`
 	ObservationCount  int64              `json:"observation_count"`
 	LastReconfirmedAt pgtype.Timestamptz `json:"last_reconfirmed_at"`
+}
+
+type MeshmapperChannelCatalogue struct {
+	Iata        string             `json:"iata"`
+	Url         string             `json:"url"`
+	Payload     []byte             `json:"payload"`
+	Etag        *string            `json:"etag"`
+	CheckedAt   pgtype.Timestamptz `json:"checked_at"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+	NextAttempt pgtype.Timestamptz `json:"next_attempt"`
+	LastError   string             `json:"last_error"`
+}
+
+type MeshmapperChannelMember struct {
+	Iata           string `json:"iata"`
+	KeyFingerprint []byte `json:"key_fingerprint"`
 }
 
 type MeshmapperScopeCatalogue struct {

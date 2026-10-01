@@ -863,6 +863,19 @@ RETURNING id;
 SELECT packet_hash, raw_payload FROM packets
 WHERE payload_type = 5 AND decrypted IS NOT TRUE;
 
+-- name: ListUndecryptedGroupTextPacketsByHash :many
+-- Like ListUndecryptedGroupTextPackets, limited to channels that just gained a key.
+SELECT packet_hash, raw_payload FROM packets
+WHERE payload_type = 5 AND decrypted IS NOT TRUE AND channel_hash = ANY(@hashes::bytea[]);
+
+-- name: DeleteChannelConfigScopes :exec
+DELETE FROM channel_config_scopes;
+
+-- name: AddChannelConfigScopes :exec
+-- An empty region places the channel Beacon-wide.
+INSERT INTO channel_config_scopes (key_fingerprint, region_slug)
+SELECT unnest(@fingerprints::bytea[]), NULLIF(unnest(@regions::text[]), '');
+
 -- name: UpsertChannelIATA :exec
 -- Refreshes at most hourly so repeat hears don't churn the row.
 INSERT INTO channel_iatas (channel_hash, iata, last_heard)
@@ -880,15 +893,19 @@ ON CONFLICT (trace_tag, iata) DO UPDATE SET
 WHERE EXCLUDED.last_heard > trace_iatas.last_heard + INTERVAL '1 hour';
 
 -- name: ListChannels :many
--- Channels ordered by last seen, optionally filtered by hash and/or IATAs
--- (membership via channel_iatas). NULL hash / empty array skip those filters.
+-- Channels ordered by last seen, optionally filtered by hash and/or IATAs.
+-- A channel belongs to an IATA when MeshMapper lists it there or config scopes it
+-- to a region containing it (or Beacon-wide). NULL hash / empty array skip those filters.
 -- Pass cursor=0 to start from the beginning (cursor is last_seen epoch ms).
 SELECT c.* FROM channels c
 WHERE (@channel_hash::bytea IS NULL OR c.channel_hash = @channel_hash)
-  AND (COALESCE(cardinality(@iatas::bpchar[]), 0) = 0 OR c.channel_hash IN (
-    SELECT ci.channel_hash FROM channel_iatas ci
-    WHERE ci.iata = ANY(@iatas::bpchar[])
-  ))
+  AND (COALESCE(cardinality(@iatas::bpchar[]), 0) = 0
+    OR EXISTS (SELECT 1 FROM meshmapper_channel_members m
+      WHERE m.key_fingerprint = c.key_fingerprint AND m.iata::bpchar = ANY(@iatas::bpchar[]))
+    OR EXISTS (SELECT 1 FROM channel_config_scopes s
+      WHERE s.key_fingerprint = c.key_fingerprint AND (s.region_slug IS NULL OR s.region_slug IN (
+        SELECT r.slug FROM regions r JOIN region_iatas ri ON ri.region_id = r.id
+        WHERE ri.iata = ANY(@iatas::bpchar[])))))
   AND (@cursor_ts::timestamptz IS NULL OR c.last_seen < @cursor_ts)
 ORDER BY c.last_seen DESC, c.id DESC
 LIMIT @page_limit;
@@ -899,9 +916,13 @@ LIMIT @page_limit;
 SELECT c.* FROM channels c
 WHERE (c.last_seen, c.id) < (@cursor_ts::timestamptz, @cursor_id::integer)
   AND (@channel_hash::bytea IS NULL OR c.channel_hash = @channel_hash)
-  AND (COALESCE(cardinality(@iatas::bpchar[]), 0) = 0 OR c.channel_hash IN (
-    SELECT ci.channel_hash FROM channel_iatas ci WHERE ci.iata = ANY(@iatas::bpchar[])
-  ))
+  AND (COALESCE(cardinality(@iatas::bpchar[]), 0) = 0
+    OR EXISTS (SELECT 1 FROM meshmapper_channel_members m
+      WHERE m.key_fingerprint = c.key_fingerprint AND m.iata::bpchar = ANY(@iatas::bpchar[]))
+    OR EXISTS (SELECT 1 FROM channel_config_scopes s
+      WHERE s.key_fingerprint = c.key_fingerprint AND (s.region_slug IS NULL OR s.region_slug IN (
+        SELECT r.slug FROM regions r JOIN region_iatas ri ON ri.region_id = r.id
+        WHERE ri.iata = ANY(@iatas::bpchar[])))))
 ORDER BY c.last_seen DESC, c.id DESC
 LIMIT @page_limit;
 
@@ -1627,6 +1648,33 @@ ON CONFLICT (iata, url) DO UPDATE SET
     attempted_at = EXCLUDED.attempted_at,
     next_attempt = EXCLUDED.next_attempt,
     last_error = EXCLUDED.last_error;
+
+-- name: ListChannelCatalogues :many
+SELECT * FROM meshmapper_channel_catalogues ORDER BY iata, attempted_at;
+
+-- name: SaveChannelCatalogue :exec
+-- NULL payload/etag/checked_at retain the last good list after an error or 304.
+INSERT INTO meshmapper_channel_catalogues (iata, url, payload, etag, checked_at, attempted_at, next_attempt, last_error)
+VALUES (@iata, @url, sqlc.narg(payload)::jsonb, sqlc.narg(etag)::text,
+    sqlc.narg(checked_at)::timestamptz, @attempted_at, @next_attempt, @last_error)
+ON CONFLICT (iata, url) DO UPDATE SET
+    payload = COALESCE(EXCLUDED.payload, meshmapper_channel_catalogues.payload),
+    etag = COALESCE(EXCLUDED.etag, meshmapper_channel_catalogues.etag),
+    checked_at = COALESCE(EXCLUDED.checked_at, meshmapper_channel_catalogues.checked_at),
+    attempted_at = EXCLUDED.attempted_at,
+    next_attempt = EXCLUDED.next_attempt,
+    last_error = EXCLUDED.last_error;
+
+-- name: DeleteChannelMembersNotIn :exec
+DELETE FROM meshmapper_channel_members WHERE iata = @iata AND NOT (key_fingerprint = ANY(@keep::bytea[]));
+
+-- name: AddChannelMembers :exec
+INSERT INTO meshmapper_channel_members (iata, key_fingerprint)
+SELECT @iata, unnest(@fingerprints::bytea[])
+ON CONFLICT (iata, key_fingerprint) DO NOTHING;
+
+-- name: DeleteAllChannelMembers :exec
+DELETE FROM meshmapper_channel_members;
 
 -- name: ListZoneBoundaries :many
 SELECT * FROM meshmapper_zone_boundaries ORDER BY iata;

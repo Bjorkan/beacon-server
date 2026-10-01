@@ -202,6 +202,8 @@ even when the same bearer-authenticated request works with curl.
 #  zones:
 #    enabled: true
 #    import_groups: true # MeshMapper zone groups become regions
+#  channels:
+#    enabled: true       # import each region's public hashtag channels
 
 # Optional IATA overrides — auto-created on first packet arrival,
 # only needed if you want to customise display name or coordinates.
@@ -229,9 +231,12 @@ regions:
 channel_keys:
   # Hashtag channels: Beacon derives the PSK from the tag name automatically.
   # secret = SHA256("#tag")[:16], channel_hash = SHA256(secret)[0]
-  # Tag names should be provided without the # prefix.
+  # Tag names should be provided without the # prefix. Plain names show under
+  # every region; {name, region: <slug>} limits a channel to one region.
   hashtags:
     - meshcore
+    - name: vancouver-mesh
+      region: western-canada
 
   # Explicit keys: channel hash (hex) and key (hex), with optional display name.
   # The public MeshCore channel key is included in config.yaml.example.

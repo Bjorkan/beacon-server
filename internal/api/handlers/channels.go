@@ -35,8 +35,8 @@ func ChannelsRouter(reader api.Reader) http.Handler {
 //	@Tags		Channels
 //	@Produce	json
 //	@Param		hash	query		string	false	"Single-byte channel hash (hex)"
-//	@Param		iata	query		string	false	"Filter by IATA code"
-//	@Param		iatas	query		string	false	"Filter by IATA code(s), comma-separated e.g. YOW or YOW,YYZ"
+//	@Param		iata	query		string	false	"Filter by IATA code: channels MeshMapper lists there, config channels scoped to a region containing it, and Beacon-wide config channels"
+//	@Param		iatas	query		string	false	"Filter by IATA code(s), comma-separated e.g. YOW or YOW,YYZ; same membership rule as iata"
 //	@Param		cursor	query		int		false	"last_seen epoch ms of last item for pagination; 0 starts from the beginning"
 //	@Param		pageCursor	query		string	false	"Opaque nextPageCursor from a previous response; preserves timestamp ties and precision. Cannot be combined with a positive cursor; cursor=0 is allowed."
 //	@Param		limit	query		int		false	"Max results (default 50); must be positive, values above 200 are clamped" minimum(1) maximum(200)

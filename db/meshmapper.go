@@ -176,3 +176,55 @@ func (s *Store) PruneImportedRegions(ctx context.Context, keep []string) ([]stri
 	}
 	return s.q.PruneImportedRegions(ctx, keep)
 }
+
+func (s *Store) ListChannelCatalogues(ctx context.Context) ([]meshmapper.Catalogue, error) {
+	rows, err := s.q.ListChannelCatalogues(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]meshmapper.Catalogue, 0, len(rows))
+	for _, row := range rows {
+		c := meshmapper.Catalogue{IATA: row.Iata, URL: row.Url, Cache: meshmapper.Cache{Payload: row.Payload, CheckedAt: row.CheckedAt.Time,
+			AttemptedAt: row.AttemptedAt.Time, NextAttempt: row.NextAttempt.Time, LastError: row.LastError}}
+		if row.Etag != nil {
+			c.ETag = *row.Etag
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// SaveChannelCatalogue records a fetch; a new payload also replaces the IATA's
+// channel members, which are written first so a failure never outlives its snapshot.
+func (s *Store) SaveChannelCatalogue(ctx context.Context, iata, url string, cache meshmapper.Cache, fingerprints [][]byte) error {
+	if cache.Payload != nil {
+		if err := s.SetChannelMembers(ctx, iata, fingerprints); err != nil {
+			return err
+		}
+	}
+	params := sqlc.SaveChannelCatalogueParams{
+		Iata: iata, Url: url, Payload: cache.Payload, LastError: cache.LastError,
+		CheckedAt:   pgtype.Timestamptz{Time: cache.CheckedAt, Valid: !cache.CheckedAt.IsZero()},
+		AttemptedAt: pgtype.Timestamptz{Time: cache.AttemptedAt, Valid: true},
+		NextAttempt: pgtype.Timestamptz{Time: cache.NextAttempt, Valid: true},
+	}
+	if !cache.CheckedAt.IsZero() {
+		params.Etag = &cache.ETag
+	}
+	return s.q.SaveChannelCatalogue(ctx, params)
+}
+
+// SetChannelMembers makes fingerprints the IATA's exact MeshMapper channel list.
+func (s *Store) SetChannelMembers(ctx context.Context, iata string, fingerprints [][]byte) error {
+	if fingerprints == nil {
+		fingerprints = [][]byte{}
+	}
+	if err := s.q.DeleteChannelMembersNotIn(ctx, sqlc.DeleteChannelMembersNotInParams{Iata: iata, Keep: fingerprints}); err != nil {
+		return err
+	}
+	return s.q.AddChannelMembers(ctx, sqlc.AddChannelMembersParams{Iata: iata, Fingerprints: fingerprints})
+}
+
+func (s *Store) ClearChannelMembers(ctx context.Context) error {
+	return s.q.DeleteAllChannelMembers(ctx)
+}

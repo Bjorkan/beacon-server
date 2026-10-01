@@ -1903,11 +1903,13 @@ paths:
         in: query
         name: hash
         type: string
-      - description: Filter by IATA code
+      - description: 'Filter by IATA code: channels MeshMapper lists there, config
+          channels scoped to a region containing it, and Beacon-wide config channels'
         in: query
         name: iata
         type: string
-      - description: Filter by IATA code(s), comma-separated e.g. YOW or YOW,YYZ
+      - description: Filter by IATA code(s), comma-separated e.g. YOW or YOW,YYZ;
+          same membership rule as iata
         in: query
         name: iatas
         type: string

@@ -320,9 +320,9 @@ func (d *duration) UnmarshalYAML(value *yaml.Node) error {
 // channel_hash = SHA256(secret)[0]. Explicit keys are provided as hex strings
 // keyed by the channel hash hex (e.g. "11" for 0x11).
 type ChannelKeysConfig struct {
-	// Hashtags is a list of hashtag names (without the # prefix).
+	// Hashtags lists hashtag names (without the # prefix), each optionally scoped to a region.
 	// Beacon derives the PSK and channel hash automatically.
-	Hashtags []string `yaml:"hashtags"`
+	Hashtags []HashtagConfig `yaml:"hashtags"`
 
 	// Keys maps channel hash hex → explicit key config.
 	Keys map[string]ExplicitKeyConfig `yaml:"keys"`
@@ -330,8 +330,9 @@ type ChannelKeysConfig struct {
 
 // ExplicitKeyConfig holds an explicit channel key and optional display name.
 type ExplicitKeyConfig struct {
-	Key  string `yaml:"key"`  // hex-encoded key bytes
-	Name string `yaml:"name"` // optional display name
+	Key    string `yaml:"key"`    // hex-encoded key bytes
+	Name   string `yaml:"name"`   // optional display name
+	Region string `yaml:"region"` // optional region slug; empty lists the channel Beacon-wide
 }
 
 // IATAConfig holds optional overrides for a known IATA code.
@@ -412,6 +413,9 @@ func Load(path string) (*Config, error) {
 	}
 	configDir := filepath.Dir(path)
 	if err := cfg.validateMeshMapper(); err != nil {
+		return nil, err
+	}
+	if err := cfg.validateChannelKeys(); err != nil {
 		return nil, err
 	}
 	if err := cfg.validateScopes(); err != nil {

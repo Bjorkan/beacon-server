@@ -597,13 +597,13 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by IATA code",
+                        "description": "Filter by IATA code: channels MeshMapper lists there, config channels scoped to a region containing it, and Beacon-wide config channels",
                         "name": "iata",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Filter by IATA code(s), comma-separated e.g. YOW or YOW,YYZ",
+                        "description": "Filter by IATA code(s), comma-separated e.g. YOW or YOW,YYZ; same membership rule as iata",
                         "name": "iatas",
                         "in": "query"
                     },

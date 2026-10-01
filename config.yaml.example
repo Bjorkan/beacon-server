@@ -83,6 +83,18 @@ ratelimit:
 #    enabled: false
 #    import_groups: false
 #    refresh_interval: 24h # 24h-168h (one get_geojson.php per region per 23.5h); one request per 15s tick, ETag-conditional
+#
+# Public hashtag channels (get_channels.php). Every known IATA that MeshMapper
+# lists is looked up on its site, the same way as scopes. Each key and hash is
+# checked against the name before use; a list with any mismatch is rejected and
+# the last good one kept. Imported channels decrypt like configured ones (history
+# is backfilled when a key first appears) and are listed under that IATA when
+# /channels is filtered by region. Saved in PostgreSQL across restarts; failures
+# wait out the 23.5h limit. Turning it off removes the region listing on restart.
+# Logged under component=meshmapper.channels.
+#  channels:
+#    enabled: false
+#    refresh_interval: 24h # 24h-168h (one get_channels.php per region per 23.5h)
 
 iatas:
   YVR:
@@ -138,8 +150,12 @@ channel_keys:
   # secret = SHA256("#tag")[:16], channel_hash = SHA256(secret)[0]
   # Hashtag names should be provided without the # prefix.
   # Beacon prepends # automatically before deriving the key.
+  # A plain name is listed under every region; add region: <slug> (a configured
+  # region) to list it only there when /channels is filtered by region.
   hashtags:
     - meshcore
+    # - name: ottawa-mesh
+    #   region: eastern-canada
 
   # Explicit keys: provide the channel hash (hex) and key (hex) directly.
   # An optional name can be set for display purposes.
@@ -147,6 +163,7 @@ channel_keys:
     "11":
       key: "8b3387e9c5cdea6ac9e5edbaa115cd72"
       name: "Public"
+      # region: eastern-canada   # optional, as for hashtags
 
 # Regional transport scopes for matching TRANSPORT_FLOOD packets.
 # Plain names have # prepended automatically (e.g. "bc" → "#bc").

@@ -21,6 +21,7 @@ type Seeder interface {
 	UpsertRegion(ctx context.Context, slug, name, description string, displayOrder int, centerLat, centerLng *float64, zoomLevel *int) (int32, error)
 	SetRegionIATAs(ctx context.Context, regionID int32, iatas []string) error
 	UpsertTransportScope(ctx context.Context, name, displayName string, transportKey, keyFingerprint []byte) error
+	SetChannelConfigScopes(ctx context.Context, fingerprints [][]byte, regions []string) error
 }
 
 // Seed applies config-defined regions, IATA overrides to the database.
@@ -61,6 +62,15 @@ func Seed(ctx context.Context, cfg *Config, db Seeder) error {
 		if err := db.SetRegionIATAs(ctx, id, r.IATAs); err != nil {
 			return err
 		}
+	}
+	// Channel region placement
+	var fingerprints [][]byte
+	var regions []string
+	for _, scope := range cfg.ChannelScopes() {
+		fingerprints, regions = append(fingerprints, scope.Fingerprint), append(regions, scope.Region)
+	}
+	if err := db.SetChannelConfigScopes(ctx, fingerprints, regions); err != nil {
+		return err
 	}
 	// Transport Codes
 	for _, s := range cfg.Scopes {

@@ -199,7 +199,7 @@ func main() {
 	scopes.SetManualMembers(cfg.ManualScopeMembers())
 	slog.Info(fmt.Sprintf("loaded %d transport scopes", len(scopeEntries)), "component", "startup")
 	directory := meshmapper.NewDirectory(store)
-	if cfg.MeshMapper.Scopes.Enabled || cfg.MeshMapper.Zones.Enabled {
+	if cfg.MeshMapper.Scopes.Enabled || cfg.MeshMapper.Zones.Enabled || cfg.MeshMapper.Channels.Enabled {
 		restoreCtx, cancelRestore := context.WithTimeout(ctx, 10*time.Second)
 		err = directory.Restore(restoreCtx)
 		cancelRestore()
@@ -250,7 +250,8 @@ func main() {
 	entries := make(map[string][]keystore.Entry)
 
 	// Hashtag-derived channels: secret = SHA256("#tag")[:16], hash = SHA256(secret)[0]
-	for _, tag := range cfg.ChannelKeys.Hashtags {
+	for _, hashtag := range cfg.ChannelKeys.Hashtags {
+		tag := hashtag.Name
 		secret, channelHash, fingerprint := keystore.DeriveHashtagKey(tag)
 		hashHex := fmt.Sprintf("%02x", channelHash)
 		entry := keystore.Entry{
@@ -284,6 +285,27 @@ func main() {
 	}
 
 	keys := keystore.NewMapKeyStore(entries)
+
+	// Restored before the boot backfill so saved MeshMapper keys decrypt history too.
+	restoreCtx, cancelRestore = context.WithTimeout(ctx, 10*time.Second)
+	channelImporter, err := meshmapper.NewChannels(restoreCtx, cfg.MeshMapper.Channels, store, directory, keys)
+	cancelRestore()
+	if err != nil {
+		slog.Error("failed to restore MeshMapper channels", "component", "startup", "error", err)
+		os.Exit(1)
+	}
+	channelImporter.OnNewKeys(func(hashes [][]byte) {
+		// Off the refresh tick: a backfill can outlast it, and history isn't urgent.
+		go func() {
+			backfillCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+			defer cancel()
+			if n, err := ingest.BackfillChannelHashes(backfillCtx, store, keys, hashes); err != nil {
+				slog.Error("MeshMapper channel backfill failed", "component", "meshmapper.channels", "error", err)
+			} else if n > 0 {
+				slog.Info(fmt.Sprintf("backfilled %d channel message(s) for imported keys", n), "component", "meshmapper.channels")
+			}
+		}()
+	})
 
 	// ── Backfill channel messages ────────────────────────────────────────────
 	// Packets whose channel key wasn't yet configured at ingest time were stored as
@@ -365,6 +387,9 @@ func main() {
 	}
 	if cfg.MeshMapper.Zones.Enabled {
 		tasks = append(tasks, background.Task{Name: "meshmapper.zones", Interval: meshmapper.PollInterval, Run: zones.Refresh})
+	}
+	if cfg.MeshMapper.Channels.Enabled {
+		tasks = append(tasks, background.Task{Name: "meshmapper.channels", Interval: meshmapper.PollInterval, Run: channelImporter.Refresh})
 	}
 	profiles := configureProfiling(ctx, pool)
 	defer profiles.Stop()
