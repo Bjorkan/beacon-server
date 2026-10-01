@@ -59,7 +59,7 @@ func TestMeshMapperZonesConfig(t *testing.T) {
 		{"hourly", valid + "    refresh_interval: 1h\n", false, time.Hour},
 		{"too often", valid + "    refresh_interval: 59m\n", true, 0},
 		{"too rare", valid + "    refresh_interval: 169h\n", true, 0},
-		{"no regions", "meshmapper:\n  zones:\n    enabled: true\n", true, 0},
+		{"no regions", "meshmapper:\n  zones:\n    enabled: true\n", false, 24 * time.Hour},
 		{"disabled", "meshmapper:\n  zones:\n    enabled: false\n", false, 24 * time.Hour},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -75,9 +75,5 @@ func TestMeshMapperZonesConfig(t *testing.T) {
 				t.Fatal(cfg.MeshMapper.Zones.Interval())
 			}
 		})
-	}
-	cfg := &Config{Regions: []RegionConfig{{IATAs: []string{"YYZ", "YOW"}}, {IATAs: []string{"YOW"}}}}
-	if got := strings.Join(cfg.RegionIATAs(), ","); got != "YOW,YYZ" {
-		t.Fatal(got)
 	}
 }

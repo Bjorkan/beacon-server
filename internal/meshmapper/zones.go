@@ -42,6 +42,7 @@ type Boundary struct {
 }
 
 type ZoneStore interface {
+	ListZoneIATAs(ctx context.Context) ([]string, error)
 	PruneZoneBoundaries(ctx context.Context, keep []string) ([]string, error)
 	ListZoneBoundaries(ctx context.Context) ([]Boundary, error)
 	SaveZoneBoundary(ctx context.Context, b Boundary) error
@@ -67,7 +68,7 @@ type zoneList struct {
 type Zones struct {
 	store      ZoneStore
 	enabled    bool
-	iatas      []string
+	seen       map[string]bool
 	interval   time.Duration
 	client     *http.Client
 	listURL    string
@@ -79,8 +80,8 @@ type Zones struct {
 	onUpdate   func(imported map[string]json.RawMessage)
 }
 
-func NewZones(cfg config.MeshMapperZonesConfig, iatas []string, store ZoneStore) *Zones {
-	return &Zones{store: store, enabled: cfg.Enabled, iatas: iatas, interval: cfg.Interval(), listURL: ZonesURL,
+func NewZones(cfg config.MeshMapperZonesConfig, store ZoneStore) *Zones {
+	return &Zones{store: store, enabled: cfg.Enabled, seen: map[string]bool{}, interval: cfg.Interval(), listURL: ZonesURL,
 		boundsURL: boundaryEndpoint, lists: map[string]*zoneList{}, client: &http.Client{
 			Timeout:       30 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -93,12 +94,16 @@ func (z *Zones) OnChange(fn func(ctx context.Context, iata string)) { z.onChange
 // OnUpdate receives every imported boundary whenever the set changes.
 func (z *Zones) OnUpdate(fn func(imported map[string]json.RawMessage)) { z.onUpdate = fn }
 
-// Restore prunes imports for unconfigured IATAs (all of them when disabled) and
+// Restore prunes imports for unknown IATAs (all of them when disabled) and
 // loads saved boundaries, without making HTTP requests.
 func (z *Zones) Restore(ctx context.Context) error {
+	iatas, err := z.store.ListZoneIATAs(ctx)
+	if err != nil {
+		return fmt.Errorf("list IATAs for MeshMapper boundaries: %w", err)
+	}
 	keep := []string{}
 	if z.enabled {
-		keep = z.iatas
+		keep = iatas
 	}
 	pruned, err := z.store.PruneZoneBoundaries(ctx, keep)
 	if err != nil {
@@ -119,13 +124,24 @@ func (z *Zones) Restore(ctx context.Context) error {
 	for _, b := range saved {
 		byIATA[b.IATA] = b
 	}
-	for _, iata := range z.iatas {
+	z.track(iatas, byIATA)
+	z.publish()
+	return nil
+}
+
+// track adds a region for each IATA not seen before.
+func (z *Zones) track(iatas []string, saved map[string]Boundary) {
+	for _, iata := range iatas {
+		if z.seen[iata] {
+			continue
+		}
+		z.seen[iata] = true
 		country := iatadb.CountryFor(iata)
 		if country == "" {
 			slog.Warn("MeshMapper boundary skipped: IATA has no known country", "component", "meshmapper.zones", "iata", iata)
 			continue
 		}
-		b, ok := byIATA[iata]
+		b, ok := saved[iata]
 		if !ok {
 			b = Boundary{IATA: iata}
 		}
@@ -133,10 +149,10 @@ func (z *Zones) Restore(ctx context.Context) error {
 			z.retryAfter = b.NextAttempt
 		}
 		z.regions = append(z.regions, &zoneRegion{country: country, b: b})
-		z.log(b, "restored")
+		if ok {
+			z.log(b, "restored")
+		}
 	}
-	z.publish()
-	return nil
 }
 
 // Refresh makes at most one request. The scheduler serializes calls every 15s.
@@ -153,6 +169,12 @@ func (z *Zones) Refresh(ctx context.Context) (err error) {
 	if now.Before(z.retryAfter) {
 		return nil
 	}
+	// IATAs are created from traffic, so pick up new ones every tick.
+	iatas, err := z.store.ListZoneIATAs(ctx)
+	if err != nil {
+		return fmt.Errorf("list IATAs for MeshMapper boundaries: %w", err)
+	}
+	z.track(iatas, nil)
 	for _, r := range z.regions {
 		if now.Before(r.b.NextAttempt) {
 			continue

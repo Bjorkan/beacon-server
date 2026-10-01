@@ -210,7 +210,7 @@ func main() {
 	}
 
 	// Always restored, so disabling the import prunes it and file borders return.
-	zones := meshmapper.NewZones(cfg.MeshMapper.Zones, cfg.RegionIATAs(), store)
+	zones := meshmapper.NewZones(cfg.MeshMapper.Zones, store)
 	if cr, ok := reader.(*cache.CachedReader); ok {
 		zones.OnChange(cr.InvalidateIATABorder)
 	}

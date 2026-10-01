@@ -48,6 +48,18 @@ func (s *Store) SaveScopeCatalogue(ctx context.Context, iata, url string, cache 
 	return s.q.SaveScopeCatalogue(ctx, params)
 }
 
+func (s *Store) ListZoneIATAs(ctx context.Context) ([]string, error) {
+	rows, err := s.q.ListIATAs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	iatas := make([]string, 0, len(rows))
+	for _, row := range rows {
+		iatas = append(iatas, row.Iata)
+	}
+	return iatas, nil
+}
+
 func (s *Store) PruneZoneBoundaries(ctx context.Context, keep []string) ([]string, error) {
 	if keep == nil {
 		keep = []string{}

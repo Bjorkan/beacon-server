@@ -62,12 +62,13 @@ ratelimit:
 #    sources:
 #      YOW: https://yow.meshmapper.net/get_scopes.php
 #
-# Region boundaries (Zones API). Every IATA in a configured
-# region is looked up in its country's zone list, then its get_geojson.php outline
-# is imported. An imported boundary overrides that IATA's borderFile on the border
-# map and for nodes.mark_foreign. A missing or failed boundary keeps the last good
-# import, or the borderFile when there is none. Disabling, or removing an IATA from
-# every region, drops its import on restart. Logged under component=meshmapper.zones.
+# Region boundaries (Zones API). Every known IATA, including ones auto-created
+# from traffic, is looked up in its country's zone list, then its get_geojson.php
+# outline is imported; new IATAs are picked up while running. An imported boundary
+# overrides that IATA's borderFile on the border map and for nodes.mark_foreign.
+# A missing or failed boundary keeps the last good import, or the borderFile when
+# there is none. Disabling drops every import on restart. Logged under
+# component=meshmapper.zones.
 #  zones:
 #    enabled: false
 #    refresh_interval: 24h # 1h-168h; one request per 15s tick, ETag-conditional

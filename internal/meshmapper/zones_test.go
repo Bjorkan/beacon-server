@@ -25,9 +25,14 @@ func boundaryBody(code, geometry string) string {
 }
 
 type zoneMemoryStore struct {
+	iatas  []string
 	rows   map[string]Boundary
 	pruned []string
 	fail   bool
+}
+
+func (s *zoneMemoryStore) ListZoneIATAs(context.Context) ([]string, error) {
+	return slices.Clone(s.iatas), nil
 }
 
 func (s *zoneMemoryStore) PruneZoneBoundaries(_ context.Context, keep []string) ([]string, error) {
@@ -113,7 +118,10 @@ type zoneHarness struct {
 func newZoneHarness(t *testing.T, f *fakeMeshMapper, store *zoneMemoryStore, enabled bool) *zoneHarness {
 	t.Helper()
 	h := &zoneHarness{store: store}
-	h.z = NewZones(config.MeshMapperZonesConfig{Enabled: enabled}, []string{"YOW"}, store)
+	if store.iatas == nil {
+		store.iatas = []string{"YOW"}
+	}
+	h.z = NewZones(config.MeshMapperZonesConfig{Enabled: enabled}, store)
 	h.z.listURL = f.URL + "/get_zones.php"
 	h.z.boundsURL = func(site string) (string, bool) { return site + "get_geojson.php", strings.HasPrefix(site, f.URL) }
 	h.z.OnChange(func(_ context.Context, iata string) { h.changed = append(h.changed, iata) })
@@ -266,7 +274,7 @@ func TestZonesRestoreAndPrune(t *testing.T) {
 
 	restarted := newZoneHarness(t, f, store, true)
 	if !slices.Equal(store.pruned, []string{"OLD"}) || !slices.Equal(restarted.changed, []string{"OLD"}) {
-		t.Fatal("unconfigured IATA not pruned", store.pruned, restarted.changed)
+		t.Fatal("unknown IATA not pruned", store.pruned, restarted.changed)
 	}
 	if restarted.imported["YOW"] == nil || f.calls != 1 {
 		t.Fatal("saved boundary not restored without a request")
@@ -278,6 +286,29 @@ func TestZonesRestoreAndPrune(t *testing.T) {
 	disabled := newZoneHarness(t, f, store, false)
 	if len(store.rows) != 0 || !slices.Equal(disabled.changed, []string{"YOW"}) || len(disabled.z.regions) != 0 {
 		t.Fatal("disabling did not remove imports")
+	}
+}
+
+func TestZonesPickUpNewIATAs(t *testing.T) {
+	f := newFakeMeshMapper(t)
+	store := &zoneMemoryStore{iatas: []string{}, rows: map[string]Boundary{}}
+	h := newZoneHarness(t, f, store, true)
+	for range 2 {
+		if err := h.z.Refresh(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if f.listCalls != 0 || f.calls != 0 {
+		t.Fatal("requested with no IATAs", f.listCalls, f.calls)
+	}
+	store.iatas = []string{"YOW", "ZZZ"}
+	for range 2 {
+		if err := h.z.Refresh(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(h.z.regions) != 1 || h.imported["YOW"] == nil || !slices.Equal(h.changed, []string{"YOW"}) {
+		t.Fatal("new IATA not imported", len(h.z.regions), h.changed)
 	}
 }
 
