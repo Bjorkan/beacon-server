@@ -19,11 +19,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/MeshCore-Beacon/beacon-server/internal/config"
+	"github.com/MeshCore-Beacon/beacon-server/internal/iatadb"
 	"github.com/MeshCore-Beacon/beacon-server/internal/scopestore"
 )
 
 const (
-	MaxScopes    = 64 // per source; at most 16 configured sources (1024 imported identities)
+	MaxScopes    = 64 // per source
 	MaxBody      = 64 << 10
 	PollInterval = 15 * time.Second // one source per tick, at most four requests/minute
 
@@ -38,16 +39,23 @@ type Cache struct {
 	LastError                           string
 }
 
+// Catalogue is one saved source snapshot.
+type Catalogue struct {
+	IATA, URL string
+	Cache
+}
+
 type Store interface {
-	GetScopeCatalogue(context.Context, string, string) (*Cache, error)
+	ListKnownIATAs(context.Context) ([]string, error)
+	ListScopeCatalogues(context.Context) ([]Catalogue, error)
 	SaveScopeCatalogue(context.Context, string, string, Cache, []scopestore.Entry) error
 }
 
 type source struct {
-	iata, url string
-	cache     Cache
-	entries   []scopestore.Entry
-	generated time.Time
+	iata, country, url string
+	cache              Cache
+	entries            []scopestore.Entry
+	generated          time.Time
 }
 
 // Importer is owned by one background task; ScopeStore synchronizes its consumers.
@@ -55,6 +63,9 @@ type Importer struct {
 	store      Store
 	scopes     *scopestore.ScopeStore
 	manual     []scopestore.Entry
+	dir        *Directory
+	scopesURL  func(site string) (string, bool)
+	seen       map[string]bool
 	sources    []source
 	interval   time.Duration
 	client     *http.Client
@@ -66,44 +77,65 @@ type Importer struct {
 func (i *Importer) SetCacheInvalidator(fn func(context.Context)) { i.onChange = fn }
 
 // New restores validated snapshots before ingestion, without making HTTP requests.
-func New(ctx context.Context, cfg config.MeshMapperScopesConfig, store Store, scopes *scopestore.ScopeStore, manual []scopestore.Entry) (*Importer, error) {
-	i := &Importer{store: store, scopes: scopes, manual: manual, interval: cfg.Interval(), client: &http.Client{
-		Timeout:       10 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}}
+func New(ctx context.Context, cfg config.MeshMapperScopesConfig, store Store, dir *Directory, scopes *scopestore.ScopeStore, manual []scopestore.Entry) (*Importer, error) {
+	i := &Importer{store: store, scopes: scopes, manual: manual, dir: dir, scopesURL: scopesEndpoint, seen: map[string]bool{},
+		interval: cfg.Interval(), client: &http.Client{
+			Timeout:       10 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}}
 	if !cfg.Enabled {
 		return i, nil
 	}
-	keys := make([]string, 0, len(cfg.Sources))
-	for key := range cfg.Sources {
-		keys = append(keys, key)
+	saved, err := store.ListScopeCatalogues(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("restore scope catalogues: %w", err)
 	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		s := source{iata: key, url: cfg.Sources[key]}
-		cached, err := store.GetScopeCatalogue(ctx, s.iata, s.url)
-		if err != nil {
-			return nil, fmt.Errorf("restore scope catalogue %s: %w", key, err)
+	// A site that moved leaves its old row behind; the latest attempt wins.
+	latest := map[string]Catalogue{}
+	for _, c := range saved {
+		if old, ok := latest[c.IATA]; !ok || c.AttemptedAt.After(old.AttemptedAt) {
+			latest[c.IATA] = c
 		}
-		if cached != nil {
-			s.cache = *cached
-			if len(cached.Payload) > 0 {
-				s.entries, s.generated, err = decode(cached.Payload, key)
+	}
+	iatas, err := store.ListKnownIATAs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list IATAs for MeshMapper scopes: %w", err)
+	}
+	i.track(iatas, latest)
+	i.publish()
+	return i, nil
+}
+
+// track adds a source for each IATA not seen before.
+func (i *Importer) track(iatas []string, saved map[string]Catalogue) {
+	for _, iata := range iatas {
+		if i.seen[iata] {
+			continue
+		}
+		i.seen[iata] = true
+		country := iatadb.CountryFor(iata)
+		if country == "" {
+			continue
+		}
+		s := source{iata: iata, country: country}
+		if c, ok := saved[iata]; ok {
+			s.url, s.cache = c.URL, c.Cache
+			if len(c.Payload) > 0 {
+				var err error
+				s.entries, s.generated, err = decode(c.Payload, iata)
 				if err != nil {
 					s.entries = nil
 					s.cache.Payload, s.cache.ETag = nil, ""
 					s.cache.LastError = "invalid saved catalogue; awaiting refresh"
 				}
 			}
-			if cached.LastError == "HTTP 429" && cached.NextAttempt.After(i.retryAfter) {
-				i.retryAfter = cached.NextAttempt
+			if c.LastError == "HTTP 429" && c.NextAttempt.After(i.retryAfter) {
+				i.retryAfter = c.NextAttempt
 			}
+			i.log(s, "restored")
 		}
 		i.sources = append(i.sources, s)
-		i.log(s, "restored")
 	}
-	i.publish()
-	return i, nil
 }
 
 // Refresh checks only one due source. The scheduler serializes calls every 15s.
@@ -117,13 +149,42 @@ func (i *Importer) Refresh(ctx context.Context) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	now := time.Now().UTC()
-	if now.Before(i.retryAfter) {
+	if now.Before(i.retryAfter) || now.Before(i.dir.pausedUntil()) {
 		return nil
 	}
+	iatas, err := i.store.ListKnownIATAs(ctx)
+	if err != nil {
+		return fmt.Errorf("list IATAs for MeshMapper scopes: %w", err)
+	}
+	i.track(iatas, nil)
 	for n := range i.sources {
 		s := &i.sources[n]
 		if now.Before(s.cache.NextAttempt) {
 			continue
+		}
+		zones, fetched, err := i.dir.List(ctx, s.country, now)
+		if err != nil || fetched {
+			return err
+		}
+		if zones == nil {
+			continue
+		}
+		entry, listed := zones[s.iata]
+		endpoint, valid := "", false
+		if listed {
+			endpoint, valid = i.scopesURL(entry.url)
+		}
+		if !valid {
+			// No request to make; names already imported stay until a catalogue replaces them.
+			s.cache.NextAttempt, s.cache.LastError = now.Add(i.interval), "not listed"
+			if listed {
+				s.cache.LastError = "invalid site URL"
+			}
+			i.log(*s, "skipped")
+			continue
+		}
+		if endpoint != s.url {
+			s.url, s.cache.ETag = endpoint, ""
 		}
 		return i.refresh(ctx, s, now)
 	}
@@ -263,12 +324,14 @@ func (i *Importer) publish() {
 
 func (i *Importer) log(s source, action string) {
 	level := slog.LevelInfo
-	if s.cache.LastError != "" {
+	if s.cache.LastError != "" && s.cache.LastError != "not listed" {
 		level = slog.LevelWarn
 	}
 	slog.Log(context.Background(), level, "MeshMapper scopes "+action, "component", "meshmapper.scopes", "iata", s.iata, "source", s.url,
 		"names", len(s.entries), "generated_at", s.generated, "checked_at", s.cache.CheckedAt, "next_attempt", s.cache.NextAttempt, "last_error", s.cache.LastError)
 }
+
+func scopesEndpoint(site string) (string, bool) { return siteEndpoint(site, "get_scopes.php") }
 
 func decode(body []byte, iata string) ([]scopestore.Entry, time.Time, error) {
 	var document struct {

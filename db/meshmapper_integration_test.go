@@ -44,7 +44,7 @@ func TestMeshMapperCataloguePostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(context.Background())
-	for _, table := range []string{"transport_scopes", "meshmapper_scope_catalogues"} {
+	for _, table := range []string{"iata_codes", "transport_scopes", "meshmapper_scope_catalogues"} {
 		if _, err := tx.Exec(ctx, "CREATE TEMP TABLE "+table+" (LIKE public."+table+" INCLUDING ALL) ON COMMIT DROP"); err != nil {
 			t.Fatal(err)
 		}
@@ -53,6 +53,9 @@ func TestMeshMapperCataloguePostgres(t *testing.T) {
 	manual := scopestore.FromName("manual")
 	manual.TransportKey[0] ^= 1
 	if err := store.UpsertTransportScope(ctx, manual.Name, "Operator label", manual.TransportKey, manual.KeyFingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertIATA(ctx, "YOW"); err != nil {
 		t.Fatal(err)
 	}
 	url := "https://yow.meshmapper.net/get_scopes.php"
@@ -79,7 +82,7 @@ func TestMeshMapperCataloguePostgres(t *testing.T) {
 		t.Fatal(row, err)
 	}
 	scopes := scopestore.New()
-	_, err = meshmapper.New(ctx, config.MeshMapperScopesConfig{Enabled: true, Sources: map[string]string{"YOW": url}}, store, scopes, manualRows)
+	_, err = meshmapper.New(ctx, config.MeshMapperScopesConfig{Enabled: true}, store, meshmapper.NewDirectory(), scopes, manualRows)
 	if err != nil || len(scopes.Entries()) != 2 {
 		t.Fatal("restart did not restore imported membership", err)
 	}
@@ -102,7 +105,7 @@ func TestMeshMapperCataloguePostgres(t *testing.T) {
 	if err := store.SaveScopeCatalogue(ctx, "YOW", url, update, nil); err != nil {
 		t.Fatal(err)
 	}
-	_, err = meshmapper.New(ctx, config.MeshMapperScopesConfig{Enabled: true, Sources: map[string]string{"YOW": url}}, store, scopes, manualRows)
+	_, err = meshmapper.New(ctx, config.MeshMapperScopesConfig{Enabled: true}, store, meshmapper.NewDirectory(), scopes, manualRows)
 	if err != nil || len(scopes.Entries()) != 1 {
 		t.Fatal("removed imported membership remained active", err)
 	}

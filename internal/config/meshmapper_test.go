@@ -12,22 +12,16 @@ import (
 )
 
 func TestMeshMapperConfig(t *testing.T) {
-	valid := "regions:\n  - slug: ottawa\n    iatas: [YOW]\nmeshmapper:\n  scopes:\n    enabled: true\n    sources:\n      YOW: https://yow.meshmapper.net/get_scopes.php\n"
+	valid := "meshmapper:\n  scopes:\n    enabled: true\n"
 	for _, tc := range []struct {
 		name, text string
 		bad        bool
 	}{
 		{"valid", valid, false},
-		{"outside any region", strings.Replace(valid, "iatas: [YOW]", "iatas: [YVR]", 1), false},
-		{"no regions", valid[strings.Index(valid, "meshmapper:"):], false},
-		{"lowercase IATA", strings.Replace(valid, "      YOW:", "      yow:", 1), true},
-		{"long IATA", strings.Replace(valid, "      YOW:", "      YOWX:", 1), true},
-		{"http", strings.Replace(valid, "https:", "http:", 1), true},
-		{"private host", strings.Replace(valid, "yow.meshmapper.net", "127.0.0.1", 1), true},
-		{"credentials", strings.Replace(valid, "https://", "https://secret@", 1), true},
-		{"query", strings.Replace(valid, "get_scopes.php", "get_scopes.php?key=secret", 1), true},
-		{"non API", strings.Replace(valid, "get_scopes.php", "index.php", 1), true},
+		{"daily", valid + "    refresh_interval: 24h\n", false},
+		{"legacy sources ignored", valid + "    sources:\n      yow: http://127.0.0.1/\n", false},
 		{"fast", valid + "    refresh_interval: 1s\n", true},
+		{"slow", valid + "    refresh_interval: 25h\n", true},
 		{"negative", valid + "    refresh_interval: -1h\n", true},
 		{"disabled", strings.Replace(valid, "enabled: true", "enabled: false", 1), false},
 	} {
@@ -36,18 +30,14 @@ func TestMeshMapperConfig(t *testing.T) {
 			if err := os.WriteFile(p, []byte(tc.text), 0600); err != nil {
 				t.Fatal(err)
 			}
-			cfg, err := Load(p)
+			_, err := Load(p)
 			if (err != nil) != tc.bad {
 				t.Fatalf("error=%v", err)
 			}
-			if err == nil && cfg.MeshMapper.Scopes.Interval() != time.Hour {
-				t.Fatal("wrong default")
-			}
 		})
 	}
-	cfg := Config{MeshMapper: MeshMapperConfig{Scopes: MeshMapperScopesConfig{Enabled: true}}}
-	if err := cfg.validateMeshMapper(); err == nil {
-		t.Fatal("empty sources accepted")
+	if (MeshMapperScopesConfig{}).Interval() != time.Hour {
+		t.Fatal("wrong default")
 	}
 }
 

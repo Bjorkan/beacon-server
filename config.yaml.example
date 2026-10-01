@@ -46,21 +46,22 @@ ratelimit:
 # iatas.*.borderFile by hand.
 #
 # Scope-name discovery. Manual scopes remain authoritative.
-# Sources are keyed by IATA code; the IATA need not be in a configured region.
-# Group endpoints are not supported: their names cannot be attributed to each IATA.
-# At most 16 sources, 64 names per source, 64 KiB per response; no page scraping.
+# Every known IATA, including ones auto-created from traffic, is looked up in its
+# country's zone list (shared with zones below) and its site's get_scopes.php
+# catalogue is imported; IATAs MeshMapper doesn't list are skipped. No sources
+# to configure; a legacy sources: list is ignored with a warning.
+# Catalogues covering more than one IATA are rejected.
+# 64 names per catalogue, 64 KiB per response; no page scraping.
 # Catalogues and ETags persist in PostgreSQL. Failed refreshes retain known names.
 # Refresh success/failure/freshness is logged under component=meshmapper.scopes.
-# Removing/turning off a source deactivates its imported matching keys on restart;
+# Turning scopes off deactivates imported matching keys on restart;
 # historical scope identities and recorded evidence are retained.
 # Region-filtered scope lists and scope stats show imported names only under the
-# IATAs whose catalogue lists them; regions without a source show manual scopes only.
+# IATAs whose catalogue lists them; IATAs without a catalogue show manual scopes only.
 #meshmapper:
 #  scopes:
 #    enabled: false
 #    refresh_interval: 1h  # 5m-24h; one source checked per 15s tick
-#    sources:
-#      YOW: https://yow.meshmapper.net/get_scopes.php
 #
 # Region boundaries (Zones API). Every known IATA, including ones auto-created
 # from traffic, is looked up in its country's zone list, then its get_geojson.php

@@ -31,7 +31,7 @@ type zoneMemoryStore struct {
 	fail   bool
 }
 
-func (s *zoneMemoryStore) ListZoneIATAs(context.Context) ([]string, error) {
+func (s *zoneMemoryStore) ListKnownIATAs(context.Context) ([]string, error) {
 	return slices.Clone(s.iatas), nil
 }
 
@@ -121,8 +121,9 @@ func newZoneHarness(t *testing.T, f *fakeMeshMapper, store *zoneMemoryStore, ena
 	if store.iatas == nil {
 		store.iatas = []string{"YOW"}
 	}
-	h.z = NewZones(config.MeshMapperZonesConfig{Enabled: enabled}, store)
-	h.z.listURL = f.URL + "/get_zones.php"
+	dir := NewDirectory()
+	dir.listURL = f.URL + "/get_zones.php"
+	h.z = NewZones(config.MeshMapperZonesConfig{Enabled: enabled}, store, dir)
 	h.z.boundsURL = func(site string) (string, bool) { return site + "get_geojson.php", strings.HasPrefix(site, f.URL) }
 	h.z.OnChange(func(_ context.Context, iata string) { h.changed = append(h.changed, iata) })
 	h.z.OnUpdate(func(imported map[string]json.RawMessage) { h.imported = imported })
@@ -239,9 +240,9 @@ func TestZonesListFailureBacksOff(t *testing.T) {
 		t.Fatal("failed list retried early", f.listCalls, f.calls)
 	}
 	f.listStatus, f.list = 200, `{"country":"US","zones":[]}`
-	h.z.lists["CA"].nextAttempt, h.z.lists["CA"].fetchedAt = time.Time{}, time.Time{}
+	h.z.dir.lists["CA"].nextAttempt, h.z.dir.lists["CA"].fetchedAt = time.Time{}, time.Time{}
 	_ = h.z.Refresh(context.Background())
-	if h.z.lists["CA"].zones != nil {
+	if h.z.dir.lists["CA"].zones != nil {
 		t.Fatal("list for another country accepted")
 	}
 }

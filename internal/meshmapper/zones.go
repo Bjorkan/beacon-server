@@ -42,7 +42,7 @@ type Boundary struct {
 }
 
 type ZoneStore interface {
-	ListZoneIATAs(ctx context.Context) ([]string, error)
+	ListKnownIATAs(ctx context.Context) ([]string, error)
 	PruneZoneBoundaries(ctx context.Context, keep []string) ([]string, error)
 	ListZoneBoundaries(ctx context.Context) ([]Boundary, error)
 	SaveZoneBoundary(ctx context.Context, b Boundary) error
@@ -53,17 +53,6 @@ type zoneRegion struct {
 	b       Boundary
 }
 
-type zoneEntry struct {
-	url         string
-	hasBoundary bool
-}
-
-type zoneList struct {
-	zones                  map[string]zoneEntry
-	etag                   string
-	fetchedAt, nextAttempt time.Time
-}
-
 // Zones is owned by one background task; listeners are wired before Restore.
 type Zones struct {
 	store      ZoneStore
@@ -71,18 +60,17 @@ type Zones struct {
 	seen       map[string]bool
 	interval   time.Duration
 	client     *http.Client
-	listURL    string
+	dir        *Directory
 	boundsURL  func(site string) (string, bool)
 	regions    []*zoneRegion
-	lists      map[string]*zoneList
 	retryAfter time.Time
 	onChange   func(ctx context.Context, iata string)
 	onUpdate   func(imported map[string]json.RawMessage)
 }
 
-func NewZones(cfg config.MeshMapperZonesConfig, store ZoneStore) *Zones {
-	return &Zones{store: store, enabled: cfg.Enabled, seen: map[string]bool{}, interval: cfg.Interval(), listURL: ZonesURL,
-		boundsURL: boundaryEndpoint, lists: map[string]*zoneList{}, client: &http.Client{
+func NewZones(cfg config.MeshMapperZonesConfig, store ZoneStore, dir *Directory) *Zones {
+	return &Zones{store: store, enabled: cfg.Enabled, seen: map[string]bool{}, interval: cfg.Interval(), dir: dir,
+		boundsURL: boundaryEndpoint, client: &http.Client{
 			Timeout:       30 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		}}
@@ -97,7 +85,7 @@ func (z *Zones) OnUpdate(fn func(imported map[string]json.RawMessage)) { z.onUpd
 // Restore prunes imports for unknown IATAs (all of them when disabled) and
 // loads saved boundaries, without making HTTP requests.
 func (z *Zones) Restore(ctx context.Context) error {
-	iatas, err := z.store.ListZoneIATAs(ctx)
+	iatas, err := z.store.ListKnownIATAs(ctx)
 	if err != nil {
 		return fmt.Errorf("list IATAs for MeshMapper boundaries: %w", err)
 	}
@@ -166,11 +154,11 @@ func (z *Zones) Refresh(ctx context.Context) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	now := time.Now().UTC()
-	if now.Before(z.retryAfter) {
+	if now.Before(z.retryAfter) || now.Before(z.dir.pausedUntil()) {
 		return nil
 	}
 	// IATAs are created from traffic, so pick up new ones every tick.
-	iatas, err := z.store.ListZoneIATAs(ctx)
+	iatas, err := z.store.ListKnownIATAs(ctx)
 	if err != nil {
 		return fmt.Errorf("list IATAs for MeshMapper boundaries: %w", err)
 	}
@@ -179,67 +167,22 @@ func (z *Zones) Refresh(ctx context.Context) (err error) {
 		if now.Before(r.b.NextAttempt) {
 			continue
 		}
-		list := z.lists[r.country]
-		if list == nil || now.Sub(list.fetchedAt) >= zoneListFresh {
-			if list != nil && now.Before(list.nextAttempt) {
-				continue
-			}
-			return z.fetchList(ctx, r.country, now)
+		zones, fetched, err := z.dir.List(ctx, r.country, now)
+		if err != nil || fetched {
+			return err
 		}
-		return z.refresh(ctx, r, list, now)
+		if zones == nil {
+			continue
+		}
+		return z.refresh(ctx, r, zones, now)
 	}
 	return nil
 }
 
-func (z *Zones) fetchList(ctx context.Context, country string, now time.Time) error {
-	list := z.lists[country]
-	if list == nil {
-		list = &zoneList{}
-		z.lists[country] = list
-	}
-	endpoint := z.listURL + "?country=" + url.QueryEscape(country)
-	etag := ""
-	if list.zones != nil {
-		etag = list.etag
-	}
-	status, body, header, err := z.get(ctx, endpoint, etag, MaxZoneList)
-	if err != nil {
-		return err
-	}
-	problem := ""
-	switch status {
-	case http.StatusOK:
-		zones, decodeErr := decodeZones(body, country)
-		if decodeErr != nil {
-			problem = "invalid response"
-		} else {
-			list.zones, list.etag = zones, header.Get("ETag")
-		}
-	case http.StatusNotModified:
-		if list.zones == nil {
-			problem = "304 without cached list"
-		}
-	default:
-		problem = z.statusProblem(status, header, now, &list.nextAttempt)
-	}
-	if problem == "" {
-		list.fetchedAt = now
-	} else if list.nextAttempt.Before(now.Add(zoneFailureRetry)) {
-		list.nextAttempt = now.Add(zoneFailureRetry)
-	}
-	level := slog.LevelInfo
-	if problem != "" {
-		level = slog.LevelWarn
-	}
-	slog.Log(ctx, level, "MeshMapper zone list checked", "component", "meshmapper.zones", "country", country,
-		"zones", len(list.zones), "last_error", problem)
-	return nil
-}
-
-func (z *Zones) refresh(ctx context.Context, r *zoneRegion, list *zoneList, now time.Time) error {
+func (z *Zones) refresh(ctx context.Context, r *zoneRegion, zones map[string]zoneEntry, now time.Time) error {
 	update := Boundary{IATA: r.b.IATA, URL: r.b.URL, AttemptedAt: now, NextAttempt: now.Add(z.interval)}
 	var retryAt time.Time
-	entry, listed := list.zones[r.b.IATA]
+	entry, listed := zones[r.b.IATA]
 	endpoint, valid := "", false
 	if listed {
 		update.URL = entry.url
@@ -257,7 +200,7 @@ func (z *Zones) refresh(ctx context.Context, r *zoneRegion, list *zoneList, now 
 		if r.b.Feature != nil {
 			etag = r.b.ETag
 		}
-		status, body, header, err := z.get(ctx, endpoint, etag, MaxBoundaryBody)
+		status, body, header, err := get(ctx, z.client, "Beacon-MeshMapper-Zones/1", endpoint, etag, MaxBoundaryBody)
 		if err != nil {
 			return err
 		}
@@ -277,7 +220,10 @@ func (z *Zones) refresh(ctx context.Context, r *zoneRegion, list *zoneList, now 
 				update.LastError = "304 without cached boundary"
 			}
 		default:
-			update.LastError = z.statusProblem(status, header, now, &retryAt)
+			update.LastError = statusProblem(status, header, now, &retryAt)
+			if until, ok := rateLimited(status, retryAt, now); ok {
+				z.retryAfter = until // the rate limit is shared by every endpoint
+			}
 		}
 		if update.LastError == "" {
 			etag := header.Get("ETag")
@@ -318,17 +264,17 @@ func (z *Zones) refresh(ctx context.Context, r *zoneRegion, list *zoneList, now 
 }
 
 // get returns transport errors only when ctx ended; other failures become status 0.
-func (z *Zones) get(ctx context.Context, endpoint, etag string, limit int64) (int, []byte, http.Header, error) {
+func get(ctx context.Context, client *http.Client, agent, endpoint, etag string, limit int64) (int, []byte, http.Header, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return 0, nil, nil, err
 	}
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("User-Agent", "Beacon-MeshMapper-Zones/1")
+	request.Header.Set("User-Agent", agent)
 	if etag != "" {
 		request.Header.Set("If-None-Match", etag)
 	}
-	response, err := z.client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
 			return 0, nil, nil, ctx.Err()
@@ -346,8 +292,8 @@ func (z *Zones) get(ctx context.Context, endpoint, etag string, limit int64) (in
 	return response.StatusCode, body, response.Header, nil
 }
 
-// statusProblem describes a failed response and honours Retry-After on 429/503.
-func (z *Zones) statusProblem(status int, header http.Header, now time.Time, retryAt *time.Time) string {
+// statusProblem describes a failed response and reads Retry-After on 429/503.
+func statusProblem(status int, header http.Header, now time.Time, retryAt *time.Time) string {
 	if status == 0 {
 		return "request failed" // don't persist untrusted error text
 	}
@@ -355,15 +301,19 @@ func (z *Zones) statusProblem(status int, header http.Header, now time.Time, ret
 		if seconds, err := strconv.ParseInt(header.Get("Retry-After"), 10, 64); err == nil && seconds > 0 && seconds <= int64((1<<63-1)/time.Second) {
 			*retryAt = now.Add(time.Duration(seconds) * time.Second)
 		}
-		// The rate limit is shared by both endpoints, so pause every request.
-		if status == http.StatusTooManyRequests {
-			z.retryAfter = *retryAt
-			if retryAt.IsZero() {
-				z.retryAfter = now.Add(time.Minute)
-			}
-		}
 	}
 	return fmt.Sprintf("HTTP %d", status)
+}
+
+// rateLimited returns how long a 429 pauses every request.
+func rateLimited(status int, retryAt, now time.Time) (time.Time, bool) {
+	if status != http.StatusTooManyRequests {
+		return time.Time{}, false
+	}
+	if retryAt.IsZero() {
+		return now.Add(time.Minute), true
+	}
+	return retryAt, true
 }
 
 func (z *Zones) changed(ctx context.Context, iata string) {
@@ -394,36 +344,16 @@ func (z *Zones) log(b Boundary, action string) {
 		"source", b.URL, "imported", b.Feature != nil, "checked_at", b.CheckedAt, "next_attempt", b.NextAttempt, "last_error", b.LastError)
 }
 
-// boundaryEndpoint accepts only a published region site root.
-func boundaryEndpoint(site string) (string, bool) {
+func boundaryEndpoint(site string) (string, bool) { return siteEndpoint(site, "get_geojson.php") }
+
+// siteEndpoint accepts only a published region site root.
+func siteEndpoint(site, file string) (string, bool) {
 	u, err := url.Parse(site)
 	if err != nil || u.Scheme != "https" || u.User != nil || !zoneSite.MatchString(u.Host) ||
 		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return "", false
 	}
-	return "https://" + u.Host + "/get_geojson.php", true
-}
-
-func decodeZones(body []byte, country string) (map[string]zoneEntry, error) {
-	var document struct {
-		Country string `json:"country"`
-		Zones   *[]struct {
-			Code        string `json:"code"`
-			URL         string `json:"url"`
-			HasBoundary bool   `json:"has_boundary"`
-		} `json:"zones"`
-	}
-	if err := json.Unmarshal(body, &document); err != nil {
-		return nil, err
-	}
-	if !strings.EqualFold(document.Country, country) || document.Zones == nil {
-		return nil, fmt.Errorf("invalid zone list")
-	}
-	zones := make(map[string]zoneEntry, len(*document.Zones))
-	for _, zone := range *document.Zones {
-		zones[strings.ToUpper(zone.Code)] = zoneEntry{url: zone.URL, hasBoundary: zone.HasBoundary}
-	}
-	return zones, nil
+	return "https://" + u.Host + "/" + file, true
 }
 
 // decodeBoundary returns nil when MeshMapper has no usable outline for the region.

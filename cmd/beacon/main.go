@@ -198,10 +198,11 @@ func main() {
 	scopes.Load(scopeEntries)
 	scopes.SetManualMembers(cfg.ManualScopeMembers())
 	slog.Info(fmt.Sprintf("loaded %d transport scopes", len(scopeEntries)), "component", "startup")
+	directory := meshmapper.NewDirectory()
 	var scopeImporter *meshmapper.Importer
 	if cfg.MeshMapper.Scopes.Enabled {
 		restoreCtx, cancelRestore := context.WithTimeout(ctx, 10*time.Second)
-		scopeImporter, err = meshmapper.New(restoreCtx, cfg.MeshMapper.Scopes, store, scopes, scopeEntries)
+		scopeImporter, err = meshmapper.New(restoreCtx, cfg.MeshMapper.Scopes, store, directory, scopes, scopeEntries)
 		cancelRestore()
 		if err != nil {
 			slog.Error("failed to restore MeshMapper scope catalogues", "component", "startup", "error", err)
@@ -210,7 +211,7 @@ func main() {
 	}
 
 	// Always restored, so disabling the import prunes it and file borders return.
-	zones := meshmapper.NewZones(cfg.MeshMapper.Zones, store)
+	zones := meshmapper.NewZones(cfg.MeshMapper.Zones, store, directory)
 	if cr, ok := reader.(*cache.CachedReader); ok {
 		zones.OnChange(cr.InvalidateIATABorder)
 	}

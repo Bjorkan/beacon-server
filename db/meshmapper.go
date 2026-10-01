@@ -29,6 +29,23 @@ func (s *Store) GetScopeCatalogue(ctx context.Context, iata, url string) (*meshm
 	return cache, nil
 }
 
+func (s *Store) ListScopeCatalogues(ctx context.Context) ([]meshmapper.Catalogue, error) {
+	rows, err := s.q.ListScopeCatalogues(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]meshmapper.Catalogue, 0, len(rows))
+	for _, row := range rows {
+		c := meshmapper.Catalogue{IATA: row.Iata, URL: row.Url, Cache: meshmapper.Cache{Payload: row.Payload, CheckedAt: row.CheckedAt.Time,
+			AttemptedAt: row.AttemptedAt.Time, NextAttempt: row.NextAttempt.Time, LastError: row.LastError}}
+		if row.Etag != nil {
+			c.ETag = *row.Etag
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
 func (s *Store) SaveScopeCatalogue(ctx context.Context, iata, url string, cache meshmapper.Cache, entries []scopestore.Entry) error {
 	params := sqlc.SaveScopeCatalogueParams{
 		Iata: iata, Url: url, Payload: cache.Payload, LastError: cache.LastError,
@@ -48,7 +65,7 @@ func (s *Store) SaveScopeCatalogue(ctx context.Context, iata, url string, cache 
 	return s.q.SaveScopeCatalogue(ctx, params)
 }
 
-func (s *Store) ListZoneIATAs(ctx context.Context) ([]string, error) {
+func (s *Store) ListKnownIATAs(ctx context.Context) ([]string, error) {
 	rows, err := s.q.ListIATAs(ctx)
 	if err != nil {
 		return nil, err

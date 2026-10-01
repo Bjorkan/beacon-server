@@ -1254,6 +1254,21 @@ func (mr *MockQuerierMockRecorder) ListRouteEvidence(ctx, arg any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRouteEvidence", reflect.TypeOf((*MockQuerier)(nil).ListRouteEvidence), ctx, arg)
 }
 
+// ListScopeCatalogues mocks base method.
+func (m *MockQuerier) ListScopeCatalogues(ctx context.Context) ([]db.MeshmapperScopeCatalogue, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListScopeCatalogues", ctx)
+	ret0, _ := ret[0].([]db.MeshmapperScopeCatalogue)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListScopeCatalogues indicates an expected call of ListScopeCatalogues.
+func (mr *MockQuerierMockRecorder) ListScopeCatalogues(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListScopeCatalogues", reflect.TypeOf((*MockQuerier)(nil).ListScopeCatalogues), ctx)
+}
+
 // ListTraceTags mocks base method.
 func (m *MockQuerier) ListTraceTags(ctx context.Context, arg db.ListTraceTagsParams) ([]db.ListTraceTagsRow, error) {
 	m.ctrl.T.Helper()

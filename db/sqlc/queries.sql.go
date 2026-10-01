@@ -3723,6 +3723,39 @@ func (q *Queries) ListRegions(ctx context.Context) ([]ListRegionsRow, error) {
 	return items, nil
 }
 
+const listScopeCatalogues = `-- name: ListScopeCatalogues :many
+SELECT iata, url, payload, etag, checked_at, attempted_at, next_attempt, last_error FROM meshmapper_scope_catalogues ORDER BY iata, attempted_at
+`
+
+func (q *Queries) ListScopeCatalogues(ctx context.Context) ([]MeshmapperScopeCatalogue, error) {
+	rows, err := q.db.Query(ctx, listScopeCatalogues)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MeshmapperScopeCatalogue{}
+	for rows.Next() {
+		var i MeshmapperScopeCatalogue
+		if err := rows.Scan(
+			&i.Iata,
+			&i.Url,
+			&i.Payload,
+			&i.Etag,
+			&i.CheckedAt,
+			&i.AttemptedAt,
+			&i.NextAttempt,
+			&i.LastError,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTraceTags = `-- name: ListTraceTags :many
 
 WITH tags AS (

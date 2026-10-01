@@ -207,6 +207,7 @@ type Querier interface {
 	// Full-byte equality is required even when the compact digest matches. TRACE path bytes
 	// carry readings; unclassified legacy observations cannot be safely called ordinary paths.
 	ListRouteEvidence(ctx context.Context, arg ListRouteEvidenceParams) ([]ListRouteEvidenceRow, error)
+	ListScopeCatalogues(ctx context.Context) ([]MeshmapperScopeCatalogue, error)
 	// ============================================================
 	// TRACES
 	// ============================================================

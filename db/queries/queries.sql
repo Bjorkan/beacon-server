@@ -1576,6 +1576,9 @@ SELECT (SELECT heard_at FROM latest)::timestamptz AS latest_recorded_at,
 -- name: GetScopeCatalogue :one
 SELECT * FROM meshmapper_scope_catalogues WHERE iata = $1 AND url = $2;
 
+-- name: ListScopeCatalogues :many
+SELECT * FROM meshmapper_scope_catalogues ORDER BY iata, attempted_at;
+
 -- name: SaveScopeCatalogue :exec
 -- One statement commits the validated snapshot and its lookup identities together.
 -- Empty arrays insert nothing. NULL payload/checked_at retain last-known-good data
