@@ -43,10 +43,10 @@ ratelimit:
 
 # MeshMapper integrations (optional, no API key). Import transport scopes and
 # IATA border outlines from MeshMapper instead of maintaining scopes: and
-# iatas.*.borderFile by hand. Both need the IATAs to be in a configured region below.
+# iatas.*.borderFile by hand.
 #
 # Scope-name discovery. Manual scopes remain authoritative.
-# Sources must belong to a configured region's IATAs.
+# Sources are keyed by IATA code; the IATA need not be in a configured region.
 # Group endpoints are not supported: their names cannot be attributed to each IATA.
 # At most 16 sources, 64 names per source, 64 KiB per response; no page scraping.
 # Catalogues and ETags persist in PostgreSQL. Failed refreshes retain known names.

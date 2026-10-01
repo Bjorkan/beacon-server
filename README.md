@@ -194,8 +194,8 @@ even when the same bearer-authenticated request works with curl.
 ```yaml
 # MeshMapper integrations (optional, no API key). Import transport scopes and
 # IATA border outlines from MeshMapper instead of maintaining scopes: and
-# iatas.*.borderFile by hand. Scope sources must be in a configured region;
-# zones covers every known IATA. See config.yaml.example for limits and behaviour.
+# iatas.*.borderFile by hand. Neither needs the IATAs to be in a configured
+# region. See config.yaml.example for limits and behaviour.
 #meshmapper:
 #  scopes:
 #    enabled: true

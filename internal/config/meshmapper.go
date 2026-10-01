@@ -45,7 +45,10 @@ func (c MeshMapperScopesConfig) Interval() time.Duration {
 	return c.RefreshInterval.Duration
 }
 
-var meshMapperHost = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.meshmapper\.net$`)
+var (
+	meshMapperHost = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.meshmapper\.net$`)
+	iataCode       = regexp.MustCompile(`^[A-Z]{3}$`)
+)
 
 func (c *Config) validateMeshMapper() error {
 	if z := c.MeshMapper.Zones; z.Enabled {
@@ -64,15 +67,10 @@ func (c *Config) validateMeshMapper() error {
 	if s.Interval() < 5*time.Minute || s.Interval() > 24*time.Hour {
 		return fmt.Errorf("meshmapper.scopes.refresh_interval must be between 5m and 24h")
 	}
-	configured := map[string]bool{}
-	for _, region := range c.Regions {
-		for _, iata := range region.IATAs {
-			configured[iata] = true
-		}
-	}
 	for iata, endpoint := range s.Sources {
-		if !configured[iata] {
-			return fmt.Errorf("meshmapper.scopes source %q must belong to a configured region", iata)
+		// Catalogues must name the source IATA exactly, so reject keys that could never match.
+		if !iataCode.MatchString(iata) {
+			return fmt.Errorf("meshmapper.scopes source %q must be a three-letter uppercase IATA code", iata)
 		}
 		u, err := url.Parse(endpoint)
 		if err != nil || u.Scheme != "https" || u.User != nil || !meshMapperHost.MatchString(u.Host) ||

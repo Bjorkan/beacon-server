@@ -18,7 +18,10 @@ func TestMeshMapperConfig(t *testing.T) {
 		bad        bool
 	}{
 		{"valid", valid, false},
-		{"unknown region", strings.Replace(valid, "iatas: [YOW]", "iatas: [YVR]", 1), true},
+		{"outside any region", strings.Replace(valid, "iatas: [YOW]", "iatas: [YVR]", 1), false},
+		{"no regions", valid[strings.Index(valid, "meshmapper:"):], false},
+		{"lowercase IATA", strings.Replace(valid, "      YOW:", "      yow:", 1), true},
+		{"long IATA", strings.Replace(valid, "      YOW:", "      YOWX:", 1), true},
 		{"http", strings.Replace(valid, "https:", "http:", 1), true},
 		{"private host", strings.Replace(valid, "yow.meshmapper.net", "127.0.0.1", 1), true},
 		{"credentials", strings.Replace(valid, "https://", "https://secret@", 1), true},
