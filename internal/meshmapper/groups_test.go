@@ -13,7 +13,10 @@ import (
 	"github.com/MeshCore-Beacon/beacon-server/internal/config"
 )
 
-const groupedList = `{"country":"CA","zones":[{"code":"YOW","url":"URL/","has_boundary":true,"group":"ONQC"}],"groups":[` +
+const groupedList = `{"country":"CA","zones":[` +
+	`{"code":"YOW","name":"Ottawa, CA","short_name":"Ottawa","lat":45,"lon":-76,"url":"URL/","has_boundary":true,"group":"ONQC"},` +
+	`{"code":"YUL","name":"Montreal, CA","lat":46,"lon":-74,"url":"URL/","has_boundary":true,"group":"ONQC"},` +
+	`{"code":"YQB","name":"Quebec City, CA","url":"URL/","has_boundary":true,"group":"ONQC"}],"groups":[` +
 	`{"code":"ONQC","name":"Ottawa-Quebec Corridor","members":["YUL","YOW","YQB"],"url":"https://onqc.meshmapper.net/"},` +
 	`{"code":"GOLM","name":"Great Ontario Lake Mesh","members":["YYZ","YKF"],"url":"https://golm.meshmapper.net/"}]}`
 
@@ -75,6 +78,12 @@ func TestGroupImportedWhenAMemberIsKnown(t *testing.T) {
 	}
 	if _, ok := h.store.regions["golm"]; ok {
 		t.Fatal("group with no known member imported")
+	}
+	if got.CenterLat == nil || *got.CenterLat != 45.5 || *got.CenterLng != -75 {
+		t.Fatalf("center should average the located members: %v, %v", got.CenterLat, got.CenterLng)
+	}
+	if !slices.Contains(h.store.iatas, "YQB") || !slices.Contains(h.store.iatas, "YUL") {
+		t.Fatal("members not created as IATAs", h.store.iatas)
 	}
 	if h.invalidated != 1 {
 		t.Fatal("region caches not invalidated", h.invalidated)
@@ -142,5 +151,34 @@ func TestGroupColdStartWaitsForEveryList(t *testing.T) {
 	h.refetch(t)
 	if _, ok := store.regions["old"]; !ok {
 		t.Fatal("imported regions pruned before any list loaded")
+	}
+}
+
+func TestZoneListNamesAndLocatesIATAs(t *testing.T) {
+	h := newGroupHarness(t, groupedFake(t), &zoneMemoryStore{iatas: []string{"YOW", "YUL", "YQB", "YYZ"}}, false)
+	h.z.SetConfiguredIATAs([]string{"YUL"})
+	changed := 0
+	h.z.OnIATAsChange(func(context.Context) { changed++ })
+	h.refetch(t)
+	yow := h.store.details["YOW"]
+	if yow.Name != "Ottawa" || yow.Lat == nil || *yow.Lat != 45 || *yow.Lng != -76 {
+		t.Fatalf("YOW not named and located from short_name: %+v", yow)
+	}
+	if yqb := h.store.details["YQB"]; yqb.Name != "Quebec City, CA" || yqb.Lat != nil {
+		t.Fatalf("YQB should fall back to name and stay unlocated: %+v", yqb)
+	}
+	if _, ok := h.store.details["YUL"]; ok {
+		t.Fatal("configured IATA overwritten")
+	}
+	if _, ok := h.store.details["YYZ"]; ok {
+		t.Fatal("unlisted IATA written")
+	}
+	if changed != 1 || h.store.writes != 2 {
+		t.Fatal("writes/invalidations", h.store.writes, changed)
+	}
+	h.z.groupsSynced = false
+	h.refetch(t)
+	if h.store.writes != 2 || changed != 1 {
+		t.Fatal("unchanged details rewritten", h.store.writes, changed)
 	}
 }

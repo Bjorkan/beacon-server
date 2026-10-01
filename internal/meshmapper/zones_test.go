@@ -31,6 +31,27 @@ type zoneMemoryStore struct {
 	fail    bool
 	regions map[string]RegionState
 	lists   *zoneListMemory
+	details map[string]IATADetails
+	writes  int
+}
+
+func (s *zoneMemoryStore) ListIATADetails(context.Context) ([]IATADetails, error) {
+	var out []IATADetails
+	for _, iata := range s.iatas {
+		d := s.details[iata]
+		d.IATA = iata
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+func (s *zoneMemoryStore) UpsertIATADetails(_ context.Context, iata, name string, lat, lng *float64) error {
+	if s.details == nil {
+		s.details = map[string]IATADetails{}
+	}
+	s.details[iata] = IATADetails{IATA: iata, Name: name, Lat: lat, Lng: lng}
+	s.writes++
+	return nil
 }
 
 func (s *zoneMemoryStore) ListRegionState(context.Context) ([]RegionState, error) {
@@ -50,6 +71,11 @@ func (s *zoneMemoryStore) SaveImportedRegion(_ context.Context, r RegionState) (
 	}
 	r.Imported = true
 	s.regions[r.Slug] = r
+	for _, m := range r.IATAs { // members become known IATAs, as AddIATAs does
+		if !slices.Contains(s.iatas, m) {
+			s.iatas = append(s.iatas, m)
+		}
+	}
 	return true, nil
 }
 

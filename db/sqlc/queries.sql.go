@@ -45,6 +45,17 @@ func (q *Queries) AddChannelMembers(ctx context.Context, arg AddChannelMembersPa
 	return err
 }
 
+const addIATAs = `-- name: AddIATAs :exec
+INSERT INTO iata_codes (iata)
+SELECT unnest($1::bpchar[])
+ON CONFLICT (iata) DO NOTHING
+`
+
+func (q *Queries) AddIATAs(ctx context.Context, iatas []string) error {
+	_, err := q.db.Exec(ctx, addIATAs, iatas)
+	return err
+}
+
 const addRegionIATAs = `-- name: AddRegionIATAs :exec
 INSERT INTO region_iatas (region_id, iata)
 SELECT $1, unnest($2::bpchar[])
@@ -3823,7 +3834,7 @@ func (q *Queries) ListPacketsByIATAs(ctx context.Context, arg ListPacketsByIATAs
 }
 
 const listRegionState = `-- name: ListRegionState :many
-SELECT r.slug, r.name, COALESCE(r.display_order, 0)::int AS display_order, r.imported,
+SELECT r.slug, r.name, COALESCE(r.display_order, 0)::int AS display_order, r.imported, r.center_lat, r.center_lng,
     COALESCE(array_agg(ri.iata::text ORDER BY ri.iata) FILTER (WHERE ri.iata IS NOT NULL), '{}')::text[] AS iatas
 FROM regions r
 LEFT JOIN region_iatas ri ON ri.region_id = r.id
@@ -3836,6 +3847,8 @@ type ListRegionStateRow struct {
 	Name         string   `json:"name"`
 	DisplayOrder int32    `json:"display_order"`
 	Imported     bool     `json:"imported"`
+	CenterLat    *float64 `json:"center_lat"`
+	CenterLng    *float64 `json:"center_lng"`
 	Iatas        []string `json:"iatas"`
 }
 
@@ -3854,6 +3867,8 @@ func (q *Queries) ListRegionState(ctx context.Context) ([]ListRegionStateRow, er
 			&i.Name,
 			&i.DisplayOrder,
 			&i.Imported,
+			&i.CenterLat,
+			&i.CenterLng,
 			&i.Iatas,
 		); err != nil {
 			return nil, err
@@ -5284,25 +5299,35 @@ func (q *Queries) UpsertIATADetails(ctx context.Context, arg UpsertIATADetailsPa
 }
 
 const upsertImportedRegion = `-- name: UpsertImportedRegion :one
-INSERT INTO regions (slug, name, display_order, zoom_level, imported, updated_at)
-VALUES ($1, $2, $3, NULL, TRUE, NOW())
+INSERT INTO regions (slug, name, display_order, center_lat, center_lng, zoom_level, imported, updated_at)
+VALUES ($1, $2, $3, $4, $5, NULL, TRUE, NOW())
 ON CONFLICT (slug) DO UPDATE SET
     name          = EXCLUDED.name,
     display_order = EXCLUDED.display_order,
+    center_lat    = EXCLUDED.center_lat,
+    center_lng    = EXCLUDED.center_lng,
     updated_at    = NOW()
 WHERE regions.imported
 RETURNING id
 `
 
 type UpsertImportedRegionParams struct {
-	Slug         string `json:"slug"`
-	Name         string `json:"name"`
-	DisplayOrder *int32 `json:"display_order"`
+	Slug         string   `json:"slug"`
+	Name         string   `json:"name"`
+	DisplayOrder *int32   `json:"display_order"`
+	CenterLat    *float64 `json:"center_lat"`
+	CenterLng    *float64 `json:"center_lng"`
 }
 
 // A hand-written region owns its slug: the WHERE turns a clash into no row.
 func (q *Queries) UpsertImportedRegion(ctx context.Context, arg UpsertImportedRegionParams) (int32, error) {
-	row := q.db.QueryRow(ctx, upsertImportedRegion, arg.Slug, arg.Name, arg.DisplayOrder)
+	row := q.db.QueryRow(ctx, upsertImportedRegion,
+		arg.Slug,
+		arg.Name,
+		arg.DisplayOrder,
+		arg.CenterLat,
+		arg.CenterLng,
+	)
 	var id int32
 	err := row.Scan(&id)
 	return id, err

@@ -4,6 +4,7 @@
 package meshmapper
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,6 +22,8 @@ import (
 type zoneEntry struct {
 	url         string
 	hasBoundary bool
+	name        string   // short display name, e.g. "Nanaimo"
+	lat, lon    *float64 // nil when missing or out of range
 }
 
 type zoneGroup struct {
@@ -157,16 +160,19 @@ func (d *Directory) fetch(ctx context.Context, country string, now time.Time) er
 	return nil
 }
 
-// groups merges every loaded list's groups by code. complete is false until each
-// country has a list, so a cold start can't look like every group disappearing.
-func (d *Directory) groups(countries []string) (merged map[string]zoneGroup, version int, complete bool) {
+// snapshot merges every loaded list's zones and groups by code. complete is false until
+// each country has a list, so a cold start can't look like every group disappearing.
+func (d *Directory) snapshot(countries []string) (merged map[string]zoneGroup, zones map[string]zoneEntry, version int, complete bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	merged = map[string]zoneGroup{}
+	merged, zones = map[string]zoneGroup{}, map[string]zoneEntry{}
 	for _, country := range countries {
 		list := d.lists[country]
 		if list == nil || list.zones == nil {
-			return nil, d.version, false
+			return nil, nil, d.version, false
+		}
+		for code, z := range list.zones {
+			zones[code] = z
 		}
 		for code, g := range list.groups {
 			if have, ok := merged[code]; ok {
@@ -178,7 +184,7 @@ func (d *Directory) groups(countries []string) (merged map[string]zoneGroup, ver
 			merged[code] = g
 		}
 	}
-	return merged, d.version, true
+	return merged, zones, d.version, true
 }
 
 var (
@@ -190,9 +196,13 @@ func decodeZones(body []byte, country string) (map[string]zoneEntry, map[string]
 	var document struct {
 		Country string `json:"country"`
 		Zones   *[]struct {
-			Code        string `json:"code"`
-			URL         string `json:"url"`
-			HasBoundary bool   `json:"has_boundary"`
+			Code        string   `json:"code"`
+			Name        string   `json:"name"`
+			ShortName   string   `json:"short_name"`
+			Lat         *float64 `json:"lat"`
+			Lon         *float64 `json:"lon"`
+			URL         string   `json:"url"`
+			HasBoundary bool     `json:"has_boundary"`
 		} `json:"zones"`
 		Groups []struct {
 			Code    string   `json:"code"`
@@ -208,7 +218,14 @@ func decodeZones(body []byte, country string) (map[string]zoneEntry, map[string]
 	}
 	zones := make(map[string]zoneEntry, len(*document.Zones))
 	for _, zone := range *document.Zones {
-		zones[strings.ToUpper(zone.Code)] = zoneEntry{url: zone.URL, hasBoundary: zone.HasBoundary}
+		entry := zoneEntry{url: zone.URL, hasBoundary: zone.HasBoundary, name: cmp.Or(zone.ShortName, zone.Name)}
+		if entry.name = strings.TrimSpace(entry.name); len(entry.name) > 128 || strings.ContainsFunc(entry.name, unicode.IsControl) {
+			entry.name = ""
+		}
+		if zone.Lat != nil && zone.Lon != nil && *zone.Lat >= -90 && *zone.Lat <= 90 && *zone.Lon >= -180 && *zone.Lon <= 180 {
+			entry.lat, entry.lon = zone.Lat, zone.Lon
+		}
+		zones[strings.ToUpper(zone.Code)] = entry
 	}
 	groups := map[string]zoneGroup{}
 	for _, g := range document.Groups {

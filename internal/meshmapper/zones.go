@@ -47,6 +47,8 @@ type ZoneStore interface {
 	ListZoneBoundaries(ctx context.Context) ([]Boundary, error)
 	SaveZoneBoundary(ctx context.Context, b Boundary) error
 	ListRegionState(ctx context.Context) ([]RegionState, error)
+	ListIATADetails(ctx context.Context) ([]IATADetails, error)
+	UpsertIATADetails(ctx context.Context, iata, name string, lat, lng *float64) error
 	SaveImportedRegion(ctx context.Context, r RegionState) (bool, error)
 	PruneImportedRegions(ctx context.Context, keep []string) ([]string, error)
 }
@@ -73,6 +75,8 @@ type Zones struct {
 	groupsSynced               bool
 	groupsVersion, groupsKnown int
 	onRegions                  func(ctx context.Context)
+	configured                 map[string]bool
+	onIATAs                    func(ctx context.Context)
 }
 
 func NewZones(cfg config.MeshMapperZonesConfig, store ZoneStore, dir *Directory) *Zones {
@@ -170,7 +174,7 @@ func (z *Zones) Refresh(ctx context.Context) (err error) {
 		return fmt.Errorf("list IATAs for MeshMapper boundaries: %w", err)
 	}
 	z.track(iatas, nil)
-	if err := z.syncGroups(ctx, iatas); err != nil {
+	if err := z.syncDirectory(ctx, iatas); err != nil {
 		return err
 	}
 	for _, r := range z.regions {

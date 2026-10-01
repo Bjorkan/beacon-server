@@ -221,9 +221,17 @@ func main() {
 
 	// Always restored, so disabling the import prunes it and file borders return.
 	zones := meshmapper.NewZones(cfg.MeshMapper.Zones, store, directory)
+	var detailed []string
+	for iata, d := range cfg.IATAs {
+		if d.Name != "" || d.Lat != nil || d.Lng != nil {
+			detailed = append(detailed, iata)
+		}
+	}
+	zones.SetConfiguredIATAs(detailed)
 	if cr, ok := reader.(*cache.CachedReader); ok {
 		zones.OnChange(cr.InvalidateIATABorder)
 		zones.OnRegionsChange(cr.InvalidateRegions)
+		zones.OnIATAsChange(cr.InvalidateIATAs)
 	}
 	if localBorders != nil {
 		zones.OnUpdate(func(imported map[string]json.RawMessage) {

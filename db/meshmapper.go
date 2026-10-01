@@ -152,7 +152,7 @@ func (s *Store) ListRegionState(ctx context.Context) ([]meshmapper.RegionState, 
 	out := make([]meshmapper.RegionState, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, meshmapper.RegionState{Slug: row.Slug, Name: row.Name, DisplayOrder: int(row.DisplayOrder),
-			Imported: row.Imported, IATAs: row.Iatas})
+			Imported: row.Imported, IATAs: row.Iatas, CenterLat: row.CenterLat, CenterLng: row.CenterLng})
 	}
 	return out, nil
 }
@@ -160,11 +160,16 @@ func (s *Store) ListRegionState(ctx context.Context) ([]meshmapper.RegionState, 
 // SaveImportedRegion reports false when a hand-written region owns the slug.
 func (s *Store) SaveImportedRegion(ctx context.Context, r meshmapper.RegionState) (bool, error) {
 	order := int32(r.DisplayOrder)
-	id, err := s.q.UpsertImportedRegion(ctx, sqlc.UpsertImportedRegionParams{Slug: r.Slug, Name: r.Name, DisplayOrder: &order})
+	id, err := s.q.UpsertImportedRegion(ctx, sqlc.UpsertImportedRegionParams{Slug: r.Slug, Name: r.Name, DisplayOrder: &order,
+		CenterLat: r.CenterLat, CenterLng: r.CenterLng})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
+		return false, err
+	}
+	// region_iatas references iata_codes, so members Beacon hasn't heard yet are created first, as Seed does.
+	if err := s.q.AddIATAs(ctx, r.IATAs); err != nil {
 		return false, err
 	}
 	return true, s.SetRegionIATAs(ctx, id, r.IATAs)
@@ -227,4 +232,20 @@ func (s *Store) SetChannelMembers(ctx context.Context, iata string, fingerprints
 
 func (s *Store) ClearChannelMembers(ctx context.Context) error {
 	return s.q.DeleteAllChannelMembers(ctx)
+}
+
+func (s *Store) ListIATADetails(ctx context.Context) ([]meshmapper.IATADetails, error) {
+	rows, err := s.q.ListIATAs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]meshmapper.IATADetails, 0, len(rows))
+	for _, row := range rows {
+		d := meshmapper.IATADetails{IATA: row.Iata, Lat: row.ApproxLat, Lng: row.ApproxLng}
+		if row.DisplayName != nil {
+			d.Name = *row.DisplayName
+		}
+		out = append(out, d)
+	}
+	return out, nil
 }

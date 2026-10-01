@@ -72,6 +72,20 @@ func (mr *MockQuerierMockRecorder) AddChannelMembers(ctx, arg any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddChannelMembers", reflect.TypeOf((*MockQuerier)(nil).AddChannelMembers), ctx, arg)
 }
 
+// AddIATAs mocks base method.
+func (m *MockQuerier) AddIATAs(ctx context.Context, iatas []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddIATAs", ctx, iatas)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddIATAs indicates an expected call of AddIATAs.
+func (mr *MockQuerierMockRecorder) AddIATAs(ctx, iatas any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddIATAs", reflect.TypeOf((*MockQuerier)(nil).AddIATAs), ctx, iatas)
+}
+
 // AddRegionIATAs mocks base method.
 func (m *MockQuerier) AddRegionIATAs(ctx context.Context, arg db.AddRegionIATAsParams) error {
 	m.ctrl.T.Helper()

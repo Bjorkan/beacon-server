@@ -268,11 +268,7 @@ func TestMeshMapperRegionsPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(context.Background())
-	for _, table := range []string{"regions", "region_iatas"} {
-		if _, err := tx.Exec(ctx, "CREATE TEMP TABLE "+table+" (LIKE public."+table+" INCLUDING ALL) ON COMMIT DROP"); err != nil {
-			t.Fatal(err)
-		}
-	}
+	// Real tables inside the rolled-back tx: TEMP copies drop region_iatas' foreign key to iata_codes.
 	store := &Store{q: sqlc.New(tx)}
 	state := func() map[string]meshmapper.RegionState {
 		t.Helper()
@@ -285,6 +281,11 @@ func TestMeshMapperRegionsPostgres(t *testing.T) {
 			out[r.Slug] = r
 		}
 		return out
+	}
+	for _, iata := range []string{"YOW", "YUL"} { // Seed creates config region IATAs first
+		if err := store.UpsertIATA(ctx, iata); err != nil {
+			t.Fatal(err)
+		}
 	}
 	hand, err := store.UpsertRegion(ctx, "east", "East", "", 3, nil, nil, nil)
 	if err != nil {
@@ -299,9 +300,17 @@ func TestMeshMapperRegionsPostgres(t *testing.T) {
 	if got := state()["east"]; got.Imported || got.DisplayOrder != 3 || strings.Join(got.IATAs, ",") != "YOW" {
 		t.Fatal("configured members not replaced", got)
 	}
-	group := meshmapper.RegionState{Slug: "onqc", Name: "Corridor", DisplayOrder: 4, IATAs: []string{"YOW", "YQB"}}
+	lat, lng := 45.5, -75.0
+	group := meshmapper.RegionState{Slug: "onqc", Name: "Corridor", DisplayOrder: 4, IATAs: []string{"YOW", "YQB"}, CenterLat: &lat, CenterLng: &lng}
 	if saved, err := store.SaveImportedRegion(ctx, group); err != nil || !saved {
-		t.Fatal(saved, err)
+		t.Fatal("members Beacon hasn't heard must be created first", saved, err)
+	}
+	if got := state()["onqc"]; got.CenterLat == nil || *got.CenterLat != lat || *got.CenterLng != lng {
+		t.Fatal("center not saved", got)
+	}
+	details, err := store.ListIATADetails(ctx)
+	if err != nil || !slices.ContainsFunc(details, func(d meshmapper.IATADetails) bool { return d.IATA == "YQB" }) {
+		t.Fatal("member IATA not created", err)
 	}
 	group.IATAs = []string{"YQB", "YUL"}
 	if saved, err := store.SaveImportedRegion(ctx, group); err != nil || !saved {
@@ -324,6 +333,14 @@ func TestMeshMapperRegionsPostgres(t *testing.T) {
 	}
 	if _, err := store.SaveImportedRegion(ctx, meshmapper.RegionState{Slug: "golm", Name: "Lakes", IATAs: []string{"YYZ"}}); err != nil {
 		t.Fatal(err)
+	}
+	if err := store.UpsertIATADetails(ctx, "YQB", "Quebec City", &lat, &lng); err != nil {
+		t.Fatal(err)
+	}
+	if details, _ := store.ListIATADetails(ctx); !slices.ContainsFunc(details, func(d meshmapper.IATADetails) bool {
+		return d.IATA == "YQB" && d.Name == "Quebec City" && d.Lat != nil && *d.Lat == lat
+	}) {
+		t.Fatal("IATA details not saved")
 	}
 	if pruned, err := store.PruneImportedRegions(ctx, nil); err != nil || strings.Join(pruned, ",") != "golm" {
 		t.Fatal("prune touched configured regions", pruned, err)

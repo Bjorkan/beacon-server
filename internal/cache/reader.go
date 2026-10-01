@@ -90,6 +90,12 @@ func (cr *CachedReader) InvalidateIATABorder(ctx context.Context, iata string) {
 	cr.c.del(ctx, keyIATABorderPrefix+iata)
 }
 
+// InvalidateIATAs makes imported MeshMapper names and locations visible to every IATA read.
+func (cr *CachedReader) InvalidateIATAs(ctx context.Context) {
+	cr.c.del(ctx, keyIATAs)
+	cr.c.delPrefix(ctx, keyIATAPrefix)
+}
+
 // InvalidateRegions makes imported MeshMapper regions visible to every region read.
 func (cr *CachedReader) InvalidateRegions(ctx context.Context) {
 	cr.c.del(ctx, keyRegions)

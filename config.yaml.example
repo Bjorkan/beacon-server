@@ -73,10 +73,14 @@ ratelimit:
 # Each country's zone list is fetched at most once a day (MeshMapper allows one
 # get_zones.php per country per 23.5h) and saved, so restarts don't refetch it.
 # Failed or rate-limited requests also wait out the limit, or Retry-After if longer.
+# Listed IATAs also take their display name and approximate location from the
+# zone list, unless iatas: below sets a name or lat/lng for them.
 # import_groups turns MeshMapper zone groups (e.g. ONQC: YOW, YQB, YUL) into
 # regions, from the zone lists already fetched. A group is imported when at least
-# one member is a known IATA, with its full member list; slug = lowercased group
-# code, listed after the regions below. A region below with the same slug wins.
+# one member is a known IATA, with its full member list (members Beacon hasn't
+# heard yet are added as IATAs); slug = lowercased group code, centered on the
+# members' average location, listed after the regions below. A region below with
+# the same slug wins.
 # Imported regions are removed when the group disappears or stops qualifying,
 # and all of them when import_groups is turned off. Requires zones.enabled.
 #  zones:
