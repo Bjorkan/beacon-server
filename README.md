@@ -201,6 +201,7 @@ even when the same bearer-authenticated request works with curl.
 #    enabled: true
 #  zones:
 #    enabled: true
+#    import_groups: true # MeshMapper zone groups become regions
 
 # Optional IATA overrides — auto-created on first packet arrival,
 # only needed if you want to customise display name or coordinates.

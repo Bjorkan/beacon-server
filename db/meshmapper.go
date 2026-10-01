@@ -113,3 +113,36 @@ func (s *Store) SaveZoneBoundary(ctx context.Context, b meshmapper.Boundary) err
 	}
 	return s.q.SaveZoneBoundary(ctx, params)
 }
+
+func (s *Store) ListRegionState(ctx context.Context) ([]meshmapper.RegionState, error) {
+	rows, err := s.q.ListRegionState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]meshmapper.RegionState, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, meshmapper.RegionState{Slug: row.Slug, Name: row.Name, DisplayOrder: int(row.DisplayOrder),
+			Imported: row.Imported, IATAs: row.Iatas})
+	}
+	return out, nil
+}
+
+// SaveImportedRegion reports false when a hand-written region owns the slug.
+func (s *Store) SaveImportedRegion(ctx context.Context, r meshmapper.RegionState) (bool, error) {
+	order := int32(r.DisplayOrder)
+	id, err := s.q.UpsertImportedRegion(ctx, sqlc.UpsertImportedRegionParams{Slug: r.Slug, Name: r.Name, DisplayOrder: &order})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, s.SetRegionIATAs(ctx, id, r.IATAs)
+}
+
+func (s *Store) PruneImportedRegions(ctx context.Context, keep []string) ([]string, error) {
+	if keep == nil {
+		keep = []string{}
+	}
+	return s.q.PruneImportedRegions(ctx, keep)
+}

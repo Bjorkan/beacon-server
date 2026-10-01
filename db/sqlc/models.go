@@ -529,6 +529,7 @@ type Region struct {
 	ZoomLevel    *int32             `json:"zoom_level"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	Imported     bool               `json:"imported"`
 }
 
 type RegionIata struct {

@@ -13,6 +13,7 @@ import (
 )
 
 type Querier interface {
+	AddRegionIATAs(ctx context.Context, arg AddRegionIATAsParams) error
 	// Hop prefixes that match >1 node in an IATA, per width. Computed once per reconfirm run.
 	AmbiguousPrefixes(ctx context.Context) ([]AmbiguousPrefixesRow, error)
 	CreateAccount(ctx context.Context, name string) (Account, error)
@@ -41,6 +42,7 @@ type Querier interface {
 	DeleteOldTelemetry(ctx context.Context, reportedAt pgtype.Timestamptz) error
 	// Keeps the trace IATA filter in step with packet retention.
 	DeleteOldTraceIATAs(ctx context.Context, lastHeard pgtype.Timestamptz) error
+	DeleteRegionIATAsNotIn(ctx context.Context, arg DeleteRegionIATAsNotInParams) error
 	GetAccount(ctx context.Context, id uuid.UUID) (Account, error)
 	GetChannelByID(ctx context.Context, id int32) (Channel, error)
 	// Returns neighbors of a node that are in a different IATA.
@@ -199,6 +201,8 @@ type Querier interface {
 	// A site that filled scan_depth still has unread history below its floor.
 	// The newest such floor is the point above which every site is covered.
 	ListPacketsByIATAs(ctx context.Context, arg ListPacketsByIATAsParams) ([]ListPacketsByIATAsRow, error)
+	// Every region with its members, for reconciling imported MeshMapper groups.
+	ListRegionState(ctx context.Context) ([]ListRegionStateRow, error)
 	// ============================================================
 	// REGIONS
 	// ============================================================
@@ -221,6 +225,7 @@ type Querier interface {
 	// internal/ingest.BackfillChannelMessages.
 	ListUndecryptedGroupTextPackets(ctx context.Context) ([]ListUndecryptedGroupTextPacketsRow, error)
 	ListZoneBoundaries(ctx context.Context) ([]MeshmapperZoneBoundary, error)
+	PruneImportedRegions(ctx context.Context, keep []string) ([]string, error)
 	// Drops imports for IATAs no longer configured, so their manual border returns.
 	PruneZoneBoundaries(ctx context.Context, keep []string) ([]string, error)
 	// Delete node_neighbors where the neighbor has departed from node_short_ids
@@ -302,6 +307,8 @@ type Querier interface {
 	// bbox already computed -- see internal/config/border.go.
 	UpsertIATABorder(ctx context.Context, arg UpsertIATABorderParams) error
 	UpsertIATADetails(ctx context.Context, arg UpsertIATADetailsParams) error
+	// A hand-written region owns its slug: the WHERE turns a clash into no row.
+	UpsertImportedRegion(ctx context.Context, arg UpsertImportedRegionParams) (int32, error)
 	// ============================================================
 	// ROUTES
 	// ============================================================
@@ -343,7 +350,6 @@ type Querier interface {
 	// ============================================================
 	UpsertPacket(ctx context.Context, arg UpsertPacketParams) (UpsertPacketRow, error)
 	UpsertRegion(ctx context.Context, arg UpsertRegionParams) (int32, error)
-	UpsertRegionIATA(ctx context.Context, arg UpsertRegionIATAParams) error
 	// Refreshes at most hourly so repeat hears don't churn the row.
 	UpsertTraceIATA(ctx context.Context, arg UpsertTraceIATAParams) error
 	// ============================================================

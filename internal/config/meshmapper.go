@@ -17,6 +17,7 @@ type MeshMapperConfig struct {
 // MeshMapperZonesConfig imports each known IATA's published boundary, overriding borderFile.
 type MeshMapperZonesConfig struct {
 	Enabled         bool     `yaml:"enabled"`
+	ImportGroups    bool     `yaml:"import_groups"` // zone groups become regions
 	RefreshInterval duration `yaml:"refresh_interval"`
 }
 
@@ -43,6 +44,9 @@ func (c MeshMapperScopesConfig) Interval() time.Duration {
 }
 
 func (c *Config) validateMeshMapper() error {
+	if z := c.MeshMapper.Zones; z.ImportGroups && !z.Enabled {
+		return fmt.Errorf("meshmapper.zones.import_groups requires meshmapper.zones.enabled")
+	}
 	if z := c.MeshMapper.Zones; z.Enabled {
 		// The Zones API asks clients not to poll more than once an hour.
 		if z.Interval() < time.Hour || z.Interval() > 7*24*time.Hour {

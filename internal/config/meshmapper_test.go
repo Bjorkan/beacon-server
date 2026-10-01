@@ -53,6 +53,8 @@ func TestMeshMapperZonesConfig(t *testing.T) {
 		{"too often", valid + "    refresh_interval: 59m\n", true, 0},
 		{"too rare", valid + "    refresh_interval: 169h\n", true, 0},
 		{"no regions", "meshmapper:\n  zones:\n    enabled: true\n", false, 24 * time.Hour},
+		{"groups", valid + "    import_groups: true\n", false, 24 * time.Hour},
+		{"groups without zones", "meshmapper:\n  zones:\n    import_groups: true\n", true, 0},
 		{"disabled", "meshmapper:\n  zones:\n    enabled: false\n", false, 24 * time.Hour},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

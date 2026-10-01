@@ -214,6 +214,7 @@ func main() {
 	zones := meshmapper.NewZones(cfg.MeshMapper.Zones, store, directory)
 	if cr, ok := reader.(*cache.CachedReader); ok {
 		zones.OnChange(cr.InvalidateIATABorder)
+		zones.OnRegionsChange(cr.InvalidateRegions)
 	}
 	if localBorders != nil {
 		zones.OnUpdate(func(imported map[string]json.RawMessage) {

@@ -10,9 +10,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 type zoneEntry struct {
@@ -20,8 +23,14 @@ type zoneEntry struct {
 	hasBoundary bool
 }
 
+type zoneGroup struct {
+	name    string
+	members []string
+}
+
 type zoneList struct {
 	zones                  map[string]zoneEntry
+	groups                 map[string]zoneGroup
 	etag                   string
 	fetchedAt, nextAttempt time.Time
 }
@@ -33,6 +42,7 @@ type Directory struct {
 	listURL    string
 	lists      map[string]*zoneList
 	retryAfter time.Time
+	version    int // bumped whenever a list is replaced
 }
 
 func NewDirectory() *Directory {
@@ -82,11 +92,12 @@ func (d *Directory) fetch(ctx context.Context, country string, now time.Time) er
 	problem := ""
 	switch status {
 	case http.StatusOK:
-		zones, decodeErr := decodeZones(body, country)
+		zones, groups, decodeErr := decodeZones(body, country)
 		if decodeErr != nil {
 			problem = "invalid response"
 		} else {
-			list.zones, list.etag = zones, header.Get("ETag")
+			list.zones, list.groups, list.etag = zones, groups, header.Get("ETag")
+			d.version++
 		}
 	case http.StatusNotModified:
 		if list.zones == nil {
@@ -116,7 +127,36 @@ func (d *Directory) fetch(ctx context.Context, country string, now time.Time) er
 	return nil
 }
 
-func decodeZones(body []byte, country string) (map[string]zoneEntry, error) {
+// groups merges every loaded list's groups by code. complete is false until each
+// country has a list, so a cold start can't look like every group disappearing.
+func (d *Directory) groups(countries []string) (merged map[string]zoneGroup, version int, complete bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	merged = map[string]zoneGroup{}
+	for _, country := range countries {
+		list := d.lists[country]
+		if list == nil || list.zones == nil {
+			return nil, d.version, false
+		}
+		for code, g := range list.groups {
+			if have, ok := merged[code]; ok {
+				g.members = append(slices.Clone(have.members), g.members...)
+				slices.Sort(g.members)
+				g.members = slices.Compact(g.members)
+				g.name = have.name
+			}
+			merged[code] = g
+		}
+	}
+	return merged, d.version, true
+}
+
+var (
+	groupCode  = regexp.MustCompile(`^[A-Z0-9]{2,16}$`)
+	memberIATA = regexp.MustCompile(`^[A-Z]{3}$`)
+)
+
+func decodeZones(body []byte, country string) (map[string]zoneEntry, map[string]zoneGroup, error) {
 	var document struct {
 		Country string `json:"country"`
 		Zones   *[]struct {
@@ -124,16 +164,38 @@ func decodeZones(body []byte, country string) (map[string]zoneEntry, error) {
 			URL         string `json:"url"`
 			HasBoundary bool   `json:"has_boundary"`
 		} `json:"zones"`
+		Groups []struct {
+			Code    string   `json:"code"`
+			Name    string   `json:"name"`
+			Members []string `json:"members"`
+		} `json:"groups"`
 	}
 	if err := json.Unmarshal(body, &document); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !strings.EqualFold(document.Country, country) || document.Zones == nil {
-		return nil, fmt.Errorf("invalid zone list")
+		return nil, nil, fmt.Errorf("invalid zone list")
 	}
 	zones := make(map[string]zoneEntry, len(*document.Zones))
 	for _, zone := range *document.Zones {
 		zones[strings.ToUpper(zone.Code)] = zoneEntry{url: zone.URL, hasBoundary: zone.HasBoundary}
 	}
-	return zones, nil
+	groups := map[string]zoneGroup{}
+	for _, g := range document.Groups {
+		code, name := strings.ToUpper(g.Code), strings.TrimSpace(g.Name)
+		if !groupCode.MatchString(code) || name == "" || len(name) > 128 || strings.ContainsFunc(name, unicode.IsControl) {
+			continue // a bad group never blocks the zone list
+		}
+		var members []string
+		for _, m := range g.Members {
+			if m = strings.ToUpper(m); memberIATA.MatchString(m) {
+				members = append(members, m)
+			}
+		}
+		slices.Sort(members)
+		if members = slices.Compact(members); len(members) > 0 {
+			groups[code] = zoneGroup{name: name, members: members}
+		}
+	}
+	return zones, groups, nil
 }

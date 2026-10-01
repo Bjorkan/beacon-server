@@ -52,8 +52,8 @@ func (s *stubSeeder) UpsertRegion(_ context.Context, slug, _, _ string, _ int, _
 	return id, s.upsertErr
 }
 
-func (s *stubSeeder) UpsertRegionIATA(_ context.Context, regionID int32, iata string) error {
-	s.regionIATAs[regionID] = append(s.regionIATAs[regionID], iata)
+func (s *stubSeeder) SetRegionIATAs(_ context.Context, regionID int32, iatas []string) error {
+	s.regionIATAs[regionID] = iatas
 	return s.upsertErr
 }
 

@@ -25,10 +25,42 @@ func boundaryBody(code, geometry string) string {
 }
 
 type zoneMemoryStore struct {
-	iatas  []string
-	rows   map[string]Boundary
-	pruned []string
-	fail   bool
+	iatas   []string
+	rows    map[string]Boundary
+	pruned  []string
+	fail    bool
+	regions map[string]RegionState
+}
+
+func (s *zoneMemoryStore) ListRegionState(context.Context) ([]RegionState, error) {
+	var out []RegionState
+	for _, r := range s.regions {
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+func (s *zoneMemoryStore) SaveImportedRegion(_ context.Context, r RegionState) (bool, error) {
+	if s.regions == nil {
+		s.regions = map[string]RegionState{}
+	}
+	if cur, ok := s.regions[r.Slug]; ok && !cur.Imported {
+		return false, nil
+	}
+	r.Imported = true
+	s.regions[r.Slug] = r
+	return true, nil
+}
+
+func (s *zoneMemoryStore) PruneImportedRegions(_ context.Context, keep []string) ([]string, error) {
+	var removed []string
+	for slug, r := range s.regions {
+		if r.Imported && !slices.Contains(keep, slug) {
+			delete(s.regions, slug)
+			removed = append(removed, slug)
+		}
+	}
+	return removed, nil
 }
 
 func (s *zoneMemoryStore) ListKnownIATAs(context.Context) ([]string, error) {

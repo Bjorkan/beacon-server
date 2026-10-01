@@ -90,6 +90,12 @@ func (cr *CachedReader) InvalidateIATABorder(ctx context.Context, iata string) {
 	cr.c.del(ctx, keyIATABorderPrefix+iata)
 }
 
+// InvalidateRegions makes imported MeshMapper regions visible to every region read.
+func (cr *CachedReader) InvalidateRegions(ctx context.Context) {
+	cr.c.del(ctx, keyRegions)
+	cr.c.delPrefix(ctx, keyRegionPrefix)
+}
+
 // InvalidateNode removes the cached entries for a node by UUID.
 // Should be called from the ingest path after a node upsert.
 func (cr *CachedReader) InvalidateNode(ctx context.Context, nodeID uuid.UUID) {

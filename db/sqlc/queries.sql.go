@@ -13,6 +13,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addRegionIATAs = `-- name: AddRegionIATAs :exec
+INSERT INTO region_iatas (region_id, iata)
+SELECT $1, unnest($2::bpchar[])
+ON CONFLICT (region_id, iata) DO NOTHING
+`
+
+type AddRegionIATAsParams struct {
+	RegionID int32    `json:"region_id"`
+	Iatas    []string `json:"iatas"`
+}
+
+func (q *Queries) AddRegionIATAs(ctx context.Context, arg AddRegionIATAsParams) error {
+	_, err := q.db.Exec(ctx, addRegionIATAs, arg.RegionID, arg.Iatas)
+	return err
+}
+
 const ambiguousPrefixes = `-- name: AmbiguousPrefixes :many
 SELECT iata::text AS iata, 1::int AS len, prefix_1 AS prefix FROM node_short_ids GROUP BY iata, prefix_1 HAVING COUNT(*) > 1
 UNION ALL
@@ -232,6 +248,20 @@ DELETE FROM trace_iatas WHERE last_heard < $1
 // Keeps the trace IATA filter in step with packet retention.
 func (q *Queries) DeleteOldTraceIATAs(ctx context.Context, lastHeard pgtype.Timestamptz) error {
 	_, err := q.db.Exec(ctx, deleteOldTraceIATAs, lastHeard)
+	return err
+}
+
+const deleteRegionIATAsNotIn = `-- name: DeleteRegionIATAsNotIn :exec
+DELETE FROM region_iatas WHERE region_id = $1 AND NOT (iata = ANY($2::bpchar[]))
+`
+
+type DeleteRegionIATAsNotInParams struct {
+	RegionID int32    `json:"region_id"`
+	Keep     []string `json:"keep"`
+}
+
+func (q *Queries) DeleteRegionIATAsNotIn(ctx context.Context, arg DeleteRegionIATAsNotInParams) error {
+	_, err := q.db.Exec(ctx, deleteRegionIATAsNotIn, arg.RegionID, arg.Keep)
 	return err
 }
 
@@ -3687,6 +3717,50 @@ func (q *Queries) ListPacketsByIATAs(ctx context.Context, arg ListPacketsByIATAs
 	return items, nil
 }
 
+const listRegionState = `-- name: ListRegionState :many
+SELECT r.slug, r.name, COALESCE(r.display_order, 0)::int AS display_order, r.imported,
+    COALESCE(array_agg(ri.iata::text ORDER BY ri.iata) FILTER (WHERE ri.iata IS NOT NULL), '{}')::text[] AS iatas
+FROM regions r
+LEFT JOIN region_iatas ri ON ri.region_id = r.id
+GROUP BY r.id
+ORDER BY r.slug
+`
+
+type ListRegionStateRow struct {
+	Slug         string   `json:"slug"`
+	Name         string   `json:"name"`
+	DisplayOrder int32    `json:"display_order"`
+	Imported     bool     `json:"imported"`
+	Iatas        []string `json:"iatas"`
+}
+
+// Every region with its members, for reconciling imported MeshMapper groups.
+func (q *Queries) ListRegionState(ctx context.Context) ([]ListRegionStateRow, error) {
+	rows, err := q.db.Query(ctx, listRegionState)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRegionStateRow{}
+	for rows.Next() {
+		var i ListRegionStateRow
+		if err := rows.Scan(
+			&i.Slug,
+			&i.Name,
+			&i.DisplayOrder,
+			&i.Imported,
+			&i.Iatas,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRegions = `-- name: ListRegions :many
 
 SELECT id, slug, name
@@ -3919,6 +3993,30 @@ func (q *Queries) ListZoneBoundaries(ctx context.Context) ([]MeshmapperZoneBound
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pruneImportedRegions = `-- name: PruneImportedRegions :many
+DELETE FROM regions WHERE imported AND NOT (slug = ANY($1::text[])) RETURNING slug
+`
+
+func (q *Queries) PruneImportedRegions(ctx context.Context, keep []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, pruneImportedRegions, keep)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		items = append(items, slug)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -4941,6 +5039,31 @@ func (q *Queries) UpsertIATADetails(ctx context.Context, arg UpsertIATADetailsPa
 	return err
 }
 
+const upsertImportedRegion = `-- name: UpsertImportedRegion :one
+INSERT INTO regions (slug, name, display_order, zoom_level, imported, updated_at)
+VALUES ($1, $2, $3, NULL, TRUE, NOW())
+ON CONFLICT (slug) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_order = EXCLUDED.display_order,
+    updated_at    = NOW()
+WHERE regions.imported
+RETURNING id
+`
+
+type UpsertImportedRegionParams struct {
+	Slug         string `json:"slug"`
+	Name         string `json:"name"`
+	DisplayOrder *int32 `json:"display_order"`
+}
+
+// A hand-written region owns its slug: the WHERE turns a clash into no row.
+func (q *Queries) UpsertImportedRegion(ctx context.Context, arg UpsertImportedRegionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, upsertImportedRegion, arg.Slug, arg.Name, arg.DisplayOrder)
+	var id int32
+	err := row.Scan(&id)
+	return id, err
+}
+
 const upsertKnownRoute = `-- name: UpsertKnownRoute :exec
 
 INSERT INTO known_routes (path_key, node_ids, hash_prefix, iata, hop_count)
@@ -5325,6 +5448,7 @@ ON CONFLICT (slug) DO UPDATE SET
     center_lat    = EXCLUDED.center_lat,
     center_lng    = EXCLUDED.center_lng,
     zoom_level    = EXCLUDED.zoom_level,
+    imported      = FALSE, -- config owns the slug from now on
     updated_at    = NOW()
 RETURNING id
 `
@@ -5352,22 +5476,6 @@ func (q *Queries) UpsertRegion(ctx context.Context, arg UpsertRegionParams) (int
 	var id int32
 	err := row.Scan(&id)
 	return id, err
-}
-
-const upsertRegionIATA = `-- name: UpsertRegionIATA :exec
-INSERT INTO region_iatas (region_id, iata)
-VALUES ($1, $2)
-ON CONFLICT (region_id, iata) DO NOTHING
-`
-
-type UpsertRegionIATAParams struct {
-	RegionID int32  `json:"region_id"`
-	Iata     string `json:"iata"`
-}
-
-func (q *Queries) UpsertRegionIATA(ctx context.Context, arg UpsertRegionIATAParams) error {
-	_, err := q.db.Exec(ctx, upsertRegionIATA, arg.RegionID, arg.Iata)
-	return err
 }
 
 const upsertTraceIATA = `-- name: UpsertTraceIATA :exec

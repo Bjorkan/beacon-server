@@ -46,6 +46,9 @@ type ZoneStore interface {
 	PruneZoneBoundaries(ctx context.Context, keep []string) ([]string, error)
 	ListZoneBoundaries(ctx context.Context) ([]Boundary, error)
 	SaveZoneBoundary(ctx context.Context, b Boundary) error
+	ListRegionState(ctx context.Context) ([]RegionState, error)
+	SaveImportedRegion(ctx context.Context, r RegionState) (bool, error)
+	PruneImportedRegions(ctx context.Context, keep []string) ([]string, error)
 }
 
 type zoneRegion struct {
@@ -66,10 +69,15 @@ type Zones struct {
 	retryAfter time.Time
 	onChange   func(ctx context.Context, iata string)
 	onUpdate   func(imported map[string]json.RawMessage)
+
+	importGroups               bool
+	groupsSynced               bool
+	groupsVersion, groupsKnown int
+	onRegions                  func(ctx context.Context)
 }
 
 func NewZones(cfg config.MeshMapperZonesConfig, store ZoneStore, dir *Directory) *Zones {
-	return &Zones{store: store, enabled: cfg.Enabled, seen: map[string]bool{}, interval: cfg.Interval(), dir: dir,
+	return &Zones{store: store, enabled: cfg.Enabled, importGroups: cfg.Enabled && cfg.ImportGroups, seen: map[string]bool{}, interval: cfg.Interval(), dir: dir,
 		boundsURL: boundaryEndpoint, client: &http.Client{
 			Timeout:       30 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -82,9 +90,15 @@ func (z *Zones) OnChange(fn func(ctx context.Context, iata string)) { z.onChange
 // OnUpdate receives every imported boundary whenever the set changes.
 func (z *Zones) OnUpdate(fn func(imported map[string]json.RawMessage)) { z.onUpdate = fn }
 
-// Restore prunes imports for unknown IATAs (all of them when disabled) and
-// loads saved boundaries, without making HTTP requests.
+// Restore prunes imports for unknown IATAs (all of them when disabled), and
+// imported regions when group import is off, then loads saved boundaries,
+// without making HTTP requests.
 func (z *Zones) Restore(ctx context.Context) error {
+	if !z.importGroups {
+		if err := z.pruneGroups(ctx); err != nil {
+			return err
+		}
+	}
 	iatas, err := z.store.ListKnownIATAs(ctx)
 	if err != nil {
 		return fmt.Errorf("list IATAs for MeshMapper boundaries: %w", err)
@@ -163,6 +177,9 @@ func (z *Zones) Refresh(ctx context.Context) (err error) {
 		return fmt.Errorf("list IATAs for MeshMapper boundaries: %w", err)
 	}
 	z.track(iatas, nil)
+	if err := z.syncGroups(ctx, iatas); err != nil {
+		return err
+	}
 	for _, r := range z.regions {
 		if now.Before(r.b.NextAttempt) {
 			continue

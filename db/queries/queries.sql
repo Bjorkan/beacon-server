@@ -1200,13 +1200,40 @@ ON CONFLICT (slug) DO UPDATE SET
     center_lat    = EXCLUDED.center_lat,
     center_lng    = EXCLUDED.center_lng,
     zoom_level    = EXCLUDED.zoom_level,
+    imported      = FALSE, -- config owns the slug from now on
     updated_at    = NOW()
 RETURNING id;
 
--- name: UpsertRegionIATA :exec
+-- name: DeleteRegionIATAsNotIn :exec
+DELETE FROM region_iatas WHERE region_id = @region_id AND NOT (iata = ANY(@keep::bpchar[]));
+
+-- name: AddRegionIATAs :exec
 INSERT INTO region_iatas (region_id, iata)
-VALUES ($1, $2)
+SELECT @region_id, unnest(@iatas::bpchar[])
 ON CONFLICT (region_id, iata) DO NOTHING;
+
+-- name: ListRegionState :many
+-- Every region with its members, for reconciling imported MeshMapper groups.
+SELECT r.slug, r.name, COALESCE(r.display_order, 0)::int AS display_order, r.imported,
+    COALESCE(array_agg(ri.iata::text ORDER BY ri.iata) FILTER (WHERE ri.iata IS NOT NULL), '{}')::text[] AS iatas
+FROM regions r
+LEFT JOIN region_iatas ri ON ri.region_id = r.id
+GROUP BY r.id
+ORDER BY r.slug;
+
+-- name: UpsertImportedRegion :one
+-- A hand-written region owns its slug: the WHERE turns a clash into no row.
+INSERT INTO regions (slug, name, display_order, zoom_level, imported, updated_at)
+VALUES (@slug, @name, @display_order, NULL, TRUE, NOW())
+ON CONFLICT (slug) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_order = EXCLUDED.display_order,
+    updated_at    = NOW()
+WHERE regions.imported
+RETURNING id;
+
+-- name: PruneImportedRegions :many
+DELETE FROM regions WHERE imported AND NOT (slug = ANY(@keep::text[])) RETURNING slug;
 
 -- ============================================================
 -- TRACES

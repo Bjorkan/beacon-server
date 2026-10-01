@@ -226,3 +226,91 @@ func TestMeshMapperZoneBoundariesPostgres(t *testing.T) {
 		t.Fatal("manual border did not return after pruning")
 	}
 }
+
+func TestMeshMapperRegionsPostgres(t *testing.T) {
+	dsn := os.Getenv("BEACON_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("set BEACON_TEST_POSTGRES_DSN")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RunMigrations(ctx, pool); err != nil {
+		pool.Close()
+		t.Fatal(err)
+	}
+	pool.Close()
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(context.Background())
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(context.Background())
+	for _, table := range []string{"regions", "region_iatas"} {
+		if _, err := tx.Exec(ctx, "CREATE TEMP TABLE "+table+" (LIKE public."+table+" INCLUDING ALL) ON COMMIT DROP"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := &Store{q: sqlc.New(tx)}
+	state := func() map[string]meshmapper.RegionState {
+		t.Helper()
+		rows, err := store.ListRegionState(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]meshmapper.RegionState{}
+		for _, r := range rows {
+			out[r.Slug] = r
+		}
+		return out
+	}
+	hand, err := store.UpsertRegion(ctx, "east", "East", "", 3, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetRegionIATAs(ctx, hand, []string{"YOW", "YUL"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetRegionIATAs(ctx, hand, []string{"YOW"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := state()["east"]; got.Imported || got.DisplayOrder != 3 || strings.Join(got.IATAs, ",") != "YOW" {
+		t.Fatal("configured members not replaced", got)
+	}
+	group := meshmapper.RegionState{Slug: "onqc", Name: "Corridor", DisplayOrder: 4, IATAs: []string{"YOW", "YQB"}}
+	if saved, err := store.SaveImportedRegion(ctx, group); err != nil || !saved {
+		t.Fatal(saved, err)
+	}
+	group.IATAs = []string{"YQB", "YUL"}
+	if saved, err := store.SaveImportedRegion(ctx, group); err != nil || !saved {
+		t.Fatal(saved, err)
+	}
+	if got := state()["onqc"]; !got.Imported || strings.Join(got.IATAs, ",") != "YQB,YUL" {
+		t.Fatal("imported region not updated", got)
+	}
+	if saved, err := store.SaveImportedRegion(ctx, meshmapper.RegionState{Slug: "east", Name: "Group", IATAs: []string{"YYZ"}}); err != nil || saved {
+		t.Fatal("imported group replaced a configured region", saved, err)
+	}
+	if got := state()["east"]; got.Name != "East" || strings.Join(got.IATAs, ",") != "YOW" {
+		t.Fatal("configured region changed by a clash", got)
+	}
+	if _, err := store.UpsertRegion(ctx, "onqc", "Mine", "", 1, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if state()["onqc"].Imported {
+		t.Fatal("config did not take over an imported slug")
+	}
+	if _, err := store.SaveImportedRegion(ctx, meshmapper.RegionState{Slug: "golm", Name: "Lakes", IATAs: []string{"YYZ"}}); err != nil {
+		t.Fatal(err)
+	}
+	if pruned, err := store.PruneImportedRegions(ctx, nil); err != nil || strings.Join(pruned, ",") != "golm" {
+		t.Fatal("prune touched configured regions", pruned, err)
+	}
+}

@@ -70,8 +70,15 @@ ratelimit:
 # A missing or failed boundary keeps the last good import, or the borderFile when
 # there is none. Disabling drops every import on restart. Logged under
 # component=meshmapper.zones.
+# import_groups turns MeshMapper zone groups (e.g. ONQC: YOW, YQB, YUL) into
+# regions, from the zone lists already fetched. A group is imported when at least
+# one member is a known IATA, with its full member list; slug = lowercased group
+# code, listed after the regions below. A region below with the same slug wins.
+# Imported regions are removed when the group disappears or stops qualifying,
+# and all of them when import_groups is turned off. Requires zones.enabled.
 #  zones:
 #    enabled: false
+#    import_groups: false
 #    refresh_interval: 24h # 1h-168h; one request per 15s tick, ETag-conditional
 
 iatas:
@@ -104,6 +111,8 @@ iatas:
     lat: 43.6777
     lng: -79.6248
 
+# Hand-written regions; optional with meshmapper.zones.import_groups. Seeding
+# sets each region's members to exactly this list.
 regions:
   - slug: western-canada
     name: Western Canada

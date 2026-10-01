@@ -911,7 +911,8 @@ CREATE TABLE regions (
     center_lng double precision,
     zoom_level integer DEFAULT 8,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    imported boolean DEFAULT false NOT NULL
 );
 
 CREATE SEQUENCE regions_id_seq

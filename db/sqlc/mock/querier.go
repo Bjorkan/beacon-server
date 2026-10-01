@@ -44,6 +44,20 @@ func (m *MockQuerier) EXPECT() *MockQuerierMockRecorder {
 	return m.recorder
 }
 
+// AddRegionIATAs mocks base method.
+func (m *MockQuerier) AddRegionIATAs(ctx context.Context, arg db.AddRegionIATAsParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddRegionIATAs", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddRegionIATAs indicates an expected call of AddRegionIATAs.
+func (mr *MockQuerierMockRecorder) AddRegionIATAs(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddRegionIATAs", reflect.TypeOf((*MockQuerier)(nil).AddRegionIATAs), ctx, arg)
+}
+
 // AmbiguousPrefixes mocks base method.
 func (m *MockQuerier) AmbiguousPrefixes(ctx context.Context) ([]db.AmbiguousPrefixesRow, error) {
 	m.ctrl.T.Helper()
@@ -188,6 +202,20 @@ func (m *MockQuerier) DeleteOldTraceIATAs(ctx context.Context, lastHeard pgtype.
 func (mr *MockQuerierMockRecorder) DeleteOldTraceIATAs(ctx, lastHeard any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteOldTraceIATAs", reflect.TypeOf((*MockQuerier)(nil).DeleteOldTraceIATAs), ctx, lastHeard)
+}
+
+// DeleteRegionIATAsNotIn mocks base method.
+func (m *MockQuerier) DeleteRegionIATAsNotIn(ctx context.Context, arg db.DeleteRegionIATAsNotInParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteRegionIATAsNotIn", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteRegionIATAsNotIn indicates an expected call of DeleteRegionIATAsNotIn.
+func (mr *MockQuerierMockRecorder) DeleteRegionIATAsNotIn(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteRegionIATAsNotIn", reflect.TypeOf((*MockQuerier)(nil).DeleteRegionIATAsNotIn), ctx, arg)
 }
 
 // GetAccount mocks base method.
@@ -1224,6 +1252,21 @@ func (mr *MockQuerierMockRecorder) ListPacketsByIATAs(ctx, arg any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPacketsByIATAs", reflect.TypeOf((*MockQuerier)(nil).ListPacketsByIATAs), ctx, arg)
 }
 
+// ListRegionState mocks base method.
+func (m *MockQuerier) ListRegionState(ctx context.Context) ([]db.ListRegionStateRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListRegionState", ctx)
+	ret0, _ := ret[0].([]db.ListRegionStateRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListRegionState indicates an expected call of ListRegionState.
+func (mr *MockQuerierMockRecorder) ListRegionState(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRegionState", reflect.TypeOf((*MockQuerier)(nil).ListRegionState), ctx)
+}
+
 // ListRegions mocks base method.
 func (m *MockQuerier) ListRegions(ctx context.Context) ([]db.ListRegionsRow, error) {
 	m.ctrl.T.Helper()
@@ -1312,6 +1355,21 @@ func (m *MockQuerier) ListZoneBoundaries(ctx context.Context) ([]db.MeshmapperZo
 func (mr *MockQuerierMockRecorder) ListZoneBoundaries(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListZoneBoundaries", reflect.TypeOf((*MockQuerier)(nil).ListZoneBoundaries), ctx)
+}
+
+// PruneImportedRegions mocks base method.
+func (m *MockQuerier) PruneImportedRegions(ctx context.Context, keep []string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PruneImportedRegions", ctx, keep)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PruneImportedRegions indicates an expected call of PruneImportedRegions.
+func (mr *MockQuerierMockRecorder) PruneImportedRegions(ctx, keep any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PruneImportedRegions", reflect.TypeOf((*MockQuerier)(nil).PruneImportedRegions), ctx, keep)
 }
 
 // PruneZoneBoundaries mocks base method.
@@ -1844,6 +1902,21 @@ func (mr *MockQuerierMockRecorder) UpsertIATADetails(ctx, arg any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertIATADetails", reflect.TypeOf((*MockQuerier)(nil).UpsertIATADetails), ctx, arg)
 }
 
+// UpsertImportedRegion mocks base method.
+func (m *MockQuerier) UpsertImportedRegion(ctx context.Context, arg db.UpsertImportedRegionParams) (int32, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpsertImportedRegion", ctx, arg)
+	ret0, _ := ret[0].(int32)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpsertImportedRegion indicates an expected call of UpsertImportedRegion.
+func (mr *MockQuerierMockRecorder) UpsertImportedRegion(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertImportedRegion", reflect.TypeOf((*MockQuerier)(nil).UpsertImportedRegion), ctx, arg)
+}
+
 // UpsertKnownRoute mocks base method.
 func (m *MockQuerier) UpsertKnownRoute(ctx context.Context, arg db.UpsertKnownRouteParams) error {
 	m.ctrl.T.Helper()
@@ -1986,20 +2059,6 @@ func (m *MockQuerier) UpsertRegion(ctx context.Context, arg db.UpsertRegionParam
 func (mr *MockQuerierMockRecorder) UpsertRegion(ctx, arg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertRegion", reflect.TypeOf((*MockQuerier)(nil).UpsertRegion), ctx, arg)
-}
-
-// UpsertRegionIATA mocks base method.
-func (m *MockQuerier) UpsertRegionIATA(ctx context.Context, arg db.UpsertRegionIATAParams) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpsertRegionIATA", ctx, arg)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpsertRegionIATA indicates an expected call of UpsertRegionIATA.
-func (mr *MockQuerierMockRecorder) UpsertRegionIATA(ctx, arg any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertRegionIATA", reflect.TypeOf((*MockQuerier)(nil).UpsertRegionIATA), ctx, arg)
 }
 
 // UpsertTraceIATA mocks base method.
