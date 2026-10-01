@@ -26,8 +26,8 @@ const (
 	MaxZoneList     = 1 << 20
 	MaxBoundaryBody = 8 << 20 // outlines are never simplified
 
-	zoneListFresh    = time.Hour // the API's own cache lifetime
-	zoneFailureRetry = time.Hour // fair use: no more than one poll an hour
+	zoneListFresh    = config.MinZonesRefresh // get_zones.php allows one request per country per 23.5h
+	zoneFailureRetry = config.MinZonesRefresh // failed requests count too
 )
 
 var zoneSite = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.meshmapper\.net$`)
@@ -58,17 +58,16 @@ type zoneRegion struct {
 
 // Zones is owned by one background task; listeners are wired before Restore.
 type Zones struct {
-	store      ZoneStore
-	enabled    bool
-	seen       map[string]bool
-	interval   time.Duration
-	client     *http.Client
-	dir        *Directory
-	boundsURL  func(site string) (string, bool)
-	regions    []*zoneRegion
-	retryAfter time.Time
-	onChange   func(ctx context.Context, iata string)
-	onUpdate   func(imported map[string]json.RawMessage)
+	store     ZoneStore
+	enabled   bool
+	seen      map[string]bool
+	interval  time.Duration
+	client    *http.Client
+	dir       *Directory
+	boundsURL func(site string) (string, bool)
+	regions   []*zoneRegion
+	onChange  func(ctx context.Context, iata string)
+	onUpdate  func(imported map[string]json.RawMessage)
 
 	importGroups               bool
 	groupsSynced               bool
@@ -147,9 +146,6 @@ func (z *Zones) track(iatas []string, saved map[string]Boundary) {
 		if !ok {
 			b = Boundary{IATA: iata}
 		}
-		if b.LastError == "HTTP 429" && b.NextAttempt.After(z.retryAfter) {
-			z.retryAfter = b.NextAttempt
-		}
 		z.regions = append(z.regions, &zoneRegion{country: country, b: b})
 		if ok {
 			z.log(b, "restored")
@@ -168,9 +164,6 @@ func (z *Zones) Refresh(ctx context.Context) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	now := time.Now().UTC()
-	if now.Before(z.retryAfter) || now.Before(z.dir.pausedUntil()) {
-		return nil
-	}
 	// IATAs are created from traffic, so pick up new ones every tick.
 	iatas, err := z.store.ListKnownIATAs(ctx)
 	if err != nil {
@@ -238,9 +231,6 @@ func (z *Zones) refresh(ctx context.Context, r *zoneRegion, zones map[string]zon
 			}
 		default:
 			update.LastError = statusProblem(status, header, now, &retryAt)
-			if until, ok := rateLimited(status, retryAt, now); ok {
-				z.retryAfter = until // the rate limit is shared by every endpoint
-			}
 		}
 		if update.LastError == "" {
 			etag := header.Get("ETag")
@@ -320,17 +310,6 @@ func statusProblem(status int, header http.Header, now time.Time, retryAt *time.
 		}
 	}
 	return fmt.Sprintf("HTTP %d", status)
-}
-
-// rateLimited returns how long a 429 pauses every request.
-func rateLimited(status int, retryAt, now time.Time) (time.Time, bool) {
-	if status != http.StatusTooManyRequests {
-		return time.Time{}, false
-	}
-	if retryAt.IsZero() {
-		return now.Add(time.Minute), true
-	}
-	return retryAt, true
 }
 
 func (z *Zones) changed(ctx context.Context, iata string) {

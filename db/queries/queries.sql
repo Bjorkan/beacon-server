@@ -1645,6 +1645,22 @@ ON CONFLICT (iata) DO UPDATE SET
     next_attempt = EXCLUDED.next_attempt,
     last_error = EXCLUDED.last_error;
 
+-- name: ListZoneLists :many
+SELECT * FROM meshmapper_zone_lists ORDER BY country;
+
+-- name: SaveZoneList :exec
+-- NULL payload/etag/fetched_at retain the last good list after an error or 304.
+INSERT INTO meshmapper_zone_lists (country, payload, etag, fetched_at, attempted_at, next_attempt, last_error)
+VALUES (@country, sqlc.narg(payload)::jsonb, sqlc.narg(etag)::text,
+    sqlc.narg(fetched_at)::timestamptz, @attempted_at, @next_attempt, @last_error)
+ON CONFLICT (country) DO UPDATE SET
+    payload = COALESCE(EXCLUDED.payload, meshmapper_zone_lists.payload),
+    etag = COALESCE(EXCLUDED.etag, meshmapper_zone_lists.etag),
+    fetched_at = COALESCE(EXCLUDED.fetched_at, meshmapper_zone_lists.fetched_at),
+    attempted_at = EXCLUDED.attempted_at,
+    next_attempt = EXCLUDED.next_attempt,
+    last_error = EXCLUDED.last_error;
+
 -- name: PruneZoneBoundaries :many
 -- Drops imports for IATAs no longer configured, so their manual border returns.
 DELETE FROM meshmapper_zone_boundaries WHERE NOT (iata = ANY(@keep::text[])) RETURNING iata;

@@ -114,6 +114,36 @@ func (s *Store) SaveZoneBoundary(ctx context.Context, b meshmapper.Boundary) err
 	return s.q.SaveZoneBoundary(ctx, params)
 }
 
+func (s *Store) ListZoneLists(ctx context.Context) ([]meshmapper.ZoneList, error) {
+	rows, err := s.q.ListZoneLists(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]meshmapper.ZoneList, 0, len(rows))
+	for _, row := range rows {
+		l := meshmapper.ZoneList{Country: row.Country, Payload: row.Payload, FetchedAt: row.FetchedAt.Time,
+			AttemptedAt: row.AttemptedAt.Time, NextAttempt: row.NextAttempt.Time, LastError: row.LastError}
+		if row.Etag != nil {
+			l.ETag = *row.Etag
+		}
+		out = append(out, l)
+	}
+	return out, nil
+}
+
+func (s *Store) SaveZoneList(ctx context.Context, l meshmapper.ZoneList) error {
+	params := sqlc.SaveZoneListParams{
+		Country: l.Country, Payload: l.Payload, LastError: l.LastError,
+		FetchedAt:   pgtype.Timestamptz{Time: l.FetchedAt, Valid: !l.FetchedAt.IsZero()},
+		AttemptedAt: pgtype.Timestamptz{Time: l.AttemptedAt, Valid: true},
+		NextAttempt: pgtype.Timestamptz{Time: l.NextAttempt, Valid: true},
+	}
+	if !l.FetchedAt.IsZero() {
+		params.Etag = &l.ETag
+	}
+	return s.q.SaveZoneList(ctx, params)
+}
+
 func (s *Store) ListRegionState(ctx context.Context) ([]meshmapper.RegionState, error) {
 	rows, err := s.q.ListRegionState(ctx)
 	if err != nil {

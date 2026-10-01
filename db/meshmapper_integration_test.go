@@ -82,7 +82,7 @@ func TestMeshMapperCataloguePostgres(t *testing.T) {
 		t.Fatal(row, err)
 	}
 	scopes := scopestore.New()
-	_, err = meshmapper.New(ctx, config.MeshMapperScopesConfig{Enabled: true}, store, meshmapper.NewDirectory(), scopes, manualRows)
+	_, err = meshmapper.New(ctx, config.MeshMapperScopesConfig{Enabled: true}, store, meshmapper.NewDirectory(store), scopes, manualRows)
 	if err != nil || len(scopes.Entries()) != 2 {
 		t.Fatal("restart did not restore imported membership", err)
 	}
@@ -105,7 +105,7 @@ func TestMeshMapperCataloguePostgres(t *testing.T) {
 	if err := store.SaveScopeCatalogue(ctx, "YOW", url, update, nil); err != nil {
 		t.Fatal(err)
 	}
-	_, err = meshmapper.New(ctx, config.MeshMapperScopesConfig{Enabled: true}, store, meshmapper.NewDirectory(), scopes, manualRows)
+	_, err = meshmapper.New(ctx, config.MeshMapperScopesConfig{Enabled: true}, store, meshmapper.NewDirectory(store), scopes, manualRows)
 	if err != nil || len(scopes.Entries()) != 1 {
 		t.Fatal("removed imported membership remained active", err)
 	}
@@ -168,7 +168,7 @@ func TestMeshMapperZoneBoundariesPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(context.Background())
-	for _, table := range []string{"iata_codes", "meshmapper_zone_boundaries"} {
+	for _, table := range []string{"iata_codes", "meshmapper_zone_boundaries", "meshmapper_zone_lists"} {
 		if _, err := tx.Exec(ctx, "CREATE TEMP TABLE "+table+" (LIKE public."+table+" INCLUDING ALL) ON COMMIT DROP"); err != nil {
 			t.Fatal(err)
 		}
@@ -224,6 +224,20 @@ func TestMeshMapperZoneBoundariesPostgres(t *testing.T) {
 	}
 	if !strings.Contains(border("YOW"), `"file"`) {
 		t.Fatal("manual border did not return after pruning")
+	}
+	list := meshmapper.ZoneList{Country: "CA", Payload: []byte(`{"country":"CA","zones":[]}`), ETag: `"z1"`,
+		FetchedAt: now, AttemptedAt: now, NextAttempt: now.Add(24 * time.Hour)}
+	if err := store.SaveZoneList(ctx, list); err != nil {
+		t.Fatal(err)
+	}
+	later := now.Add(25 * time.Hour)
+	if err := store.SaveZoneList(ctx, meshmapper.ZoneList{Country: "CA", AttemptedAt: later, NextAttempt: later.Add(48 * time.Hour), LastError: "HTTP 429"}); err != nil {
+		t.Fatal(err)
+	}
+	lists, err := store.ListZoneLists(ctx)
+	if err != nil || len(lists) != 1 || len(lists[0].Payload) == 0 || lists[0].ETag != `"z1"` || !lists[0].FetchedAt.Equal(now) ||
+		lists[0].LastError != "HTTP 429" || !lists[0].NextAttempt.Equal(later.Add(48*time.Hour)) {
+		t.Fatal("failed fetch lost the last good zone list", lists, err)
 	}
 }
 

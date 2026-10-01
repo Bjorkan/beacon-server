@@ -225,6 +225,7 @@ type Querier interface {
 	// internal/ingest.BackfillChannelMessages.
 	ListUndecryptedGroupTextPackets(ctx context.Context) ([]ListUndecryptedGroupTextPacketsRow, error)
 	ListZoneBoundaries(ctx context.Context) ([]MeshmapperZoneBoundary, error)
+	ListZoneLists(ctx context.Context) ([]MeshmapperZoneList, error)
 	PruneImportedRegions(ctx context.Context, keep []string) ([]string, error)
 	// Drops imports for IATAs no longer configured, so their manual border returns.
 	PruneZoneBoundaries(ctx context.Context, keep []string) ([]string, error)
@@ -270,6 +271,8 @@ type Querier interface {
 	SaveScopeCatalogue(ctx context.Context, arg SaveScopeCatalogueParams) error
 	// NULL feature/etag/checked_at retain the last good boundary after an error or 304.
 	SaveZoneBoundary(ctx context.Context, arg SaveZoneBoundaryParams) error
+	// NULL payload/etag/fetched_at retain the last good list after an error or 304.
+	SaveZoneList(ctx context.Context, arg SaveZoneListParams) error
 	// Returns known routes containing a subsequence from source to destination hash prefix.
 	// Verifies source appears before destination in the route.
 	SearchKnownRoutes(ctx context.Context, arg SearchKnownRoutesParams) ([]SearchKnownRoutesRow, error)

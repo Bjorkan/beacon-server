@@ -4000,6 +4000,38 @@ func (q *Queries) ListZoneBoundaries(ctx context.Context) ([]MeshmapperZoneBound
 	return items, nil
 }
 
+const listZoneLists = `-- name: ListZoneLists :many
+SELECT country, payload, etag, fetched_at, attempted_at, next_attempt, last_error FROM meshmapper_zone_lists ORDER BY country
+`
+
+func (q *Queries) ListZoneLists(ctx context.Context) ([]MeshmapperZoneList, error) {
+	rows, err := q.db.Query(ctx, listZoneLists)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MeshmapperZoneList{}
+	for rows.Next() {
+		var i MeshmapperZoneList
+		if err := rows.Scan(
+			&i.Country,
+			&i.Payload,
+			&i.Etag,
+			&i.FetchedAt,
+			&i.AttemptedAt,
+			&i.NextAttempt,
+			&i.LastError,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pruneImportedRegions = `-- name: PruneImportedRegions :many
 DELETE FROM regions WHERE imported AND NOT (slug = ANY($1::text[])) RETURNING slug
 `
@@ -4629,6 +4661,43 @@ func (q *Queries) SaveZoneBoundary(ctx context.Context, arg SaveZoneBoundaryPara
 		arg.Feature,
 		arg.Etag,
 		arg.CheckedAt,
+		arg.AttemptedAt,
+		arg.NextAttempt,
+		arg.LastError,
+	)
+	return err
+}
+
+const saveZoneList = `-- name: SaveZoneList :exec
+INSERT INTO meshmapper_zone_lists (country, payload, etag, fetched_at, attempted_at, next_attempt, last_error)
+VALUES ($1, $2::jsonb, $3::text,
+    $4::timestamptz, $5, $6, $7)
+ON CONFLICT (country) DO UPDATE SET
+    payload = COALESCE(EXCLUDED.payload, meshmapper_zone_lists.payload),
+    etag = COALESCE(EXCLUDED.etag, meshmapper_zone_lists.etag),
+    fetched_at = COALESCE(EXCLUDED.fetched_at, meshmapper_zone_lists.fetched_at),
+    attempted_at = EXCLUDED.attempted_at,
+    next_attempt = EXCLUDED.next_attempt,
+    last_error = EXCLUDED.last_error
+`
+
+type SaveZoneListParams struct {
+	Country     string             `json:"country"`
+	Payload     []byte             `json:"payload"`
+	Etag        *string            `json:"etag"`
+	FetchedAt   pgtype.Timestamptz `json:"fetched_at"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+	NextAttempt pgtype.Timestamptz `json:"next_attempt"`
+	LastError   string             `json:"last_error"`
+}
+
+// NULL payload/etag/fetched_at retain the last good list after an error or 304.
+func (q *Queries) SaveZoneList(ctx context.Context, arg SaveZoneListParams) error {
+	_, err := q.db.Exec(ctx, saveZoneList,
+		arg.Country,
+		arg.Payload,
+		arg.Etag,
+		arg.FetchedAt,
 		arg.AttemptedAt,
 		arg.NextAttempt,
 		arg.LastError,

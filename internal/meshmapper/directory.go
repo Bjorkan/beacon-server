@@ -35,28 +35,54 @@ type zoneList struct {
 	fetchedAt, nextAttempt time.Time
 }
 
-// Directory caches MeshMapper's per-country zone lists, shared by the zones and scopes imports.
-type Directory struct {
-	mu         sync.Mutex
-	client     *http.Client
-	listURL    string
-	lists      map[string]*zoneList
-	retryAfter time.Time
-	version    int // bumped whenever a list is replaced
+// ZoneList is one country's saved get_zones.php response and fetch state.
+type ZoneList struct {
+	Country                             string
+	Payload                             json.RawMessage
+	ETag                                string
+	FetchedAt, AttemptedAt, NextAttempt time.Time
+	LastError                           string
 }
 
-func NewDirectory() *Directory {
-	return &Directory{listURL: ZonesURL, lists: map[string]*zoneList{}, client: &http.Client{
+type DirectoryStore interface {
+	ListZoneLists(ctx context.Context) ([]ZoneList, error)
+	SaveZoneList(ctx context.Context, l ZoneList) error
+}
+
+// Directory caches MeshMapper's per-country zone lists, shared by the zones and scopes imports.
+type Directory struct {
+	mu      sync.Mutex
+	store   DirectoryStore
+	client  *http.Client
+	listURL string
+	lists   map[string]*zoneList
+	version int // bumped whenever a list is replaced
+}
+
+func NewDirectory(store DirectoryStore) *Directory {
+	return &Directory{store: store, listURL: ZonesURL, lists: map[string]*zoneList{}, client: &http.Client{
 		Timeout:       30 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}
 }
 
-// pausedUntil is when a list 429 stops pausing every MeshMapper request.
-func (d *Directory) pausedUntil() time.Time {
+// Restore loads saved lists so a restart doesn't spend each country's daily request.
+func (d *Directory) Restore(ctx context.Context) error {
+	saved, err := d.store.ListZoneLists(ctx)
+	if err != nil {
+		return fmt.Errorf("restore MeshMapper zone lists: %w", err)
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.retryAfter
+	for _, l := range saved {
+		list := &zoneList{nextAttempt: l.NextAttempt}
+		if zones, groups, err := decodeZones(l.Payload, l.Country); err == nil {
+			list.zones, list.groups, list.etag, list.fetchedAt = zones, groups, l.ETag, l.FetchedAt
+			d.version++
+		}
+		d.lists[l.Country] = list
+	}
+	return nil
 }
 
 // List returns the country's fresh zone list. fetched reports that this call
@@ -68,7 +94,7 @@ func (d *Directory) List(ctx context.Context, country string, now time.Time) (zo
 	if list != nil && list.zones != nil && now.Sub(list.fetchedAt) < zoneListFresh {
 		return list.zones, false, nil
 	}
-	if now.Before(d.retryAfter) || (list != nil && now.Before(list.nextAttempt)) {
+	if list != nil && now.Before(list.nextAttempt) {
 		return nil, false, nil
 	}
 	return nil, true, d.fetch(ctx, country, now)
@@ -90,6 +116,8 @@ func (d *Directory) fetch(ctx context.Context, country string, now time.Time) er
 		return err
 	}
 	problem := ""
+	var payload json.RawMessage
+	var retryAt time.Time
 	switch status {
 	case http.StatusOK:
 		zones, groups, decodeErr := decodeZones(body, country)
@@ -97,6 +125,7 @@ func (d *Directory) fetch(ctx context.Context, country string, now time.Time) er
 			problem = "invalid response"
 		} else {
 			list.zones, list.groups, list.etag = zones, groups, header.Get("ETag")
+			payload = body
 			d.version++
 		}
 	case http.StatusNotModified:
@@ -104,26 +133,27 @@ func (d *Directory) fetch(ctx context.Context, country string, now time.Time) er
 			problem = "304 without cached list"
 		}
 	default:
-		var retryAt time.Time
 		problem = statusProblem(status, header, now, &retryAt)
-		if retryAt.After(list.nextAttempt) {
-			list.nextAttempt = retryAt
-		}
-		if until, ok := rateLimited(status, retryAt, now); ok {
-			d.retryAfter = until
-		}
 	}
+	// Every request counts against the country's 23.5h allowance, failed or not.
+	list.nextAttempt = now.Add(zoneListFresh)
+	if retryAt.After(list.nextAttempt) {
+		list.nextAttempt = retryAt
+	}
+	saved := ZoneList{Country: country, Payload: payload, AttemptedAt: now, NextAttempt: list.nextAttempt, LastError: problem}
 	if problem == "" {
 		list.fetchedAt = now
-	} else if list.nextAttempt.Before(now.Add(zoneFailureRetry)) {
-		list.nextAttempt = now.Add(zoneFailureRetry)
+		saved.FetchedAt, saved.ETag = now, list.etag
 	}
 	level := slog.LevelInfo
 	if problem != "" {
 		level = slog.LevelWarn
 	}
 	slog.Log(ctx, level, "MeshMapper zone list checked", "component", "meshmapper.zones", "country", country,
-		"zones", len(list.zones), "last_error", problem)
+		"zones", len(list.zones), "groups", len(list.groups), "next_attempt", list.nextAttempt, "last_error", problem)
+	if err := d.store.SaveZoneList(ctx, saved); err != nil {
+		return fmt.Errorf("persist MeshMapper zone list %s: %w", country, err)
+	}
 	return nil
 }
 

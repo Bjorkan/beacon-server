@@ -75,7 +75,7 @@ func (s *memoryStore) SaveScopeCatalogue(_ context.Context, iata, url string, ne
 // newImporter restores an importer for YOW whose source points at url.
 func newImporter(t *testing.T, cfg config.MeshMapperScopesConfig, store *memoryStore, url string, scopes *scopestore.ScopeStore, manual ...scopestore.Entry) *Importer {
 	t.Helper()
-	imp, err := New(context.Background(), cfg, store, NewDirectory(), scopes, manual)
+	imp, err := New(context.Background(), cfg, store, NewDirectory(newZoneListMemory()), scopes, manual)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestCatalogueRefreshFallbackAndRestart(t *testing.T) {
 	}
 	status, after = 429, "7200"
 	check()
-	if !imp.retryAfter.Equal(now.Add(2 * time.Hour)) {
+	if !imp.sources[0].cache.NextAttempt.Equal(now.Add(2 * time.Hour)) {
 		t.Fatal("Retry-After ignored")
 	}
 	restored := scopestore.New()
@@ -167,7 +167,7 @@ func TestCatalogueRefreshFallbackAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	if calls != before {
-		t.Fatal("restart ignored shared rate-limit cooldown")
+		t.Fatal("restart retried before Retry-After")
 	}
 	status, after, body = 200, "", catalogue()
 	check()
@@ -260,7 +260,7 @@ func TestImportedSourcesOverlapWithoutGlobalMembership(t *testing.T) {
 		store.rows[sourceKey{iata, iata}] = Cache{Payload: []byte(strings.ReplaceAll(string(catalogue("can")), "YOW", iata)), AttemptedAt: time.Now()}
 	}
 	scopes := scopestore.New()
-	_, err := New(ctx, config.MeshMapperScopesConfig{Enabled: true}, store, NewDirectory(), scopes, nil)
+	_, err := New(ctx, config.MeshMapperScopesConfig{Enabled: true}, store, NewDirectory(newZoneListMemory()), scopes, nil)
 	if err != nil || len(scopes.Entries()) != 1 || !reflect.DeepEqual(scopes.Entries()[0].IATAs, []string{"YOW", "YVR"}) {
 		t.Fatal("latest saved catalogue per IATA not restored", scopes.Entries(), err)
 	}
@@ -269,7 +269,7 @@ func TestImportedSourcesOverlapWithoutGlobalMembership(t *testing.T) {
 	}
 	// Disabled mode never calls the store.
 	disabled := scopestore.New()
-	if _, err = New(ctx, config.MeshMapperScopesConfig{}, nil, NewDirectory(), disabled, nil); err != nil || len(disabled.Entries()) != 0 {
+	if _, err = New(ctx, config.MeshMapperScopesConfig{}, nil, NewDirectory(newZoneListMemory()), disabled, nil); err != nil || len(disabled.Entries()) != 0 {
 		t.Fatal(err)
 	}
 }
@@ -300,20 +300,21 @@ func TestInvalidSavedCatalogueDoesNotBlockStartupOrRefresh(t *testing.T) {
 	}
 }
 
-func TestRetryAfterShorterThanIntervalIsHonoured(t *testing.T) {
-	ctx := context.Background()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Retry-After", "1800")
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-	defer server.Close()
-	imp := newImporter(t, config.MeshMapperScopesConfig{Enabled: true}, newMemoryStore("YOW"), server.URL, scopestore.New())
-	now := time.Now().UTC()
-	if err := imp.refresh(ctx, &imp.sources[0], now); err != nil {
-		t.Fatal(err)
-	}
-	if got := imp.sources[0].cache.NextAttempt.Sub(now); got != 30*time.Minute {
-		t.Fatalf("next attempt after 429 in %v, want %v (server Retry-After must not be overridden by the 1h interval)", got, 30*time.Minute)
+func TestRetryAfterNeverBeatsTheRateLimit(t *testing.T) {
+	for retryAfter, want := range map[string]time.Duration{"1800": time.Hour, "7200": 2 * time.Hour} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Retry-After", retryAfter)
+			w.WriteHeader(http.StatusTooManyRequests)
+		}))
+		imp := newImporter(t, config.MeshMapperScopesConfig{Enabled: true}, newMemoryStore("YOW"), server.URL, scopestore.New())
+		now := time.Now().UTC()
+		if err := imp.refresh(context.Background(), &imp.sources[0], now); err != nil {
+			t.Fatal(err)
+		}
+		server.Close()
+		if got := imp.sources[0].cache.NextAttempt.Sub(now); got != want {
+			t.Fatalf("Retry-After %ss: next attempt in %v, want %v", retryAfter, got, want)
+		}
 	}
 }
 
@@ -326,8 +327,8 @@ func TestFailedRefreshRetriesSoon(t *testing.T) {
 	if err := imp.refresh(ctx, &imp.sources[0], now); err != nil {
 		t.Fatal(err)
 	}
-	if got := imp.sources[0].cache.NextAttempt.Sub(now); got != failureRetry {
-		t.Fatalf("next attempt after failure in %v, want %v", got, failureRetry)
+	if got := imp.sources[0].cache.NextAttempt.Sub(now); got != time.Hour {
+		t.Fatalf("next attempt after failure in %v, want 1h", got)
 	}
 }
 
@@ -359,7 +360,7 @@ func newFakeSites(t *testing.T) *fakeSites {
 
 func newDiscoveringImporter(t *testing.T, f *fakeSites, store *memoryStore, scopes *scopestore.ScopeStore) *Importer {
 	t.Helper()
-	dir := NewDirectory()
+	dir := NewDirectory(newZoneListMemory())
 	dir.listURL = f.URL + "/get_zones.php"
 	imp, err := New(context.Background(), config.MeshMapperScopesConfig{Enabled: true}, store, dir, scopes, nil)
 	if err != nil {

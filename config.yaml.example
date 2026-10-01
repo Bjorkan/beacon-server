@@ -61,7 +61,7 @@ ratelimit:
 #meshmapper:
 #  scopes:
 #    enabled: false
-#    refresh_interval: 1h  # 5m-24h; one source checked per 15s tick
+#    refresh_interval: 1h  # 1h-24h (MeshMapper allows one get_scopes.php per region per 55m); one source per 15s tick
 #
 # Region boundaries (Zones API). Every known IATA, including ones auto-created
 # from traffic, is looked up in its country's zone list, then its get_geojson.php
@@ -70,6 +70,9 @@ ratelimit:
 # A missing or failed boundary keeps the last good import, or the borderFile when
 # there is none. Disabling drops every import on restart. Logged under
 # component=meshmapper.zones.
+# Each country's zone list is fetched at most once a day (MeshMapper allows one
+# get_zones.php per country per 23.5h) and saved, so restarts don't refetch it.
+# Failed or rate-limited requests also wait out the limit, or Retry-After if longer.
 # import_groups turns MeshMapper zone groups (e.g. ONQC: YOW, YQB, YUL) into
 # regions, from the zone lists already fetched. A group is imported when at least
 # one member is a known IATA, with its full member list; slug = lowercased group
@@ -79,7 +82,7 @@ ratelimit:
 #  zones:
 #    enabled: false
 #    import_groups: false
-#    refresh_interval: 24h # 1h-168h; one request per 15s tick, ETag-conditional
+#    refresh_interval: 24h # 24h-168h (one get_geojson.php per region per 23.5h); one request per 15s tick, ETag-conditional
 
 iatas:
   YVR:

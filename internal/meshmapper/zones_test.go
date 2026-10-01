@@ -30,6 +30,7 @@ type zoneMemoryStore struct {
 	pruned  []string
 	fail    bool
 	regions map[string]RegionState
+	lists   *zoneListMemory
 }
 
 func (s *zoneMemoryStore) ListRegionState(context.Context) ([]RegionState, error) {
@@ -102,6 +103,30 @@ func (s *zoneMemoryStore) SaveZoneBoundary(_ context.Context, b Boundary) error 
 	return nil
 }
 
+type zoneListMemory struct{ rows map[string]ZoneList }
+
+func newZoneListMemory() *zoneListMemory { return &zoneListMemory{rows: map[string]ZoneList{}} }
+
+func (s *zoneListMemory) ListZoneLists(context.Context) ([]ZoneList, error) {
+	var out []ZoneList
+	for _, l := range s.rows {
+		out = append(out, l)
+	}
+	return out, nil
+}
+
+func (s *zoneListMemory) SaveZoneList(_ context.Context, l ZoneList) error {
+	old := s.rows[l.Country]
+	if l.Payload == nil {
+		l.Payload = old.Payload
+	}
+	if l.FetchedAt.IsZero() {
+		l.FetchedAt, l.ETag = old.FetchedAt, old.ETag
+	}
+	s.rows[l.Country] = l
+	return nil
+}
+
 type fakeMeshMapper struct {
 	*httptest.Server
 	list, boundary     string
@@ -153,8 +178,14 @@ func newZoneHarness(t *testing.T, f *fakeMeshMapper, store *zoneMemoryStore, ena
 	if store.iatas == nil {
 		store.iatas = []string{"YOW"}
 	}
-	dir := NewDirectory()
+	if store.lists == nil {
+		store.lists = newZoneListMemory()
+	}
+	dir := NewDirectory(store.lists)
 	dir.listURL = f.URL + "/get_zones.php"
+	if err := dir.Restore(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	h.z = NewZones(config.MeshMapperZonesConfig{Enabled: enabled}, store, dir)
 	h.z.boundsURL = func(site string) (string, bool) { return site + "get_geojson.php", strings.HasPrefix(site, f.URL) }
 	h.z.OnChange(func(_ context.Context, iata string) { h.changed = append(h.changed, iata) })
@@ -216,11 +247,11 @@ func TestZonesKeepLastGoodBoundary(t *testing.T) {
 		wantRetry      time.Duration
 	}{
 		{"null geometry", boundaryBody("YOW", "null"), 200, "no boundary", 24 * time.Hour},
-		{"not found", "", 404, "HTTP 404", time.Hour},
-		{"unavailable", "", 503, "HTTP 503", time.Hour},
-		{"truncated", boundaryBody("YOW", square)[:80], 200, "invalid response", time.Hour},
-		{"other region", boundaryBody("YVR", square), 200, "invalid response", time.Hour},
-		{"oversized", `{"type":"FeatureCollection","features":[],"pad":"` + strings.Repeat("x", MaxBoundaryBody) + `"}`, 200, "invalid response", time.Hour},
+		{"not found", "", 404, "HTTP 404", 24 * time.Hour},
+		{"unavailable", "", 503, "HTTP 503", 24 * time.Hour},
+		{"truncated", boundaryBody("YOW", square)[:80], 200, "invalid response", 24 * time.Hour},
+		{"other region", boundaryBody("YVR", square), 200, "invalid response", 24 * time.Hour},
+		{"oversized", `{"type":"FeatureCollection","features":[],"pad":"` + strings.Repeat("x", MaxBoundaryBody) + `"}`, 200, "invalid response", 24 * time.Hour},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFakeMeshMapper(t)
@@ -279,22 +310,37 @@ func TestZonesListFailureBacksOff(t *testing.T) {
 	}
 }
 
-func TestZonesRateLimitPausesEveryRequest(t *testing.T) {
+func TestZonesRateLimitWaitsOnlyForThatRegion(t *testing.T) {
+	for retryAfter, want := range map[string]time.Duration{"120": 24 * time.Hour, "172800": 48 * time.Hour} {
+		f := newFakeMeshMapper(t)
+		h := newZoneHarness(t, f, &zoneMemoryStore{rows: map[string]Boundary{}}, true)
+		f.status, f.retryAfter = 429, retryAfter
+		b := h.tick(t)
+		if b.LastError != "HTTP 429" || b.NextAttempt.Sub(b.AttemptedAt) != want {
+			t.Fatalf("Retry-After %ss: next attempt in %v, want %v", retryAfter, b.NextAttempt.Sub(b.AttemptedAt), want)
+		}
+		restarted := newZoneHarness(t, f, h.store, true)
+		if err := restarted.z.Refresh(context.Background()); err != nil || f.calls != 1 {
+			t.Fatal("requested again before the rate limit allows", err, f.calls)
+		}
+	}
+}
+
+func TestZoneListSurvivesRestart(t *testing.T) {
 	f := newFakeMeshMapper(t)
-	h := newZoneHarness(t, f, &zoneMemoryStore{rows: map[string]Boundary{}}, true)
-	f.status, f.retryAfter = 429, "120"
-	b := h.tick(t)
-	if b.LastError != "HTTP 429" || b.NextAttempt.Sub(b.AttemptedAt) != time.Hour || h.z.retryAfter.Sub(b.AttemptedAt) != 2*time.Minute {
-		t.Fatalf("429 not honoured: %+v retryAfter=%v", b, h.z.retryAfter)
+	store := &zoneMemoryStore{rows: map[string]Boundary{}}
+	h := newZoneHarness(t, f, store, true)
+	h.tick(t)
+	if f.listCalls != 1 {
+		t.Fatal("list not fetched", f.listCalls)
 	}
-	h.z.regions[0].b.NextAttempt = time.Time{}
-	_ = h.z.Refresh(context.Background())
-	if f.calls != 1 {
-		t.Fatal("requested during Retry-After")
+	if got := h.z.dir.lists["CA"].nextAttempt.Sub(h.z.dir.lists["CA"].fetchedAt); got != 24*time.Hour {
+		t.Fatal("zone list refetched sooner than the rate limit allows", got)
 	}
-	restarted := newZoneHarness(t, f, h.store, true)
-	if !restarted.z.retryAfter.Equal(b.NextAttempt) {
-		t.Fatal("persisted 429 not restored")
+	restarted := newZoneHarness(t, f, store, true)
+	restarted.tick(t)
+	if f.listCalls != 1 || f.calls != 2 {
+		t.Fatal("restart refetched the zone list", f.listCalls, f.calls)
 	}
 }
 

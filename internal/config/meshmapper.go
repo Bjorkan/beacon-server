@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+// MeshMapper rate-limits get_zones/get_geojson to one request per target per
+// 23.5h and get_scopes to one per region per 55m; minimums round up.
+const (
+	MinZonesRefresh  = 24 * time.Hour
+	MinScopesRefresh = time.Hour
+)
+
 type MeshMapperConfig struct {
 	Scopes MeshMapperScopesConfig `yaml:"scopes"`
 	Zones  MeshMapperZonesConfig  `yaml:"zones"`
@@ -48,17 +55,16 @@ func (c *Config) validateMeshMapper() error {
 		return fmt.Errorf("meshmapper.zones.import_groups requires meshmapper.zones.enabled")
 	}
 	if z := c.MeshMapper.Zones; z.Enabled {
-		// The Zones API asks clients not to poll more than once an hour.
-		if z.Interval() < time.Hour || z.Interval() > 7*24*time.Hour {
-			return fmt.Errorf("meshmapper.zones.refresh_interval must be between 1h and 168h")
+		if z.Interval() < MinZonesRefresh || z.Interval() > 7*24*time.Hour {
+			return fmt.Errorf("meshmapper.zones.refresh_interval must be between 24h and 168h")
 		}
 	}
 	s := c.MeshMapper.Scopes
 	if !s.Enabled {
 		return nil
 	}
-	if s.Interval() < 5*time.Minute || s.Interval() > 24*time.Hour {
-		return fmt.Errorf("meshmapper.scopes.refresh_interval must be between 5m and 24h")
+	if s.Interval() < MinScopesRefresh || s.Interval() > 24*time.Hour {
+		return fmt.Errorf("meshmapper.scopes.refresh_interval must be between 1h and 24h")
 	}
 	if len(s.Sources) > 0 {
 		slog.Warn("meshmapper.scopes.sources is ignored; sources are discovered from the MeshMapper zone list", "component", "config")

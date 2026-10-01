@@ -20,6 +20,8 @@ func TestMeshMapperConfig(t *testing.T) {
 		{"valid", valid, false},
 		{"daily", valid + "    refresh_interval: 24h\n", false},
 		{"legacy sources ignored", valid + "    sources:\n      yow: http://127.0.0.1/\n", false},
+		{"hourly", valid + "    refresh_interval: 1h\n", false},
+		{"under the rate limit", valid + "    refresh_interval: 55m\n", true},
 		{"fast", valid + "    refresh_interval: 1s\n", true},
 		{"slow", valid + "    refresh_interval: 25h\n", true},
 		{"negative", valid + "    refresh_interval: -1h\n", true},
@@ -49,8 +51,10 @@ func TestMeshMapperZonesConfig(t *testing.T) {
 		interval   time.Duration
 	}{
 		{"default", valid, false, 24 * time.Hour},
-		{"hourly", valid + "    refresh_interval: 1h\n", false, time.Hour},
-		{"too often", valid + "    refresh_interval: 59m\n", true, 0},
+		{"daily", valid + "    refresh_interval: 24h\n", false, 24 * time.Hour},
+		{"weekly", valid + "    refresh_interval: 168h\n", false, 168 * time.Hour},
+		{"under the rate limit", valid + "    refresh_interval: 23h30m\n", true, 0},
+		{"hourly", valid + "    refresh_interval: 1h\n", true, 0},
 		{"too rare", valid + "    refresh_interval: 169h\n", true, 0},
 		{"no regions", "meshmapper:\n  zones:\n    enabled: true\n", false, 24 * time.Hour},
 		{"groups", valid + "    import_groups: true\n", false, 24 * time.Hour},

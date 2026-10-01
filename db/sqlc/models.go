@@ -256,6 +256,16 @@ type MeshmapperZoneBoundary struct {
 	LastError   string             `json:"last_error"`
 }
 
+type MeshmapperZoneList struct {
+	Country     string             `json:"country"`
+	Payload     []byte             `json:"payload"`
+	Etag        *string            `json:"etag"`
+	FetchedAt   pgtype.Timestamptz `json:"fetched_at"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+	NextAttempt pgtype.Timestamptz `json:"next_attempt"`
+	LastError   string             `json:"last_error"`
+}
+
 type MvHourlyIataStat struct {
 	Iata             string             `json:"iata"`
 	Hour             pgtype.Timestamptz `json:"hour"`

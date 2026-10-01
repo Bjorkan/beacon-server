@@ -665,6 +665,16 @@ CREATE TABLE meshmapper_zone_boundaries (
     last_error text DEFAULT ''::text NOT NULL
 );
 
+CREATE TABLE meshmapper_zone_lists (
+    country text NOT NULL,
+    payload jsonb,
+    etag text,
+    fetched_at timestamp with time zone,
+    attempted_at timestamp with time zone NOT NULL,
+    next_attempt timestamp with time zone NOT NULL,
+    last_error text DEFAULT ''::text NOT NULL
+);
+
 CREATE MATERIALIZED VIEW mv_hourly_iata_stats AS
 WITH combined AS (
     SELECT iata, hour, observation_count, unique_packets FROM analytics_live_hourly_iata_stats
@@ -1022,6 +1032,9 @@ ALTER TABLE ONLY meshmapper_scope_catalogues
 
 ALTER TABLE ONLY meshmapper_zone_boundaries
     ADD CONSTRAINT meshmapper_zone_boundaries_pkey PRIMARY KEY (iata);
+
+ALTER TABLE ONLY meshmapper_zone_lists
+    ADD CONSTRAINT meshmapper_zone_lists_pkey PRIMARY KEY (country);
 
 ALTER TABLE ONLY node_iatas
     ADD CONSTRAINT node_iatas_pkey PRIMARY KEY (node_id, iata);

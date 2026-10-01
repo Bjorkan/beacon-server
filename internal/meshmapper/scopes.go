@@ -28,7 +28,7 @@ const (
 	MaxBody      = 64 << 10
 	PollInterval = 15 * time.Second // one source per tick, at most four requests/minute
 
-	failureRetry = 5 * time.Minute // transient failures shouldn't cost a whole refresh interval
+	failureRetry = config.MinScopesRefresh // get_scopes.php allows one request per region per 55m
 )
 
 // Cache stores source provenance and freshness separately from packet evidence.
@@ -60,17 +60,16 @@ type source struct {
 
 // Importer is owned by one background task; ScopeStore synchronizes its consumers.
 type Importer struct {
-	store      Store
-	scopes     *scopestore.ScopeStore
-	manual     []scopestore.Entry
-	dir        *Directory
-	scopesURL  func(site string) (string, bool)
-	seen       map[string]bool
-	sources    []source
-	interval   time.Duration
-	client     *http.Client
-	retryAfter time.Time
-	onChange   func(context.Context)
+	store     Store
+	scopes    *scopestore.ScopeStore
+	manual    []scopestore.Entry
+	dir       *Directory
+	scopesURL func(site string) (string, bool)
+	seen      map[string]bool
+	sources   []source
+	interval  time.Duration
+	client    *http.Client
+	onChange  func(context.Context)
 }
 
 // SetCacheInvalidator is wired once at startup, before the background task starts.
@@ -129,9 +128,6 @@ func (i *Importer) track(iatas []string, saved map[string]Catalogue) {
 					s.cache.LastError = "invalid saved catalogue; awaiting refresh"
 				}
 			}
-			if c.LastError == "HTTP 429" && c.NextAttempt.After(i.retryAfter) {
-				i.retryAfter = c.NextAttempt
-			}
 			i.log(s, "restored")
 		}
 		i.sources = append(i.sources, s)
@@ -149,9 +145,6 @@ func (i *Importer) Refresh(ctx context.Context) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	now := time.Now().UTC()
-	if now.Before(i.retryAfter) || now.Before(i.dir.pausedUntil()) {
-		return nil
-	}
 	iatas, err := i.store.ListKnownIATAs(ctx)
 	if err != nil {
 		return fmt.Errorf("list IATAs for MeshMapper scopes: %w", err)
@@ -253,14 +246,11 @@ func (i *Importer) refresh(ctx context.Context, s *source, now time.Time) error 
 		}
 	}
 	if update.LastError != "" {
-		// Transient failures shouldn't cost a whole refresh interval, but never beat a Retry-After.
+		// Failures retry before the full interval, but never sooner than the rate limit or a Retry-After.
 		update.NextAttempt = now.Add(min(i.interval, failureRetry))
 		if retryAfter.After(update.NextAttempt) {
 			update.NextAttempt = retryAfter
 		}
-	}
-	if update.LastError == "HTTP 429" {
-		i.retryAfter = update.NextAttempt
 	}
 	if err := i.store.SaveScopeCatalogue(ctx, s.iata, s.url, update, entries); err != nil {
 		// Avoid a retry every scheduler tick during a DB outage; never publish uncommitted keys.

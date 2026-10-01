@@ -198,7 +198,16 @@ func main() {
 	scopes.Load(scopeEntries)
 	scopes.SetManualMembers(cfg.ManualScopeMembers())
 	slog.Info(fmt.Sprintf("loaded %d transport scopes", len(scopeEntries)), "component", "startup")
-	directory := meshmapper.NewDirectory()
+	directory := meshmapper.NewDirectory(store)
+	if cfg.MeshMapper.Scopes.Enabled || cfg.MeshMapper.Zones.Enabled {
+		restoreCtx, cancelRestore := context.WithTimeout(ctx, 10*time.Second)
+		err = directory.Restore(restoreCtx)
+		cancelRestore()
+		if err != nil {
+			slog.Error("failed to restore MeshMapper zone lists", "component", "startup", "error", err)
+			os.Exit(1)
+		}
+	}
 	var scopeImporter *meshmapper.Importer
 	if cfg.MeshMapper.Scopes.Enabled {
 		restoreCtx, cancelRestore := context.WithTimeout(ctx, 10*time.Second)
