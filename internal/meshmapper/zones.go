@@ -26,6 +26,10 @@ const (
 	MaxZoneList     = 1 << 20
 	MaxBoundaryBody = 8 << 20 // outlines are never simplified
 
+	// MeshMapper asks clients to allow 60-120s; a request given up on may still use the day's call.
+	requestTimeout = 60 * time.Second
+	refreshTimeout = requestTimeout + 30*time.Second // room for the DB write after a slow request
+
 	zoneListFresh    = config.MinZonesRefresh // get_zones.php allows one request per country per 23.5h
 	zoneFailureRetry = config.MinZonesRefresh // failed requests count too
 )
@@ -82,7 +86,7 @@ type Zones struct {
 func NewZones(cfg config.MeshMapperZonesConfig, store ZoneStore, dir *Directory) *Zones {
 	return &Zones{store: store, enabled: cfg.Enabled, importGroups: cfg.Enabled && cfg.ImportGroups, seen: map[string]bool{}, interval: cfg.Interval(), dir: dir,
 		boundsURL: boundaryEndpoint, client: &http.Client{
-			Timeout:       30 * time.Second,
+			Timeout:       requestTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		}}
 }
@@ -165,7 +169,7 @@ func (z *Zones) Refresh(ctx context.Context) (err error) {
 			err = nil
 		}
 	}()
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
 	now := time.Now().UTC()
 	// IATAs are created from traffic, so pick up new ones every tick.

@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/MeshCore-Beacon/beacon-server/internal/config"
+	"github.com/MeshCore-Beacon/beacon-server/internal/keystore"
+	"github.com/MeshCore-Beacon/beacon-server/internal/scopestore"
 )
 
 const square = `{"type":"Polygon","coordinates":[[[-76,45],[-75,45],[-75,46],[-76,46],[-76,45]]]}`
@@ -463,5 +465,30 @@ func TestDecodeBoundaryRejectsUnusableOutlines(t *testing.T) {
 	}
 	if feature, err := decodeBoundary([]byte(boundaryBody("yow", square)), "YOW"); err != nil || feature == nil {
 		t.Fatal("case-insensitive code rejected", err)
+	}
+}
+
+func TestClientsAllowMeshMapperTimeout(t *testing.T) {
+	ctx := context.Background()
+	scopes, err := New(ctx, config.MeshMapperScopesConfig{}, nil, NewDirectory(nil), scopestore.New(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channels, err := NewChannels(ctx, config.MeshMapperChannelsConfig{}, newChannelMemoryStore(), NewDirectory(nil), keystore.NewMapKeyStore(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]*http.Client{
+		"directory": NewDirectory(nil).client,
+		"zones":     NewZones(config.MeshMapperZonesConfig{}, nil, nil).client,
+		"scopes":    scopes.client,
+		"channels":  channels.client,
+	} {
+		if c.Timeout < 60*time.Second {
+			t.Errorf("%s client gives up after %v; MeshMapper asks for 60-120s", name, c.Timeout)
+		}
+	}
+	if refreshTimeout <= requestTimeout {
+		t.Fatal("a refresh must outlast its request")
 	}
 }

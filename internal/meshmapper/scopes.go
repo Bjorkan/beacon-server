@@ -79,7 +79,7 @@ func (i *Importer) SetCacheInvalidator(fn func(context.Context)) { i.onChange = 
 func New(ctx context.Context, cfg config.MeshMapperScopesConfig, store Store, dir *Directory, scopes *scopestore.ScopeStore, manual []scopestore.Entry) (*Importer, error) {
 	i := &Importer{store: store, scopes: scopes, manual: manual, dir: dir, scopesURL: scopesEndpoint, seen: map[string]bool{},
 		interval: cfg.Interval(), client: &http.Client{
-			Timeout:       10 * time.Second,
+			Timeout:       requestTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		}}
 	if !cfg.Enabled {
@@ -142,7 +142,7 @@ func (i *Importer) Refresh(ctx context.Context) (err error) {
 			err = nil
 		}
 	}()
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
 	now := time.Now().UTC()
 	iatas, err := i.store.ListKnownIATAs(ctx)

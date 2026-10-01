@@ -65,7 +65,7 @@ type Channels struct {
 func NewChannels(ctx context.Context, cfg config.MeshMapperChannelsConfig, store ChannelStore, dir *Directory, keys ChannelKeys) (*Channels, error) {
 	c := &Channels{store: store, keys: keys, dir: dir, channelsURL: channelsEndpoint, interval: cfg.Interval(), seen: map[string]bool{},
 		client: &http.Client{
-			Timeout:       10 * time.Second,
+			Timeout:       requestTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		}}
 	if !cfg.Enabled {
@@ -130,7 +130,7 @@ func (c *Channels) Refresh(ctx context.Context) (err error) {
 			err = nil
 		}
 	}()
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
 	now := time.Now().UTC()
 	iatas, err := c.store.ListKnownIATAs(ctx)

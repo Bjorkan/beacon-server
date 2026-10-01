@@ -64,7 +64,7 @@ type Directory struct {
 
 func NewDirectory(store DirectoryStore) *Directory {
 	return &Directory{store: store, listURL: ZonesURL, lists: map[string]*zoneList{}, client: &http.Client{
-		Timeout:       30 * time.Second,
+		Timeout:       requestTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}
 }
