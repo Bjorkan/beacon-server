@@ -6,11 +6,14 @@ package ingest
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/MeshCore-Beacon/beacon-server/internal/hub"
 	"github.com/MeshCore-Beacon/beacon-server/internal/keystore"
 	"github.com/meshcore-go/meshcore-go"
 )
@@ -31,6 +34,10 @@ func (k *mapKeys) GetKey(hash []byte) []keystore.Entry {
 // buildAdvertPacket signs (or, if tamper is true, signs then mutates) an
 // advert payload and wraps it in a minimal Packet with no path (zero-hop).
 func buildAdvertPacket(t *testing.T, tamper bool) *meshcore.Packet {
+	return buildAdvertPacketWithData(t, []byte{meshcore.AdvertTypeRepeater}, tamper)
+}
+
+func buildAdvertPacketWithData(t *testing.T, data []byte, tamper bool) *meshcore.Packet {
 	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
@@ -43,7 +50,7 @@ func buildAdvertPacket(t *testing.T, tamper bool) *meshcore.Packet {
 	advert := &meshcore.Advert{
 		PublicKey:  id,
 		Timestamp:  12345,
-		RawAppData: []byte{meshcore.AdvertTypeRepeater}, // flags byte only, no optional fields
+		RawAppData: data,
 	}
 	advert.Sign(priv)
 	if tamper {
@@ -58,6 +65,109 @@ func buildAdvertPacket(t *testing.T, tamper bool) *meshcore.Packet {
 	return &meshcore.Packet{
 		Header:  meshcore.MakeHeader(meshcore.RouteTypeFlood, meshcore.PayloadTypeAdvert, 0),
 		Payload: payload,
+	}
+}
+
+func TestAdvertLocationPresence(t *testing.T) {
+	for _, tc := range []struct {
+		name                   string
+		present, tamper, clear bool
+		lat, lon               int32
+	}{
+		{"ordinary location", true, false, false, 45000000, -75000000},
+		{"explicit reset", true, false, true, 0, 0},
+		{"zero latitude", true, false, false, 0, -75000000},
+		{"zero longitude", true, false, false, 45000000, 0},
+		{"no location", false, false, false, 0, 0},
+		{"tampered reset", true, true, false, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := []byte{meshcore.AdvertTypeRepeater}
+			if tc.present {
+				// Preserve the wire presence bit even for zero coordinates; the
+				// library's AppData encoder omits location when both values are zero.
+				data[0] |= meshcore.AdvertLatLonMask
+				data = binary.LittleEndian.AppendUint32(data, uint32(tc.lat))
+				data = binary.LittleEndian.AppendUint32(data, uint32(tc.lon))
+			}
+			worker, store := newTestWorker()
+			packet := buildAdvertPacketWithData(t, data, tc.tamper)
+			worker.handlePayloadTypeSideEffects(context.Background(), packet, "YOW", []byte{1}, RadioSettings{}, nil, nil, nil, 0)
+			if tc.tamper {
+				if store.upsertNodeCalls != 0 {
+					t.Fatal("invalid signature updated the node")
+				}
+				return
+			}
+			if store.upsertNodeCalls != 1 {
+				t.Fatal("signed advert did not update the node")
+			}
+			got := store.upsertNodeParams
+			if got.ClearLocation != tc.clear {
+				t.Fatalf("ClearLocation = %v, want %v", got.ClearLocation, tc.clear)
+			}
+			if !tc.present || tc.clear {
+				if got.Latitude != nil || got.Longitude != nil {
+					t.Fatal("absent location became an update")
+				}
+				return
+			}
+			if got.Latitude == nil || got.Longitude == nil || *got.Latitude != float64(tc.lat)/1e6 || *got.Longitude != float64(tc.lon)/1e6 {
+				t.Fatal("advertised coordinates did not reach the node update")
+			}
+		})
+	}
+}
+
+func TestAdvertClearEmitsNullLocation(t *testing.T) {
+	w, _ := newTestWorker()
+	go w.hub.Run()
+	client := w.hub.NewClient()
+	defer w.hub.Remove(client)
+	w.hub.AddScope(client, "clear", hub.Scope{Events: []hub.EventType{hub.EventNodeUpdate, hub.EventObserverStatus}})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	waitForSummarySubscriber(t, ctx, w.hub, client)
+	for _, tc := range []struct {
+		name          string
+		present, want bool
+		lat, lon      int32
+		wantLat       string
+		wantLng       string
+	}{
+		{"explicit reset sends null", true, true, 0, 0, "null", "null"},
+		{"omission sends nothing", false, false, 0, 0, "", ""},
+		{"real location sends coordinates", true, true, 45000000, -75000000, "45", "-75"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := []byte{meshcore.AdvertTypeRepeater}
+			if tc.present {
+				data[0] |= meshcore.AdvertLatLonMask
+				data = binary.LittleEndian.AppendUint32(data, uint32(tc.lat))
+				data = binary.LittleEndian.AppendUint32(data, uint32(tc.lon))
+			}
+			w.handlePayloadTypeSideEffects(ctx, buildAdvertPacketWithData(t, data, false), "AAA", []byte{1}, RadioSettings{}, nil, nil, nil, 0)
+			for {
+				select {
+				case event := <-client.Send:
+					if event.Type != hub.EventNodeUpdate {
+						continue
+					}
+					payload := string(event.Payload)
+					for field, want := range map[string]string{`"lat"`: tc.wantLat, `"lng"`: tc.wantLng} {
+						if tc.want && !strings.Contains(payload, field+":"+want+",") {
+							t.Fatalf("%s != %s: %s", field, want, payload)
+						}
+						if !tc.want && strings.Contains(payload, field) {
+							t.Fatalf("%s present on omission: %s", field, payload)
+						}
+					}
+					return
+				case <-ctx.Done():
+					t.Fatal("node update not received")
+				}
+			}
+		})
 	}
 }
 
@@ -187,14 +297,14 @@ func TestHandlePacket_Advert_SkipsChannelIATA(t *testing.T) {
 	if db.upsertChannelIATACalls != 0 {
 		t.Errorf("expected UpsertChannelIATA NOT to be called for a non-channel packet, got %d calls", db.upsertChannelIATACalls)
 	}
-	if db.upsertTraceIATACalls != 0 {
-		t.Errorf("expected UpsertTraceIATA NOT to be called for a non-trace packet, got %d calls", db.upsertTraceIATACalls)
+	if len(db.traceHearings) != 0 {
+		t.Errorf("expected RecordTrace NOT to be called for a non-trace packet, got %d calls", len(db.traceHearings))
 	}
 }
 
 func buildTracePacket(t *testing.T) *meshcore.Packet {
 	t.Helper()
-	payload, err := (&meshcore.Trace{Tag: 0xdeadbeef, AuthCode: 1}).ToBytes()
+	payload, err := (&meshcore.Trace{Tag: 0xdeadbeef, AuthCode: 1, PathHashes: []byte{0xaa, 0xbb}}).ToBytes()
 	if err != nil {
 		t.Fatalf("trace to bytes: %v", err)
 	}
@@ -204,14 +314,22 @@ func buildTracePacket(t *testing.T) *meshcore.Packet {
 	}
 }
 
-func TestHandlePacket_Trace_UpsertsTraceIATA(t *testing.T) {
+func TestHandlePacket_Trace_RecordsTrace(t *testing.T) {
 	w, db := newTestWorker()
 	db.observationInserted = true
+	db.packetIsNew = true
 	envelope := packetEnvelope(t, buildTracePacket(t))
 
 	w.handlePacket(context.Background(), "YOW", "0102", envelope)
+	db.packetIsNew, db.observationInserted = false, false
+	w.handlePacket(context.Background(), "YOW", "0102", envelope)
 
-	if db.upsertTraceIATACalls != 1 {
-		t.Errorf("expected UpsertTraceIATA to be called once for a stored trace, got %d", db.upsertTraceIATACalls)
+	if len(db.traceHearings) != 2 {
+		t.Fatalf("expected RecordTrace for every hearing, got %d", len(db.traceHearings))
+	}
+	for _, h := range db.traceHearings {
+		if h.IATA != "YOW" || h.HeardAt.IsZero() || hex.EncodeToString(h.TraceTag) != "efbeadde" {
+			t.Errorf("unexpected hearing %+v", h)
+		}
 	}
 }

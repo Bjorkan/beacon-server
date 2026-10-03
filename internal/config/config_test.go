@@ -5,10 +5,55 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestLoadLogConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("log:\n  level: warn\n  format: json\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Log.Level != "warn" || cfg.Log.Format != "json" {
+		t.Fatalf("log config ignored: %+v", cfg.Log)
+	}
+}
+
+func TestLoadTrustedProxies(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml string
+		count      int
+		wantError  bool
+	}{
+		{"omitted", "{}", 0, false},
+		{"empty", "server: {trusted_proxies: []}", 0, false},
+		{"CIDRs", "server: {trusted_proxies: ['192.0.2.0/24', '2001:db8::/32']}", 2, false},
+		{"bare IP", "server: {trusted_proxies: ['192.0.2.1']}", 0, true},
+		{"invalid CIDR", "server: {trusted_proxies: ['192.0.2.0/99']}", 0, true},
+		{"empty entry", "server: {trusted_proxies: ['', '192.0.2.0/24']}", 0, true},
+		{"null entry", "server: {trusted_proxies: [null, '192.0.2.0/24']}", 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(tc.yaml), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("Load error = %v, want error = %v", err, tc.wantError)
+			}
+			if err == nil && len(cfg.Server.TrustedProxies) != tc.count {
+				t.Fatalf("got %d proxy prefixes, want %d", len(cfg.Server.TrustedProxies), tc.count)
+			}
+		})
+	}
+}
 
 func TestLoad_FileNotFound(t *testing.T) {
 	cfg, err := Load("/nonexistent/path/config.yaml")
@@ -38,6 +83,8 @@ regions:
     name: British Columbia
     display_order: 1
     iatas: [YVR]
+observers:
+  delete_after: 720h
 `)
 	f.Close()
 
@@ -53,6 +100,9 @@ regions:
 	}
 	if cfg.Regions[0].Slug != "bc" {
 		t.Errorf("expected slug bc, got %s", cfg.Regions[0].Slug)
+	}
+	if Resolve(cfg).ObserverDeleteAfter != 30*24*time.Hour {
+		t.Error("observers.delete_after was not loaded from YAML")
 	}
 }
 
@@ -77,11 +127,11 @@ func TestResolve_Defaults(t *testing.T) {
 	if r.TelemetryResolution != time.Hour {
 		t.Errorf("expected TelemetryResolution 1h, got %v", r.TelemetryResolution)
 	}
-	if r.TelemetryRetention != 28*24*time.Hour {
-		t.Errorf("expected TelemetryRetention 672h, got %v", r.TelemetryRetention)
+	if r.TelemetryRetention != 31*24*time.Hour {
+		t.Errorf("expected TelemetryRetention 744h, got %v", r.TelemetryRetention)
 	}
-	if r.PacketRetention != 30*24*time.Hour {
-		t.Errorf("expected PacketRetention 720h, got %v", r.PacketRetention)
+	if r.PacketRetention != 7*24*time.Hour {
+		t.Errorf("expected PacketRetention 168h, got %v", r.PacketRetention)
 	}
 	if r.MaxConnsPerIP != 5 {
 		t.Errorf("expected MaxConnsPerIP 5, got %d", r.MaxConnsPerIP)
@@ -102,7 +152,10 @@ func TestResolve_Defaults(t *testing.T) {
 		t.Errorf("expected NodeStaleThreshold 24h, got %v", r.NodeStaleThreshold)
 	}
 	if r.NodeDeleteAfter != 30*24*time.Hour {
-		t.Errorf("expected NodeDeleteAfter 720h (same default as PacketRetention), got %v", r.NodeDeleteAfter)
+		t.Errorf("expected NodeDeleteAfter 720h, got %v", r.NodeDeleteAfter)
+	}
+	if r.ObserverDeleteAfter != 0 {
+		t.Errorf("observer deletion must be disabled by default, got %v", r.ObserverDeleteAfter)
 	}
 }
 
@@ -115,6 +168,7 @@ func TestResolve_ExplicitValues(t *testing.T) {
 	cfg.Background.ViewRefresh.Duration = 2 * time.Hour
 	cfg.Background.Reconfirm.Duration = 3 * time.Hour
 	cfg.Background.Cleanup.Duration = 4 * time.Hour
+	cfg.Observers.DeleteAfter.Duration = 45 * 24 * time.Hour
 
 	r := Resolve(cfg)
 	if r.TelemetryResolution != 30*time.Minute {
@@ -125,6 +179,9 @@ func TestResolve_ExplicitValues(t *testing.T) {
 	}
 	if r.ViewRefreshInterval != 2*time.Hour {
 		t.Errorf("expected 2h, got %v", r.ViewRefreshInterval)
+	}
+	if r.ObserverDeleteAfter != 45*24*time.Hour {
+		t.Errorf("expected observer delete_after 1080h, got %v", r.ObserverDeleteAfter)
 	}
 }
 
@@ -139,5 +196,108 @@ func TestResolvedConfig_String(t *testing.T) {
 	}
 	if !strings.Contains(s, "maxConnsPerIP=") {
 		t.Error("expected maxConnsPerIP in string")
+	}
+}
+
+func TestResolve_RouteDefaults(t *testing.T) {
+	r := Resolve(&Config{})
+	if r.RouteRetention != 336*time.Hour {
+		t.Errorf("RouteRetention = %s, want 336h", r.RouteRetention)
+	}
+	if r.RouteGrace != 168*time.Hour {
+		t.Errorf("RouteGrace = %s, want 168h", r.RouteGrace)
+	}
+	if r.RouteMinObservations != 3 {
+		t.Errorf("RouteMinObservations = %d, want 3", r.RouteMinObservations)
+	}
+}
+
+func TestResolve_RollupRetentionDefaults(t *testing.T) {
+	r := Resolve(&Config{})
+	if r.RollupRetention != 90*24*time.Hour {
+		t.Errorf("expected RollupRetention 2160h (90 days), got %v", r.RollupRetention)
+	}
+}
+
+func TestResolve_TelemetryRetentionDefault(t *testing.T) {
+	r := Resolve(&Config{})
+	if r.TelemetryRetention != 31*24*time.Hour {
+		t.Errorf("expected TelemetryRetention 744h (31 days), got %v", r.TelemetryRetention)
+	}
+}
+
+func TestResolve_RollupRetentionExplicitOverride(t *testing.T) {
+	cfg := &Config{}
+	cfg.Analytics.RollupRetention.Duration = 60 * 24 * time.Hour
+	r := Resolve(cfg)
+	if r.RollupRetention != 60*24*time.Hour {
+		t.Errorf("expected RollupRetention 1440h (60 days), got %v", r.RollupRetention)
+	}
+}
+
+func TestLoad_PacketsRetentionTooShort(t *testing.T) {
+	f, err := os.CreateTemp("", "beacon-config-*.yaml")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(f.Name())
+
+	_, _ = f.WriteString("packets:\n  retention: 1h\n")
+	f.Close()
+
+	_, err = Load(f.Name())
+	if err == nil {
+		t.Fatal("expected error for packets.retention < 24h, got nil")
+	}
+	if !strings.Contains(err.Error(), "packets.retention must be at least 24h") {
+		t.Errorf("expected error about packets.retention, got: %v", err)
+	}
+}
+
+func TestLoad_AnalyticsRollupRetentionTooShort(t *testing.T) {
+	f, err := os.CreateTemp("", "beacon-config-*.yaml")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(f.Name())
+
+	_, _ = f.WriteString("analytics:\n  rollup_retention: 1h\n")
+	f.Close()
+
+	_, err = Load(f.Name())
+	if err == nil {
+		t.Fatal("expected error for analytics.rollup_retention < 24h, got nil")
+	}
+	if !strings.Contains(err.Error(), "analytics.rollup_retention must be at least 24h") {
+		t.Errorf("expected error about analytics.rollup_retention, got: %v", err)
+	}
+}
+
+func TestLoad_NegativeDurationsRejected(t *testing.T) {
+	for _, key := range []string{
+		"background:\n  cleanup: -1h", "background:\n  view_refresh: -1h", "background:\n  reconfirm: -1m",
+		"presence:\n  flush_interval: -1s", "presence:\n  packet_ttl: -1s",
+		"telemetry:\n  resolution: -1h", "telemetry:\n  retention: -1h",
+		"routes:\n  retention: -1h", "routes:\n  grace: -1h",
+		"nodes:\n  clock_drift_threshold: -1m", "nodes:\n  stale_threshold: -1h", "nodes:\n  delete_after: -1h",
+		"cache:\n  ttl: -1m", "cache:\n  ttls:\n    stats: -1m",
+		"meshmapper:\n  scopes:\n    refresh_interval: -1h",
+	} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(key+"\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(path)
+		if err == nil || !strings.Contains(err.Error(), "must not be negative") {
+			t.Errorf("%q: err = %v, want a negative-duration error", key, err)
+		}
+	}
+	// Nonpositive still means "disabled" here.
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("observers:\n  delete_after: -1h\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err != nil {
+		t.Errorf("observers.delete_after: %v", err)
 	}
 }

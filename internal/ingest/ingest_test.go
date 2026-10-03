@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -175,13 +176,20 @@ type stubDB struct {
 	setCapabilityCalls []setCapabilityCall
 
 	upsertNodeCalls            int
+	upsertNodeParams           UpsertNodeParams
 	upsertChannelCalls         int
 	upsertChannelHashOnlyCalls int
 	upsertChannelIATACalls     int
-	upsertTraceIATACalls       int
+	traceHearings              []TraceHearing
+	packetIsNew                bool
 	observationInserted        bool
+	channelMessages            []InsertChannelMessageParams
+	observationCount           int64
 	insertChannelMessageResult bool // configurable return for InsertChannelMessage; default false
 	undecryptedPackets         []UndecryptedPacket
+	undecryptedByHash          []UndecryptedPacket
+	backfillHashes             [][]byte
+	dbHook                     func() // runs in UpsertChannelIATA, the first DB call after InsertObservation
 }
 
 type setCapabilityCall struct {
@@ -196,21 +204,24 @@ func (s *stubDB) SetNodeCapability(_ context.Context, nodeID uuid.UUID, paths, t
 }
 
 // no-op implementations for remaining DB interface methods
-func (s *stubDB) UpsertObserver(_ context.Context, _ []byte) (uuid.UUID, string, error) {
+func (s *stubDB) UpsertObserver(_ context.Context, _ []byte, _ string) (uuid.UUID, string, error) {
 	return uuid.Nil, "", nil
 }
-func (s *stubDB) UpsertObserverBroker(_ context.Context, _ uuid.UUID, _ string) error { return nil }
-func (s *stubDB) UpsertIATA(_ context.Context, _ string) error                        { return nil }
+func (s *stubDB) UpsertObserverBroker(_ context.Context, _ uuid.UUID, _ string, _ bool) error {
+	return nil
+}
+func (s *stubDB) UpsertIATA(_ context.Context, _ string) error { return nil }
 func (s *stubDB) UpsertPacket(_ context.Context, _ UpsertPacketParams) (bool, error) {
-	return false, nil
+	return s.packetIsNew, nil
 }
 func (s *stubDB) SetPacketDecrypted(_ context.Context, _ []byte) error { return nil }
-func (s *stubDB) InsertObservation(_ context.Context, _ InsertObservationParams) (bool, error) {
-	return s.observationInserted, nil
+func (s *stubDB) InsertObservation(_ context.Context, _ InsertObservationParams) (bool, int64, error) {
+	return s.observationInserted, s.observationCount, nil
 }
 func (s *stubDB) SetNodeDefaultScope(_ context.Context, _ uuid.UUID, _ int32) error { return nil }
-func (s *stubDB) UpsertNode(_ context.Context, _ UpsertNodeParams, _ RadioSettings) (uuid.UUID, error) {
+func (s *stubDB) UpsertNode(_ context.Context, params UpsertNodeParams, _ RadioSettings) (uuid.UUID, error) {
 	s.upsertNodeCalls++
+	s.upsertNodeParams = params
 	return uuid.Nil, nil
 }
 func (s *stubDB) UpsertNodeIATA(_ context.Context, _ uuid.UUID, _ string) error { return nil }
@@ -226,8 +237,12 @@ func (s *stubDB) GetNodesByIDs(_ context.Context, _ []uuid.UUID) (map[uuid.UUID]
 	return nil, nil
 }
 
-func (s *stubDB) InsertChannelMessage(_ context.Context, _ InsertChannelMessageParams) (bool, error) {
-	return s.insertChannelMessageResult, nil
+func (s *stubDB) InsertChannelMessage(_ context.Context, m InsertChannelMessageParams) (*InsertedChannelMessage, error) {
+	s.channelMessages = append(s.channelMessages, m)
+	if !s.insertChannelMessageResult {
+		return nil, nil
+	}
+	return &InsertedChannelMessage{ID: 1, ScopeStatus: "unavailable"}, nil
 }
 
 func (s *stubDB) UpdateObserverStatus(_ context.Context, _ UpdateObserverStatusParams) (uuid.UUID, error) {
@@ -252,6 +267,10 @@ func (s *stubDB) ResolvePathHashes(_ context.Context, _ string, _ [][]byte) (map
 	return nil, nil
 }
 
+func (s *stubDB) ResolveEndpointHashes(_ context.Context, _ string, _ [][]byte) (map[string][]api.ResolvedPathEntry, error) {
+	return nil, nil
+}
+
 func (s *stubDB) UpsertChannel(_ context.Context, _ []byte, _ []byte, _, _ string) (int, error) {
 	s.upsertChannelCalls++
 	return 0, nil
@@ -266,18 +285,22 @@ func (s *stubDB) ListUndecryptedGroupTextPackets(_ context.Context) ([]Undecrypt
 	return s.undecryptedPackets, nil
 }
 
+func (s *stubDB) ListUndecryptedGroupTextPacketsByHash(_ context.Context, hashes [][]byte) ([]UndecryptedPacket, error) {
+	s.backfillHashes = hashes
+	return s.undecryptedByHash, nil
+}
+
 func (s *stubDB) UpsertChannelIATA(_ context.Context, _ []byte, _ string, _ time.Time) error {
+	if s.dbHook != nil {
+		s.dbHook()
+	}
 	s.upsertChannelIATACalls++
 	return nil
 }
 
-func (s *stubDB) UpsertTraceIATA(_ context.Context, _ []byte, _ string, _ time.Time) error {
-	s.upsertTraceIATACalls++
+func (s *stubDB) RecordTrace(_ context.Context, h TraceHearing) error {
+	s.traceHearings = append(s.traceHearings, h)
 	return nil
-}
-
-func (s *stubDB) GetPacketObservationCount(_ context.Context, _ []byte) (int64, error) {
-	return 0, nil
 }
 
 func (s *stubDB) GetTransportScopeByName(_ context.Context, _ string) (int32, error) { return 0, nil }
@@ -286,13 +309,18 @@ func (s *stubDB) UpsertKnownRoute(_ context.Context, _ []uuid.UUID, _ [][]byte, 
 	return nil
 }
 
-func (s *stubDB) UpsertNodeNeighbor(_ context.Context, _, _ uuid.UUID, _ string, _ *float32) error {
+func (s *stubDB) UpsertNodeNeighbor(_ context.Context, _, _ uuid.UUID, _ string, _ *float32, _ *string) error {
+	return nil
+}
+
+func (s *stubDB) UpdateObserverRegionScope(_ context.Context, _ uuid.UUID, _ string) error {
 	return nil
 }
 
 func newTestWorker() (*Worker, *stubDB) {
 	db := &stubDB{}
 	w := &Worker{
+		log:    slog.Default().With("component", "ingest", "broker", "test"),
 		cfg:    Config{BrokerName: "test"},
 		db:     db,
 		hub:    hub.New(),

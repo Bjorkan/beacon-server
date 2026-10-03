@@ -7,39 +7,101 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Config is the top-level structure of the Beacon config file.
 type Config struct {
+	Auth        AuthConfig            `yaml:"auth"`
+	Backup      BackupConfig          `yaml:"backup"`
+	Log         LogConfig             `yaml:"log"`
+	Server      ServerConfig          `yaml:"server"`
 	IATAs       map[string]IATAConfig `yaml:"iatas"`
 	Regions     []RegionConfig        `yaml:"regions"`
 	ChannelKeys ChannelKeysConfig     `yaml:"channel_keys"`
 	Telemetry   TelemetryConfig       `yaml:"telemetry"`
 	WebSocket   WebSocketConfig       `yaml:"websocket"`
 	Packets     PacketsConfig         `yaml:"packets"`
+	Routes      RoutesConfig          `yaml:"routes"`
 	Ingest      IngestFilterConfig    `yaml:"ingest"`
 	Scopes      []ScopeConfig         `yaml:"scopes"`
+	MeshMapper  MeshMapperConfig      `yaml:"meshmapper"`
 	Cache       CacheConfig           `yaml:"cache"`
 	CORS        CORSConfig            `yaml:"cors"`
+	RateLimit   RateLimitConfig       `yaml:"ratelimit"`
 	Background  BackgroundConfig      `yaml:"background"`
 	Presence    PresenceConfig        `yaml:"presence"`
 	Nodes       NodesConfig           `yaml:"nodes"`
+	Observers   ObserversConfig       `yaml:"observers"`
+	Analytics   AnalyticsConfig       `yaml:"analytics"`
+}
+
+// BackupConfig enables protected downloads. Disabled by default.
+type BackupConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+// AuthConfig holds the operator key for the protected admin subtree.
+// The key is excluded from JSON; it must not be exposed by configuration APIs.
+type AuthConfig struct {
+	APIKey string `yaml:"api_key" json:"-"`
+}
+
+// LogConfig controls application verbosity and stderr output format.
+type LogConfig struct {
+	Level  string `yaml:"level"`
+	Format string `yaml:"format"`
+}
+
+// ServerConfig controls which direct peers may supply the client address.
+type ServerConfig struct {
+	// TrustedProxies accepts IPv4/IPv6 CIDRs; an empty list trusts no proxy.
+	// netip.Prefix validates each CIDR while the configuration is loaded.
+	TrustedProxies []netip.Prefix `yaml:"trusted_proxies"`
+}
+
+func (c *ServerConfig) UnmarshalYAML(node *yaml.Node) error {
+	// Pointers retain null list entries, which yaml would otherwise discard.
+	// Leave them as invalid prefixes for Load's validation below.
+	var raw struct {
+		TrustedProxies []*netip.Prefix `yaml:"trusted_proxies"`
+	}
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+	c.TrustedProxies = make([]netip.Prefix, len(raw.TrustedProxies))
+	for i, prefix := range raw.TrustedProxies {
+		if prefix != nil {
+			c.TrustedProxies[i] = *prefix
+		}
+	}
+	return nil
 }
 
 // ResolvedConfig holds all runtime configuration with defaults applied.
 type ResolvedConfig struct {
-	TelemetryResolution time.Duration
-	TelemetryRetention  time.Duration
-	PacketRetention     time.Duration
-	MaxConnsPerIP       int
-	ViewRefreshInterval time.Duration
-	ReconfirmInterval   time.Duration
-	CleanupInterval     time.Duration
+	RateLimit            ResolvedRateLimitConfig
+	TelemetryResolution  time.Duration
+	TelemetryRetention   time.Duration
+	RollupRetention      time.Duration
+	PacketRetention      time.Duration
+	RouteRetention       time.Duration
+	RouteGrace           time.Duration
+	RouteMinObservations int
+	MaxConnsPerIP        int
+	MaxConnectsPerMinute int
+	ViewRefreshInterval  time.Duration
+	ReconfirmInterval    time.Duration
+	CleanupInterval      time.Duration
 
 	PresenceFlushInterval time.Duration
 	PresencePacketTTL     time.Duration
@@ -51,8 +113,23 @@ type ResolvedConfig struct {
 
 	// NodeStaleThreshold and NodeDeleteAfter mirror ClockDriftThreshold's "0 means unset,
 	// resolve to a default" pattern -- see NodesConfig.
-	NodeStaleThreshold time.Duration
-	NodeDeleteAfter    time.Duration
+	NodeStaleThreshold  time.Duration
+	NodeDeleteAfter     time.Duration
+	ObserverDeleteAfter time.Duration
+}
+
+// RateLimitConfig controls the per-client REST API request budget.
+type RateLimitConfig struct {
+	Enabled           *bool `yaml:"enabled"` // Defaults to true; false disables both windows.
+	RequestsPerMinute int   `yaml:"requests_per_minute"`
+	Burst             int   `yaml:"burst"` // One-second window cap, not token-bucket capacity.
+}
+
+// ResolvedRateLimitConfig has defaults applied and no optional values.
+type ResolvedRateLimitConfig struct {
+	Enabled           bool
+	RequestsPerMinute int
+	Burst             int
 }
 
 // PresenceConfig controls coalescing of presence bookkeeping writes
@@ -126,7 +203,7 @@ type CacheConfig struct {
 type CacheTTLsConfig struct {
 	// Stats controls the TTL for aggregated network statistics endpoints
 	// (overview, observations, payload breakdown, top nodes/observers, radio presets, scope stats).
-	// These are backed by materialized views refreshed hourly, so values under 1m are rarely useful.
+	// Rollup-backed keys also change with the rollup revision.
 	Stats duration `yaml:"stats"`
 
 	// Reference controls the TTL for mostly-static reference data
@@ -147,13 +224,14 @@ type CacheTTLsConfig struct {
 // Name can be provided with or without the # or $ prefix.
 // Beacon normalizes plain names by prepending #.
 type ScopeConfig struct {
-	Name string `yaml:"name"` // e.g. "bc", "#west", "$private"
+	Name   string `yaml:"name"`   // e.g. "bc", "#west", "$private"
+	Region string `yaml:"region"` // configured region slug; lists the scope under that region's IATAs
 }
 
 // TelemetryConfig controls observer telemetry storage behaviour.
 type TelemetryConfig struct {
 	// Retention is how long telemetry rows are kept before the cleanup job removes them.
-	// Defaults to 672h (4 weeks) if not set.
+	// Defaults to 744h (31 days) if not set.
 	Retention duration `yaml:"retention"`
 
 	// Resolution is how frequently a telemetry snapshot is stored per observer.
@@ -168,17 +246,45 @@ type WebSocketConfig struct {
 	// MaxConnectionsPerIP is the maximum number of concurrent WebSocket
 	// connections allowed from a single IP address. Defaults to 5 if not set.
 	MaxConnectionsPerIP int `yaml:"max_connections_per_ip"`
+	// MaxConnectsPerMinute limits upgrade attempts, including failed handshakes.
+	// Zero/omitted defaults to 10; IPv6 addresses share a /64 attempt budget.
+	MaxConnectsPerMinute int `yaml:"max_connects_per_minute"`
+	// AllowedOrigins are extra origins allowed to open /ws: exact, or scheme://*.domain[:port]
+	// for every subdomain of domain (never the apex). Defaults to same-host only.
+	AllowedOrigins []string `yaml:"allowed_origins"`
 }
 
 // PacketsConfig controls packet retention behaviour.
 type PacketsConfig struct {
-	// Retention is how long packet and observation rows are kept.
-	// Defaults to 720h (30 days) if not set.
+	// Retention covers packets, observations and channel messages. Defaults to 168h.
 	Retention duration `yaml:"retention"`
+}
+
+// AnalyticsConfig controls hourly rollup retention behaviour.
+type AnalyticsConfig struct {
+	// RollupRetention is how long hourly rollups are kept and the longest window /stats/series accepts. Defaults to 2160h (90 days).
+	RollupRetention duration `yaml:"rollup_retention"`
+}
+
+// RoutesConfig controls known-route retention behaviour.
+type RoutesConfig struct {
+	// Retention is how long a route is kept after it was last observed.
+	// Defaults to 336h (14 days) if not set.
+	Retention duration `yaml:"retention"`
+	// Grace is how long a route observed fewer than MinObservations times is
+	// kept. Defaults to 168h (7 days) if not set.
+	Grace duration `yaml:"grace"`
+	// MinObservations is the observation count below which Grace applies
+	// instead of Retention. Defaults to 3 if not set.
+	MinObservations int `yaml:"min_observations"`
 }
 
 // NodesConfig controls node-derived signal thresholds.
 type NodesConfig struct {
+	// MarkForeign annotates repeaters outside the union of IATA borders, with
+	// imported MeshMapper boundaries replacing border files. Disabled by default;
+	// enabling it requires a border file or meshmapper.zones.
+	MarkForeign bool `yaml:"mark_foreign"`
 	// ClockDriftThreshold is the |device clock - server clock| magnitude, measured from a
 	// repeater/room server's ADVERT timestamp, above which the node API reports
 	// clockOutOfSync=true for that node. Defaults to 5m if not set.
@@ -187,8 +293,15 @@ type NodesConfig struct {
 	// stale=true for it. Defaults to 24h if not set.
 	StaleThreshold duration `yaml:"stale_threshold"`
 	// DeleteAfter is how long since a node's last_seen before the cleanup job deletes the
-	// node entirely. Defaults to the same 30-day default as packets.retention if not set --
-	// independently configurable from it, just the same starting point.
+	// node entirely. Defaults to 720h (30 days) if not set.
+	DeleteAfter duration `yaml:"delete_after"`
+}
+
+// ObserversConfig controls optional observer age-out.
+type ObserversConfig struct {
+	// DeleteAfter is how long an observer must be unseen before it can be deleted.
+	// Omitted or nonpositive disables age-out. Retained packet observations,
+	// telemetry and ownership records always protect the observer from deletion.
 	DeleteAfter duration `yaml:"delete_after"`
 }
 
@@ -216,9 +329,9 @@ func (d *duration) UnmarshalYAML(value *yaml.Node) error {
 // channel_hash = SHA256(secret)[0]. Explicit keys are provided as hex strings
 // keyed by the channel hash hex (e.g. "11" for 0x11).
 type ChannelKeysConfig struct {
-	// Hashtags is a list of hashtag names (without the # prefix).
+	// Hashtags lists hashtag names (without the # prefix), each optionally scoped to a region.
 	// Beacon derives the PSK and channel hash automatically.
-	Hashtags []string `yaml:"hashtags"`
+	Hashtags []HashtagConfig `yaml:"hashtags"`
 
 	// Keys maps channel hash hex → explicit key config.
 	Keys map[string]ExplicitKeyConfig `yaml:"keys"`
@@ -226,8 +339,9 @@ type ChannelKeysConfig struct {
 
 // ExplicitKeyConfig holds an explicit channel key and optional display name.
 type ExplicitKeyConfig struct {
-	Key  string `yaml:"key"`  // hex-encoded key bytes
-	Name string `yaml:"name"` // optional display name
+	Key    string `yaml:"key"`    // hex-encoded key bytes
+	Name   string `yaml:"name"`   // optional display name
+	Region string `yaml:"region"` // optional region slug; empty lists the channel Beacon-wide
 }
 
 // IATAConfig holds optional overrides for a known IATA code.
@@ -279,6 +393,10 @@ func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			cfg.Auth.APIKey = os.Getenv("BEACON_API_KEY")
+			if err := cfg.validateAPIKey(); err != nil {
+				return nil, err
+			}
 			return cfg, nil
 		}
 		return nil, err
@@ -286,7 +404,50 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
+	if value, set := os.LookupEnv("BEACON_API_KEY"); set {
+		cfg.Auth.APIKey = value
+	}
+	if err := cfg.validateAPIKey(); err != nil {
+		return nil, err
+	}
+	if err := cfg.validateDurations(); err != nil {
+		return nil, err
+	}
+	for i, prefix := range cfg.Server.TrustedProxies {
+		if !prefix.IsValid() {
+			return nil, fmt.Errorf("server.trusted_proxies[%d] must be a valid CIDR", i)
+		}
+	}
+	if cfg.RateLimit.RequestsPerMinute < 0 || cfg.RateLimit.Burst < 0 {
+		return nil, fmt.Errorf("ratelimit.requests_per_minute and ratelimit.burst must be positive or zero for defaults")
+	}
+	if cfg.WebSocket.MaxConnectsPerMinute < 0 {
+		return nil, fmt.Errorf("websocket.max_connects_per_minute must be positive or zero for the default")
+	}
+	for i, origin := range cfg.WebSocket.AllowedOrigins {
+		if err := validateOrigin(origin); err != nil {
+			return nil, fmt.Errorf("websocket.allowed_origins[%d]: %w", i, err)
+		}
+	}
+	if d := cfg.Packets.Retention.Duration; d != 0 && d < 24*time.Hour {
+		return nil, fmt.Errorf("packets.retention must be at least 24h")
+	}
+	if d := cfg.Analytics.RollupRetention.Duration; d != 0 && d < 24*time.Hour {
+		return nil, fmt.Errorf("analytics.rollup_retention must be at least 24h")
+	}
 	configDir := filepath.Dir(path)
+	if err := cfg.validateMeshMapper(); err != nil {
+		return nil, err
+	}
+	if err := cfg.validateChannelKeys(); err != nil {
+		return nil, err
+	}
+	if err := cfg.validateScopes(); err != nil {
+		return nil, err
+	}
+	if cfg.Nodes.MarkForeign && !cfg.MeshMapper.Zones.Enabled && !cfg.hasBorderFile() {
+		return nil, fmt.Errorf("nodes.mark_foreign requires an iatas.*.borderFile or meshmapper.zones")
+	}
 	for iata, details := range cfg.IATAs {
 		if details.BorderFile != "" && !filepath.IsAbs(details.BorderFile) {
 			details.BorderFile = filepath.Join(configDir, details.BorderFile)
@@ -296,16 +457,100 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// minAPIKeyLength keeps the admin key out of guessing range.
+const minAPIKeyLength = 16
+
+// validateAPIKey trims the key, since Bearer tokens can't carry whitespace; errors never echo it.
+func (c *Config) validateAPIKey() error {
+	c.Auth.APIKey = strings.TrimSpace(c.Auth.APIKey)
+	switch key := c.Auth.APIKey; {
+	case key == "":
+		return nil
+	case strings.IndexFunc(key, unicode.IsSpace) >= 0:
+		return fmt.Errorf("auth.api_key / BEACON_API_KEY must not contain whitespace")
+	case len(key) < minAPIKeyLength:
+		return fmt.Errorf("auth.api_key / BEACON_API_KEY must be at least %d characters", minAPIKeyLength)
+	}
+	return nil
+}
+
+// validateDurations rejects negative intervals, which would otherwise panic tickers or invert cutoffs.
+// observers.delete_after is exempt: nonpositive disables it.
+func (c *Config) validateDurations() error {
+	for _, d := range []struct {
+		key   string
+		value duration
+	}{
+		{"presence.flush_interval", c.Presence.FlushInterval},
+		{"presence.packet_ttl", c.Presence.PacketTTL},
+		{"background.view_refresh", c.Background.ViewRefresh},
+		{"background.reconfirm", c.Background.Reconfirm},
+		{"background.cleanup", c.Background.Cleanup},
+		{"cache.ttl", c.Cache.TTL},
+		{"cache.ttls.stats", c.Cache.TTLs.Stats},
+		{"cache.ttls.reference", c.Cache.TTLs.Reference},
+		{"cache.ttls.nodes", c.Cache.TTLs.Nodes},
+		{"cache.ttls.observers", c.Cache.TTLs.Observers},
+		{"telemetry.retention", c.Telemetry.Retention},
+		{"telemetry.resolution", c.Telemetry.Resolution},
+		{"routes.retention", c.Routes.Retention},
+		{"routes.grace", c.Routes.Grace},
+		{"nodes.clock_drift_threshold", c.Nodes.ClockDriftThreshold},
+		{"nodes.stale_threshold", c.Nodes.StaleThreshold},
+		{"nodes.delete_after", c.Nodes.DeleteAfter},
+		{"meshmapper.scopes.refresh_interval", c.MeshMapper.Scopes.RefreshInterval},
+		{"meshmapper.zones.refresh_interval", c.MeshMapper.Zones.RefreshInterval},
+		{"meshmapper.channels.refresh_interval", c.MeshMapper.Channels.RefreshInterval},
+	} {
+		if d.value.Duration < 0 {
+			return fmt.Errorf("%s must not be negative (omit it or use 0 for the default)", d.key)
+		}
+	}
+	return nil
+}
+
+// validateOrigin allows exact origins or a leading "*." subdomain wildcard; the WebSocket
+// library treats entries as path.Match patterns, so every other pattern character is rejected.
+func validateOrigin(origin string) error {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return fmt.Errorf("invalid origin %q: %w", origin, err)
+	}
+	host := u.Hostname()
+	// At least two labels after the wildcard, so it never spans a whole TLD.
+	if rest, ok := strings.CutPrefix(host, "*."); ok {
+		if labels := strings.Split(rest, "."); len(labels) >= 2 && !slices.Contains(labels, "") {
+			host = rest
+		}
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+		u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" ||
+		strings.Contains(host, "*") || strings.ContainsAny(origin, `?[]\`) {
+		return fmt.Errorf("origin %q must be scheme://host[:port] or scheme://*.domain[:port] with an http or https scheme", origin)
+	}
+	return nil
+}
+
 // Resolve returns a ResolvedConfig with defaults applied for any zero values.
 func Resolve(cfg *Config) ResolvedConfig {
 	r := ResolvedConfig{
-		TelemetryResolution: cfg.Telemetry.Resolution.Duration,
-		TelemetryRetention:  cfg.Telemetry.Retention.Duration,
-		PacketRetention:     cfg.Packets.Retention.Duration,
-		MaxConnsPerIP:       cfg.WebSocket.MaxConnectionsPerIP,
-		ViewRefreshInterval: cfg.Background.ViewRefresh.Duration,
-		ReconfirmInterval:   cfg.Background.Reconfirm.Duration,
-		CleanupInterval:     cfg.Background.Cleanup.Duration,
+		RateLimit: ResolvedRateLimitConfig{
+			Enabled:           cfg.RateLimit.Enabled == nil || *cfg.RateLimit.Enabled,
+			RequestsPerMinute: cfg.RateLimit.RequestsPerMinute,
+			Burst:             cfg.RateLimit.Burst,
+		},
+		TelemetryResolution:  cfg.Telemetry.Resolution.Duration,
+		TelemetryRetention:   cfg.Telemetry.Retention.Duration,
+		RollupRetention:      cfg.Analytics.RollupRetention.Duration,
+		PacketRetention:      cfg.Packets.Retention.Duration,
+		RouteRetention:       cfg.Routes.Retention.Duration,
+		RouteGrace:           cfg.Routes.Grace.Duration,
+		RouteMinObservations: cfg.Routes.MinObservations,
+		MaxConnsPerIP:        cfg.WebSocket.MaxConnectionsPerIP,
+		MaxConnectsPerMinute: cfg.WebSocket.MaxConnectsPerMinute,
+		ViewRefreshInterval:  cfg.Background.ViewRefresh.Duration,
+		ReconfirmInterval:    cfg.Background.Reconfirm.Duration,
+		CleanupInterval:      cfg.Background.Cleanup.Duration,
 
 		PresenceFlushInterval: cfg.Presence.FlushInterval.Duration,
 		PresencePacketTTL:     cfg.Presence.PacketTTL.Duration,
@@ -313,18 +558,40 @@ func Resolve(cfg *Config) ResolvedConfig {
 		ClockDriftThreshold: cfg.Nodes.ClockDriftThreshold.Duration,
 		NodeStaleThreshold:  cfg.Nodes.StaleThreshold.Duration,
 		NodeDeleteAfter:     cfg.Nodes.DeleteAfter.Duration,
+		ObserverDeleteAfter: cfg.Observers.DeleteAfter.Duration,
+	}
+	if r.RateLimit.RequestsPerMinute == 0 {
+		r.RateLimit.RequestsPerMinute = 300
+	}
+	if r.RateLimit.Burst == 0 {
+		r.RateLimit.Burst = r.RateLimit.RequestsPerMinute
 	}
 	if r.TelemetryResolution == 0 {
 		r.TelemetryResolution = time.Hour
 	}
 	if r.TelemetryRetention == 0 {
-		r.TelemetryRetention = 28 * 24 * time.Hour
+		r.TelemetryRetention = 31 * 24 * time.Hour
+	}
+	if r.RollupRetention == 0 {
+		r.RollupRetention = 90 * 24 * time.Hour
 	}
 	if r.PacketRetention == 0 {
-		r.PacketRetention = 30 * 24 * time.Hour
+		r.PacketRetention = 7 * 24 * time.Hour
+	}
+	if r.RouteRetention == 0 {
+		r.RouteRetention = 14 * 24 * time.Hour
+	}
+	if r.RouteGrace == 0 {
+		r.RouteGrace = 7 * 24 * time.Hour
+	}
+	if r.RouteMinObservations == 0 {
+		r.RouteMinObservations = 3
 	}
 	if r.MaxConnsPerIP == 0 {
 		r.MaxConnsPerIP = 5
+	}
+	if r.MaxConnectsPerMinute == 0 {
+		r.MaxConnectsPerMinute = 10
 	}
 	if r.ViewRefreshInterval == 0 {
 		r.ViewRefreshInterval = time.Hour
@@ -348,8 +615,6 @@ func Resolve(cfg *Config) ResolvedConfig {
 		r.NodeStaleThreshold = 24 * time.Hour
 	}
 	if r.NodeDeleteAfter == 0 {
-		// Same default as packets.retention (30 days) -- independently configurable, just
-		// the same starting point, not tied to whatever PacketRetention resolves to.
 		r.NodeDeleteAfter = 30 * 24 * time.Hour
 	}
 	return r
@@ -357,10 +622,11 @@ func Resolve(cfg *Config) ResolvedConfig {
 
 func (r ResolvedConfig) String() string {
 	return fmt.Sprintf(
-		"telemetryResolution=%s telemetryRetention=%s packetRetention=%s maxConnsPerIP=%d viewRefresh=%s reconfirm=%s cleanup=%s presenceFlush=%s presencePacketTTL=%s clockDriftThreshold=%s nodeStaleThreshold=%s nodeDeleteAfter=%s",
-		r.TelemetryResolution, r.TelemetryRetention, r.PacketRetention,
-		r.MaxConnsPerIP, r.ViewRefreshInterval, r.ReconfirmInterval, r.CleanupInterval,
+		"telemetryResolution=%s telemetryRetention=%s rollupRetention=%s packetRetention=%s routeRetention=%s routeGrace=%s routeMinObs=%d maxConnsPerIP=%d maxConnectsPerMinute=%d viewRefresh=%s reconfirm=%s cleanup=%s presenceFlush=%s presencePacketTTL=%s clockDriftThreshold=%s nodeStaleThreshold=%s nodeDeleteAfter=%s observerDeleteAfter=%s rateLimitEnabled=%t requestsPerMinute=%d burst=%d",
+		r.TelemetryResolution, r.TelemetryRetention, r.RollupRetention, r.PacketRetention, r.RouteRetention, r.RouteGrace, r.RouteMinObservations,
+		r.MaxConnsPerIP, r.MaxConnectsPerMinute, r.ViewRefreshInterval, r.ReconfirmInterval, r.CleanupInterval,
 		r.PresenceFlushInterval, r.PresencePacketTTL, r.ClockDriftThreshold,
-		r.NodeStaleThreshold, r.NodeDeleteAfter,
+		r.NodeStaleThreshold, r.NodeDeleteAfter, r.ObserverDeleteAfter,
+		r.RateLimit.Enabled, r.RateLimit.RequestsPerMinute, r.RateLimit.Burst,
 	)
 }

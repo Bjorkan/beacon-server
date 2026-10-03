@@ -9,6 +9,148 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Account struct {
+	ID            uuid.UUID          `json:"id"`
+	Name          string             `json:"name"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	DeactivatedAt pgtype.Timestamptz `json:"deactivated_at"`
+}
+
+type AnalyticsDirtyHour struct {
+	Hour       pgtype.Timestamptz `json:"hour"`
+	EnqueuedAt pgtype.Timestamptz `json:"enqueued_at"`
+}
+
+type AnalyticsHourlyAdvertHearing struct {
+	Hour         pgtype.Timestamptz `json:"hour"`
+	Iata         string             `json:"iata"`
+	OriginPubkey []byte             `json:"origin_pubkey"`
+	Observations int64              `json:"observations"`
+	LastHeard    pgtype.Timestamptz `json:"last_heard"`
+	Name         *string            `json:"name"`
+	NodeType     *int16             `json:"node_type"`
+}
+
+type AnalyticsHourlyAdvertSet struct {
+	Hour          pgtype.Timestamptz `json:"hour"`
+	OriginPubkey  []byte             `json:"origin_pubkey"`
+	Iatas         []string           `json:"iatas"`
+	AdvertPackets int64              `json:"advert_packets"`
+	FloodPackets  int64              `json:"flood_packets"`
+	DirectPackets int64              `json:"direct_packets"`
+}
+
+type AnalyticsHourlyIataObservation struct {
+	Hour             pgtype.Timestamptz `json:"hour"`
+	Iata             string             `json:"iata"`
+	ObservationCount int64              `json:"observation_count"`
+}
+
+type AnalyticsHourlyObserverActivity struct {
+	Hour         pgtype.Timestamptz `json:"hour"`
+	ObserverID   uuid.UUID          `json:"observer_id"`
+	PayloadType  int16              `json:"payload_type"`
+	Observations int64              `json:"observations"`
+	AirtimeMs    *float32           `json:"airtime_ms"`
+	AirtimeN     int64              `json:"airtime_n"`
+	SnrSum       *float32           `json:"snr_sum"`
+	SnrN         int64              `json:"snr_n"`
+	SnrMin       *float32           `json:"snr_min"`
+	RssiSum      *int64             `json:"rssi_sum"`
+	RssiN        int64              `json:"rssi_n"`
+}
+
+type AnalyticsHourlyObserverIdentity struct {
+	Hour             pgtype.Timestamptz `json:"hour"`
+	Iata             string             `json:"iata"`
+	ObserverID       uuid.UUID          `json:"observer_id"`
+	ObservationCount int64              `json:"observation_count"`
+	DisplayName      *string            `json:"display_name"`
+	ObserverType     *string            `json:"observer_type"`
+}
+
+type AnalyticsHourlyPacketSet struct {
+	Hour    pgtype.Timestamptz `json:"hour"`
+	Iatas   []string           `json:"iatas"`
+	Packets int64              `json:"packets"`
+}
+
+type AnalyticsHourlyPath struct {
+	Hour       pgtype.Timestamptz `json:"hour"`
+	Iata       string             `json:"iata"`
+	Category   int32              `json:"category"`
+	HashBytes  int32              `json:"hash_bytes"`
+	Entries    int32              `json:"entries"`
+	Receptions int64              `json:"receptions"`
+}
+
+type AnalyticsHourlyPayloadBreakdown struct {
+	Hour        pgtype.Timestamptz `json:"hour"`
+	Iata        string             `json:"iata"`
+	PayloadType int16              `json:"payload_type"`
+	Count       int64              `json:"count"`
+}
+
+type AnalyticsHourlyScopeNode struct {
+	Hour         pgtype.Timestamptz `json:"hour"`
+	Iata         string             `json:"iata"`
+	ScopeID      int32              `json:"scope_id"`
+	OriginPubkey []byte             `json:"origin_pubkey"`
+}
+
+type AnalyticsHourlyScopeObserver struct {
+	Hour       pgtype.Timestamptz `json:"hour"`
+	Iata       string             `json:"iata"`
+	ScopeID    int32              `json:"scope_id"`
+	ObserverID uuid.UUID          `json:"observer_id"`
+}
+
+type AnalyticsHourlyScopeSet struct {
+	Hour    pgtype.Timestamptz `json:"hour"`
+	Iatas   []string           `json:"iatas"`
+	ScopeID int32              `json:"scope_id"`
+	Packets int64              `json:"packets"`
+}
+
+type AnalyticsHourlySignal struct {
+	Hour        pgtype.Timestamptz `json:"hour"`
+	Iata        string             `json:"iata"`
+	Kind        int32              `json:"kind"`
+	SnrBin      int32              `json:"snr_bin"`
+	RssiBin     int32              `json:"rssi_bin"`
+	Receptions  int64              `json:"receptions"`
+	SnrSamples  int64              `json:"snr_samples"`
+	SnrSum      float64            `json:"snr_sum"`
+	RssiSamples int64              `json:"rssi_samples"`
+	RssiSum     float64            `json:"rssi_sum"`
+}
+
+type AnalyticsHourlyTalkerSet struct {
+	Hour       pgtype.Timestamptz `json:"hour"`
+	SenderName string             `json:"sender_name"`
+	Iatas      []string           `json:"iatas"`
+	Messages   int64              `json:"messages"`
+	LastSent   pgtype.Timestamptz `json:"last_sent"`
+}
+
+type AnalyticsRawState struct {
+	Singleton        bool               `json:"singleton"`
+	RawDeletedBefore pgtype.Timestamptz `json:"raw_deleted_before"`
+	Coverage         int64              `json:"coverage"`
+}
+
+type AnalyticsRollupHour struct {
+	Hour        pgtype.Timestamptz `json:"hour"`
+	Status      string             `json:"status"`
+	RolledAt    pgtype.Timestamptz `json:"rolled_at"`
+	ContentHash *string            `json:"content_hash"`
+}
+
+type AnalyticsState struct {
+	Singleton bool  `json:"singleton"`
+	Revision  int64 `json:"revision"`
+}
+
 type Channel struct {
 	ID             int32              `json:"id"`
 	ChannelHash    []byte             `json:"channel_hash"`
@@ -20,7 +162,12 @@ type Channel struct {
 	KeyKnown       *bool              `json:"key_known"`
 	FirstSeen      pgtype.Timestamptz `json:"first_seen"`
 	LastSeen       pgtype.Timestamptz `json:"last_seen"`
-	MessageCount   *int64             `json:"message_count"`
+	MessageCount   int64              `json:"message_count"`
+}
+
+type ChannelConfigScope struct {
+	KeyFingerprint []byte  `json:"key_fingerprint"`
+	RegionSlug     *string `json:"region_slug"`
 }
 
 type ChannelIata struct {
@@ -57,72 +204,71 @@ type IataCode struct {
 }
 
 type KnownRoute struct {
-	ID               int64              `json:"id"`
-	NodeIds          []uuid.UUID        `json:"node_ids"`
-	HashPrefix       [][]byte           `json:"hash_prefix"`
-	Iata             string             `json:"iata"`
-	HopCount         int32              `json:"hop_count"`
-	FirstSeen        pgtype.Timestamptz `json:"first_seen"`
-	LastSeen         pgtype.Timestamptz `json:"last_seen"`
-	ObservationCount int64              `json:"observation_count"`
+	ID                int64              `json:"id"`
+	PathKey           []byte             `json:"path_key"`
+	NodeIds           []uuid.UUID        `json:"node_ids"`
+	HashPrefix        [][]byte           `json:"hash_prefix"`
+	Iata              string             `json:"iata"`
+	HopCount          int32              `json:"hop_count"`
+	FirstSeen         pgtype.Timestamptz `json:"first_seen"`
+	LastSeen          pgtype.Timestamptz `json:"last_seen"`
+	ObservationCount  int64              `json:"observation_count"`
+	LastReconfirmedAt pgtype.Timestamptz `json:"last_reconfirmed_at"`
 }
 
-type MvHourlyIataStat struct {
-	Iata             string             `json:"iata"`
-	Hour             pgtype.Timestamptz `json:"hour"`
-	ObservationCount int64              `json:"observation_count"`
-	UniquePackets    int64              `json:"unique_packets"`
-	ActiveObservers  int64              `json:"active_observers"`
-}
-
-type MvPayloadBreakdownByIatum struct {
+type MeshmapperChannelCatalogue struct {
 	Iata        string             `json:"iata"`
-	PayloadType *int16             `json:"payload_type"`
-	Bucket      pgtype.Timestamptz `json:"bucket"`
-	Count       int64              `json:"count"`
+	Url         string             `json:"url"`
+	Payload     []byte             `json:"payload"`
+	Etag        *string            `json:"etag"`
+	CheckedAt   pgtype.Timestamptz `json:"checked_at"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+	NextAttempt pgtype.Timestamptz `json:"next_attempt"`
+	LastError   string             `json:"last_error"`
+}
+
+type MeshmapperChannelMember struct {
+	Iata           string `json:"iata"`
+	KeyFingerprint []byte `json:"key_fingerprint"`
+}
+
+type MeshmapperScopeCatalogue struct {
+	Iata        string             `json:"iata"`
+	Url         string             `json:"url"`
+	Payload     []byte             `json:"payload"`
+	Etag        *string            `json:"etag"`
+	CheckedAt   pgtype.Timestamptz `json:"checked_at"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+	NextAttempt pgtype.Timestamptz `json:"next_attempt"`
+	LastError   string             `json:"last_error"`
+}
+
+type MeshmapperZoneBoundary struct {
+	Iata        string             `json:"iata"`
+	Url         string             `json:"url"`
+	Feature     []byte             `json:"feature"`
+	Etag        *string            `json:"etag"`
+	CheckedAt   pgtype.Timestamptz `json:"checked_at"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+	NextAttempt pgtype.Timestamptz `json:"next_attempt"`
+	LastError   string             `json:"last_error"`
+}
+
+type MeshmapperZoneList struct {
+	Country     string             `json:"country"`
+	Payload     []byte             `json:"payload"`
+	Etag        *string            `json:"etag"`
+	FetchedAt   pgtype.Timestamptz `json:"fetched_at"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+	NextAttempt pgtype.Timestamptz `json:"next_attempt"`
+	LastError   string             `json:"last_error"`
 }
 
 type MvRadioPreset struct {
-	Preset     string `json:"preset"`
-	Iata       string `json:"iata"`
-	SourceType string `json:"source_type"`
-	Count      int64  `json:"count"`
-}
-
-type MvTopAdvertisersByIatum struct {
-	Iata        string             `json:"iata"`
-	NodeID      uuid.UUID          `json:"node_id"`
-	Name        *string            `json:"name"`
-	NodeType    int16              `json:"node_type"`
-	Bucket      pgtype.Timestamptz `json:"bucket"`
-	AdvertCount int64              `json:"advert_count"`
-	LastHeard   interface{}        `json:"last_heard"`
-}
-
-type MvTopNodesByIatum struct {
-	Iata             string             `json:"iata"`
-	NodeID           uuid.UUID          `json:"node_id"`
-	Name             *string            `json:"name"`
-	NodeType         int16              `json:"node_type"`
-	ObservationCount *int64             `json:"observation_count"`
-	LastHeard        pgtype.Timestamptz `json:"last_heard"`
-}
-
-type MvTopObserversByIatum struct {
-	Iata             string             `json:"iata"`
-	ObserverID       uuid.UUID          `json:"observer_id"`
-	DisplayName      *string            `json:"display_name"`
-	ObserverType     *string            `json:"observer_type"`
-	Bucket           pgtype.Timestamptz `json:"bucket"`
-	ObservationCount int64              `json:"observation_count"`
-}
-
-type MvTopTalkersByIatum struct {
-	Iata         string             `json:"iata"`
-	SenderName   *string            `json:"sender_name"`
-	Bucket       pgtype.Timestamptz `json:"bucket"`
-	MessageCount int64              `json:"message_count"`
-	LastSent     interface{}        `json:"last_sent"`
+	Preset     string  `json:"preset"`
+	Iata       *string `json:"iata"`
+	SourceType string  `json:"source_type"`
+	Count      int64   `json:"count"`
 }
 
 type Node struct {
@@ -163,6 +309,7 @@ type NodeNeighbor struct {
 	LastSeen         pgtype.Timestamptz `json:"last_seen"`
 	ObservationCount int64              `json:"observation_count"`
 	Snr              *float32           `json:"snr"`
+	RegionScope      *string            `json:"region_scope"`
 }
 
 type NodeShortID struct {
@@ -195,6 +342,9 @@ type Observer struct {
 	LastSeen         pgtype.Timestamptz `json:"last_seen"`
 	ObservationCount *int64             `json:"observation_count"`
 	Metadata         []byte             `json:"metadata"`
+	RegionScope      *string            `json:"region_scope"`
+	LastIata         *string            `json:"last_iata"`
+	LastIataAt       pgtype.Timestamptz `json:"last_iata_at"`
 }
 
 type ObserverBroker struct {
@@ -238,8 +388,8 @@ type ObserverTelemetry struct {
 	ObserverID       uuid.UUID          `json:"observer_id"`
 	ReportedAt       pgtype.Timestamptz `json:"reported_at"`
 	BatteryVoltageMv *int32             `json:"battery_voltage_mv"`
-	AirtimeTxPct     *float32           `json:"airtime_tx_pct"`
-	AirtimeRxPct     *float32           `json:"airtime_rx_pct"`
+	AirtimeTxSecs    *float32           `json:"airtime_tx_secs"`
+	AirtimeRxSecs    *float32           `json:"airtime_rx_secs"`
 	NoiseFloorDb     *float32           `json:"noise_floor_db"`
 	UptimeSeconds    *int64             `json:"uptime_seconds"`
 	QueueLength      *int32             `json:"queue_length"`
@@ -265,6 +415,7 @@ type Packet struct {
 	TraceTag              []byte             `json:"trace_tag"`
 	FirstHeardAt          pgtype.Timestamptz `json:"first_heard_at"`
 	LastHeardAt           pgtype.Timestamptz `json:"last_heard_at"`
+	ObservationCount      int64              `json:"observation_count"`
 }
 
 type PacketObservation struct {
@@ -286,6 +437,7 @@ type PacketObservation struct {
 	CodingRate        *int16             `json:"coding_rate"`
 	SourceBroker      *string            `json:"source_broker"`
 	PayloadType       *int16             `json:"payload_type"`
+	AirtimeMs         *float32           `json:"airtime_ms"`
 }
 
 type Region struct {
@@ -299,6 +451,7 @@ type Region struct {
 	ZoomLevel    *int32             `json:"zoom_level"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	Imported     bool               `json:"imported"`
 }
 
 type RegionIata struct {
@@ -307,10 +460,40 @@ type RegionIata struct {
 	AddedAt  pgtype.Timestamptz `json:"added_at"`
 }
 
+type RollupOb struct {
+	PacketHash     []byte             `json:"packet_hash"`
+	ObserverID     uuid.UUID          `json:"observer_id"`
+	Iata           string             `json:"iata"`
+	HeardAt        pgtype.Timestamptz `json:"heard_at"`
+	PathLengthByte int16              `json:"path_length_byte"`
+	HashSize       int16              `json:"hash_size"`
+	HopCount       int16              `json:"hop_count"`
+	PathLen        int32              `json:"path_len"`
+	Rssi           *int16             `json:"rssi"`
+	Snr            *float32           `json:"snr"`
+	AirtimeMs      *float32           `json:"airtime_ms"`
+	PayloadType    *int16             `json:"payload_type"`
+	RouteType      int16              `json:"route_type"`
+	OriginPubkey   []byte             `json:"origin_pubkey"`
+	ScopeID        *int32             `json:"scope_id"`
+}
+
 type TraceIata struct {
 	TraceTag  []byte             `json:"trace_tag"`
 	Iata      string             `json:"iata"`
 	LastHeard pgtype.Timestamptz `json:"last_heard"`
+}
+
+type TraceTag struct {
+	TraceTag     []byte             `json:"trace_tag"`
+	FirstHeardAt pgtype.Timestamptz `json:"first_heard_at"`
+	LastHeardAt  pgtype.Timestamptz `json:"last_heard_at"`
+	PacketCount  int64              `json:"packet_count"`
+	TraceType    *string            `json:"trace_type"`
+	ScopeID      *int32             `json:"scope_id"`
+	BestPayload  []byte             `json:"best_payload"`
+	BestPathLen  int32              `json:"best_path_len"`
+	Heard        bool               `json:"heard"`
 }
 
 type TransportScope struct {
@@ -320,4 +503,5 @@ type TransportScope struct {
 	TransportKey   []byte             `json:"transport_key"`
 	KeyFingerprint []byte             `json:"key_fingerprint"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ImportedOnly   bool               `json:"imported_only"`
 }

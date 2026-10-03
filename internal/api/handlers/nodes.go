@@ -5,6 +5,7 @@ package handlers
 
 import (
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // NodesRouter mounts all /nodes routes onto a subrouter.
@@ -49,7 +51,7 @@ func NodesRouter(reader api.Reader) http.Handler {
 //	@Param		supportsMultibyteTraces	query		bool	false	"Filter by multibyte trace support (true/false); omit for no filter"
 //	@Param		neighbors				query		bool	false	"Include each node's known neighbor IDs (neighborIds field). Bare ?neighbors or ?neighbors=true enables it; omit/false for none"
 //	@Param		cursor					query		int		false	"last_seen epoch ms of last item for pagination"
-//	@Param		limit					query		int		false	"Max results (default 50)"
+//	@Param		limit					query		int		false	"Max results (default 50); must be positive, values above 200 are clamped" minimum(1) maximum(200)
 //	@Success	200						{object}	api.Page[api.NodeSummary]
 //	@Failure	400						{object}	handlers.APIError
 //	@Failure	500						{object}	handlers.APIError
@@ -67,14 +69,10 @@ func listNodes(reader api.Reader) http.HandlerFunc {
 		} else if typeName := r.URL.Query().Get("typeName"); typeName != "" {
 			nodeType = api.NodeTypeFromString(typeName)
 		}
-		var limit int32 = 50
-		if limitParam := r.URL.Query().Get("limit"); limitParam != "" {
-			l, err := strconv.ParseInt(limitParam, 10, 32)
-			if err != nil {
-				respondError(w, http.StatusBadRequest, "limit must be an integer")
-				return
-			}
-			limit = int32(l)
+		limit, err := parseLimit(r, 50)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
 		}
 		var cursor int64
 		if cursorParam := r.URL.Query().Get("cursor"); cursorParam != "" {
@@ -103,7 +101,7 @@ func listNodes(reader api.Reader) http.HandlerFunc {
 		if regionIDStr := r.URL.Query().Get("regionId"); regionIDStr != "" || r.URL.Query().Get("region") != "" {
 			regionIATAs, err := resolveRegionIATAs(r.Context(), regionIDStr, r.URL.Query().Get("region"), reader)
 			if err != nil {
-				respondError(w, http.StatusBadRequest, err.Error())
+				respondRegionError(w, err)
 				return
 			}
 			iatas = append(iatas, regionIATAs...)
@@ -160,6 +158,7 @@ func listNodes(reader api.Reader) http.HandlerFunc {
 //	@Success	200		{object}	api.Node
 //	@Failure	400		{object}	handlers.APIError
 //	@Failure	404		{object}	handlers.APIError
+//	@Failure	500		{object}	handlers.APIError
 //	@Router		/nodes/{nodeId} [get]
 func getNode(reader api.Reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -169,8 +168,12 @@ func getNode(reader api.Reader) http.HandlerFunc {
 			return
 		}
 		node, err := reader.GetNode(r.Context(), nodeID)
-		if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows), err == nil && node == nil:
 			respondError(w, http.StatusNotFound, "node not found")
+			return
+		case err != nil:
+			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 		respond(w, http.StatusOK, node)
@@ -184,7 +187,7 @@ func getNode(reader api.Reader) http.HandlerFunc {
 //	@Produce	json
 //	@Param		nodeId	path		string	true	"Node UUID"
 //	@Param		cursor	query		int		false	"Observation ID of last item for pagination"
-//	@Param		limit	query		int		false	"Max results (default 50)"
+//	@Param		limit	query		int		false	"Max results (default 50); must be positive, values above 200 are clamped" minimum(1) maximum(200)
 //	@Success	200		{object}	api.Page[api.PacketObservationSummary]
 //	@Failure	400		{object}	handlers.APIError
 //	@Failure	500		{object}	handlers.APIError
@@ -205,14 +208,10 @@ func listNodeObservations(reader api.Reader) http.HandlerFunc {
 			}
 			cursor = c
 		}
-		var limit int32 = 50
-		if limitParam := r.URL.Query().Get("limit"); limitParam != "" {
-			l, err := strconv.ParseInt(limitParam, 10, 32)
-			if err != nil {
-				respondError(w, http.StatusBadRequest, "limit must be an integer")
-				return
-			}
-			limit = int32(l)
+		limit, err := parseLimit(r, 50)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
 		}
 		observations, err := reader.ListNodeObservations(r.Context(), nodeID, cursor, limit)
 		if err != nil {

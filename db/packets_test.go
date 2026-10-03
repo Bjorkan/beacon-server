@@ -12,7 +12,6 @@ import (
 	mockdb "github.com/MeshCore-Beacon/beacon-server/db/sqlc/mock"
 	"github.com/MeshCore-Beacon/beacon-server/internal/ingest"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/mock/gomock"
 )
@@ -157,6 +156,59 @@ func TestListPackets_LatestObserverSet(t *testing.T) {
 	}
 }
 
+func TestListPackets_LatestObserverPathFields(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	heardAt := pgtype.Timestamptz{Time: time.UnixMilli(1700000000000), Valid: true}
+	observerID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	pathLengthByte := int16(0x42)
+	hashSize := int16(1)
+	hopCount := int16(2)
+	pathBytes := []byte{0xa1, 0xb2}
+
+	mock.EXPECT().
+		ListPackets(gomock.Any(), gomock.Any()).
+		Return([]sqlc.ListPacketsRow{
+			{
+				PacketHash:                   []byte{0xde, 0xad},
+				FirstHeardAt:                 heardAt,
+				LastHeardAt:                  heardAt,
+				LatestObserverID:             observerID,
+				LatestObserverPathLengthByte: pathLengthByte,
+				LatestObserverHashSize:       hashSize,
+				LatestObserverHopCount:       hopCount,
+				LatestObserverPathBytes:      pathBytes,
+			},
+		}, nil)
+
+	store := &Store{q: mock}
+	page, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	obs := page.Items[0].LatestObserver
+	if obs == nil {
+		t.Fatal("expected LatestObserver to be set")
+	}
+	if obs.PathLength == nil {
+		t.Fatal("expected PathLength to be set")
+	}
+	if obs.PathLength.HashSize != 1 || obs.PathLength.HopCount != 2 {
+		t.Errorf("expected hashSize=1 hopCount=2, got hashSize=%d hopCount=%d", obs.PathLength.HashSize, obs.PathLength.HopCount)
+	}
+	if obs.PathLength.Raw != "42" {
+		t.Errorf("expected raw 42, got %s", obs.PathLength.Raw)
+	}
+	if obs.PathBytes == nil || *obs.PathBytes != "a1b2" {
+		t.Errorf("expected pathBytes a1b2, got %v", obs.PathBytes)
+	}
+	// Legacy rows without a captured snapshot still omit resolved endpoints on lists.
+	if obs.ResolvedPath != nil || obs.ResolvedSource != nil || obs.ResolvedDestination != nil {
+		t.Error("expected no resolved path/source/destination on the list endpoint")
+	}
+}
+
 func TestInsertObservation_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := mockdb.NewMockQuerier(ctrl)
@@ -165,10 +217,10 @@ func TestInsertObservation_Success(t *testing.T) {
 
 	mock.EXPECT().
 		InsertObservation(gomock.Any(), gomock.Any()).
-		Return(sqlc.PacketObservation{ID: 1}, nil)
+		Return(sqlc.InsertObservationRow{Inserted: true, ObservationCount: 4}, nil)
 
 	store := &Store{q: mock}
-	inserted, err := store.InsertObservation(context.Background(), ingest.InsertObservationParams{
+	inserted, count, err := store.InsertObservation(context.Background(), ingest.InsertObservationParams{
 		PacketHash: []byte{0xde, 0xad},
 		ObserverID: observerID,
 		IATA:       "YVR",
@@ -177,8 +229,8 @@ func TestInsertObservation_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !inserted {
-		t.Error("expected inserted true")
+	if !inserted || count != 4 {
+		t.Errorf("got inserted=%v count=%d, want true, 4", inserted, count)
 	}
 }
 
@@ -188,18 +240,18 @@ func TestInsertObservation_Conflict(t *testing.T) {
 
 	mock.EXPECT().
 		InsertObservation(gomock.Any(), gomock.Any()).
-		Return(sqlc.PacketObservation{}, pgx.ErrNoRows)
+		Return(sqlc.InsertObservationRow{Inserted: false, ObservationCount: 2}, nil)
 
 	store := &Store{q: mock}
-	inserted, err := store.InsertObservation(context.Background(), ingest.InsertObservationParams{
+	inserted, count, err := store.InsertObservation(context.Background(), ingest.InsertObservationParams{
 		PacketHash: []byte{0xde, 0xad},
 		HeardAt:    time.Now(),
 	})
 	if err != nil {
 		t.Fatalf("expected nil error on conflict, got %v", err)
 	}
-	if inserted {
-		t.Error("expected inserted false on conflict")
+	if inserted || count != 2 {
+		t.Errorf("got inserted=%v count=%d, want false, 2", inserted, count)
 	}
 }
 
@@ -352,6 +404,45 @@ func TestListPacketsAfterID_PassesIATAsAsArray(t *testing.T) {
 	}
 }
 
+func TestListPacketsAfterID_LatestObserverPathFields(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	heardAt := pgtype.Timestamptz{Time: time.UnixMilli(1700000000000), Valid: true}
+	observerID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+	mock.EXPECT().
+		ListPacketsAfterID(gomock.Any(), gomock.Any()).
+		Return([]sqlc.ListPacketsAfterIDRow{
+			{
+				PacketHash:                   []byte{0xde, 0xad},
+				FirstHeardAt:                 heardAt,
+				LastHeardAt:                  heardAt,
+				LatestObserverID:             observerID,
+				LatestObserverPathLengthByte: 0x42,
+				LatestObserverHashSize:       1,
+				LatestObserverHopCount:       2,
+				LatestObserverPathBytes:      []byte{0xa1, 0xb2},
+			},
+		}, nil)
+
+	store := &Store{q: mock}
+	items, err := store.ListPacketsAfterID(context.Background(), 0, -1, -1, nil, "", 50)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	obs := items[0].LatestObserver
+	if obs == nil || obs.PathLength == nil {
+		t.Fatal("expected LatestObserver and PathLength to be set")
+	}
+	if obs.PathLength.HashSize != 1 || obs.PathLength.HopCount != 2 {
+		t.Errorf("expected hashSize=1 hopCount=2, got hashSize=%d hopCount=%d", obs.PathLength.HashSize, obs.PathLength.HopCount)
+	}
+	if obs.PathBytes == nil || *obs.PathBytes != "a1b2" {
+		t.Errorf("expected pathBytes a1b2, got %v", obs.PathBytes)
+	}
+}
+
 func TestListNodeObservations_Pagination(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := mockdb.NewMockQuerier(ctrl)
@@ -435,6 +526,107 @@ func TestListPackets_IATAFilterRoutesToObservationIndex(t *testing.T) {
 	}
 }
 
+// A site whose packets are heard by more observers than scan_depth allows
+// for collapses to a short page while history remains below the floor.
+// The page must still report more, or the client stops paging for good.
+func TestListPackets_SaturatedShortPageKeepsPaging(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	oldest := time.Date(2026, 8, 7, 12, 57, 25, 0, time.UTC)
+	floor := time.Date(2026, 8, 7, 12, 50, 0, 0, time.UTC)
+
+	// Two rows for a limit of 5: the scan filled up but collapsed to a short page.
+	mock.EXPECT().
+		ListPacketsByIATAs(gomock.Any(), gomock.Any()).
+		Return([]sqlc.ListPacketsByIATAsRow{
+			{
+				PacketHash:    []byte{0x01},
+				SiteHeardAt:   pgtype.Timestamptz{Time: oldest.Add(time.Minute), Valid: true},
+				ScanSaturated: true,
+				ScanFloor:     pgtype.Timestamptz{Time: floor, Valid: true},
+			},
+			{
+				PacketHash:    []byte{0x02},
+				SiteHeardAt:   pgtype.Timestamptz{Time: oldest, Valid: true},
+				ScanSaturated: true,
+				ScanFloor:     pgtype.Timestamptz{Time: floor, Valid: true},
+			},
+		}, nil)
+
+	store := &Store{q: mock}
+	page, err := store.ListPackets(context.Background(), nil, nil, []string{"YOW"}, nil, time.Time{}, time.Time{}, 0, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("got %d items, want 2", len(page.Items))
+	}
+	if !page.HasMore {
+		t.Error("hasMore = false on a saturated short page, want true")
+	}
+	// Oldest returned item sits above the floor, so it is the safe cursor.
+	if page.NextCursor == nil || *page.NextCursor != oldest.UnixMilli() {
+		t.Errorf("next cursor = %v, want %d (oldest item)", page.NextCursor, oldest.UnixMilli())
+	}
+}
+
+// The floor is newer than the oldest item, so paging past it would skip the
+// band the saturated site never read.
+func TestListPackets_CursorClampsToScanFloor(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	floor := time.Date(2026, 8, 7, 12, 50, 0, 0, time.UTC)
+	oldest := floor.Add(-30 * time.Minute)
+
+	mock.EXPECT().
+		ListPacketsByIATAs(gomock.Any(), gomock.Any()).
+		Return([]sqlc.ListPacketsByIATAsRow{{
+			PacketHash:    []byte{0x01},
+			SiteHeardAt:   pgtype.Timestamptz{Time: oldest, Valid: true},
+			ScanSaturated: true,
+			ScanFloor:     pgtype.Timestamptz{Time: floor, Valid: true},
+		}}, nil)
+
+	store := &Store{q: mock}
+	page, err := store.ListPackets(context.Background(), nil, nil, []string{"YOW", "YYZ"}, nil, time.Time{}, time.Time{}, 0, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if page.NextCursor == nil || *page.NextCursor != floor.UnixMilli() {
+		t.Errorf("next cursor = %v, want %d (clamped to floor)", page.NextCursor, floor.UnixMilli())
+	}
+}
+
+// An unsaturated scan read the site dry, so paging has to stop.
+func TestListPackets_UnsaturatedShortPageEndsPaging(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+
+	oldest := time.Date(2026, 8, 7, 12, 57, 25, 0, time.UTC)
+
+	mock.EXPECT().
+		ListPacketsByIATAs(gomock.Any(), gomock.Any()).
+		Return([]sqlc.ListPacketsByIATAsRow{{
+			PacketHash:    []byte{0x01},
+			SiteHeardAt:   pgtype.Timestamptz{Time: oldest, Valid: true},
+			ScanSaturated: false,
+		}}, nil)
+
+	store := &Store{q: mock}
+	page, err := store.ListPackets(context.Background(), nil, nil, []string{"YOW"}, nil, time.Time{}, time.Time{}, 0, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if page.HasMore {
+		t.Error("hasMore = true on an exhausted site, want false")
+	}
+	if page.NextCursor != nil {
+		t.Errorf("next cursor = %v, want nil", page.NextCursor)
+	}
+}
+
 func TestListPackets_UnfilteredKeepsGlobalQuery(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := mockdb.NewMockQuerier(ctrl)
@@ -447,5 +639,25 @@ func TestListPackets_UnfilteredKeepsGlobalQuery(t *testing.T) {
 	store := &Store{q: mock}
 	if _, err := store.ListPackets(context.Background(), nil, nil, nil, nil, time.Time{}, time.Time{}, 0, 50); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDeleteOldPackets_LoopsUntilShortBatch(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := mockdb.NewMockQuerier(ctrl)
+	store := &Store{q: mock}
+	cutoff := time.Date(2026, 9, 18, 0, 0, 0, 0, time.UTC)
+
+	byCutoff := gomock.Cond(func(p sqlc.DeleteOldPacketsParams) bool {
+		return p.Cutoff.Time.Equal(cutoff) && p.BatchSize == packetDeleteBatch
+	})
+	gomock.InOrder(
+		mock.EXPECT().DeleteOldPackets(gomock.Any(), byCutoff).Return(int64(packetDeleteBatch), nil),
+		mock.EXPECT().DeleteOldPackets(gomock.Any(), byCutoff).Return(int64(packetDeleteBatch), nil),
+		mock.EXPECT().DeleteOldPackets(gomock.Any(), byCutoff).Return(int64(7), nil),
+	)
+
+	if err := store.DeleteOldPackets(context.Background(), cutoff); err != nil {
+		t.Fatal(err)
 	}
 }

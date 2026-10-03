@@ -59,7 +59,7 @@ func TestToChannelMessage(t *testing.T) {
 	channelHash := []byte{0xab}
 	sentAt := pgtype.Timestamptz{Time: time.UnixMilli(1700000000000), Valid: true}
 
-	msg := toChannelMessage(42, "deadbeef", channelHash, &senderName, &content, sentAt, 7)
+	msg := toChannelMessage(42, "deadbeef", channelHash, &senderName, &content, sentAt, 7, nil, nil)
 
 	if msg.ID != 42 {
 		t.Errorf("expected ID 42, got %d", msg.ID)
@@ -86,7 +86,7 @@ func TestToChannelMessage(t *testing.T) {
 
 func TestToChannelMessage_NilFields(t *testing.T) {
 	sentAt := pgtype.Timestamptz{Time: time.UnixMilli(0), Valid: true}
-	msg := toChannelMessage(1, "abc", []byte{0x01}, nil, nil, sentAt, 0)
+	msg := toChannelMessage(1, "abc", []byte{0x01}, nil, nil, sentAt, 0, nil, nil)
 	if msg.SenderName != "" {
 		t.Errorf("expected empty SenderName, got %s", msg.SenderName)
 	}
@@ -177,5 +177,33 @@ func TestResolvePathHashes_Mapping(t *testing.T) {
 	}
 	if entries[0].Name != &name {
 		t.Errorf("expected Name %s, got %v", name, entries[0].Name)
+	}
+}
+
+func TestDeleteInBatches_StopsOnError(t *testing.T) {
+	boom := errors.New("boom")
+	calls := 0
+	err := deleteInBatches(context.Background(), 10, func(context.Context, int32) (int64, error) {
+		calls++
+		if calls == 2 {
+			return 0, boom
+		}
+		return 10, nil
+	})
+	if !errors.Is(err, boom) || calls != 2 {
+		t.Fatalf("err=%v calls=%d, want boom after 2 calls", err, calls)
+	}
+}
+
+func TestDeleteInBatches_StopsWhenCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	calls := 0
+	err := deleteInBatches(ctx, 10, func(context.Context, int32) (int64, error) {
+		calls++
+		cancel()
+		return 10, nil
+	})
+	if !errors.Is(err, context.Canceled) || calls != 1 {
+		t.Fatalf("err=%v calls=%d, want context.Canceled after 1 call", err, calls)
 	}
 }

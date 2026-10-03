@@ -31,12 +31,41 @@ type stubReader struct {
 	calls int
 }
 
+func (s *stubReader) AnalyticsRevision(context.Context) (int64, error) { return 0, nil }
+func (s *stubReader) GetStatsSeries(context.Context, time.Time, time.Time, []string) (*api.StatsSeries, error) {
+	return &api.StatsSeries{}, nil
+}
+func (s *stubReader) GetSignalStats(context.Context, time.Time, time.Time, []string) (*api.SignalStats, error) {
+	return nil, s.err
+}
+
+func (s *stubReader) GetPathStats(context.Context, time.Time, time.Time, []string) (*api.PathStats, error) {
+	return nil, s.err
+}
+
 func (s *stubReader) ListIATAs(_ context.Context) ([]api.IATA, error) {
 	s.calls++
 	return s.iatas, s.err
 }
 
 // implement remaining api.Reader methods as no-ops
+func (s *stubReader) GetObserverComparison(_ context.Context, _, _ uuid.UUID, _, _ time.Time, _ []string) (*api.ObserverComparison, error) {
+	s.calls++
+	return &api.ObserverComparison{TotalPackets: int64(s.calls)}, s.err
+}
+
+func TestObserverComparisonPassThrough(t *testing.T) {
+	inner := &stubReader{}
+	reader := &CachedReader{inner: inner}
+	a, b, since, until := uuid.New(), uuid.New(), time.Now().Add(-time.Hour), time.Now()
+	for i := int64(1); i <= 2; i++ {
+		got, err := reader.GetObserverComparison(context.Background(), a, b, since, until, nil)
+		if err != nil || got.TotalPackets != i {
+			t.Fatalf("comparison unexpectedly cached: %+v, %v", got, err)
+		}
+	}
+}
+
 func (s *stubReader) GetIATA(_ context.Context, _ string) (*api.IATA, error) { return nil, nil }
 
 func (s *stubReader) GetIATABorder(_ context.Context, _ string) (json.RawMessage, error) {
@@ -47,12 +76,10 @@ func (s *stubReader) GetRegion(_ context.Context, _ int32) (*api.Region, error) 
 func (s *stubReader) GetRegionBySlug(_ context.Context, _ string) (*api.Region, error) {
 	return nil, nil
 }
-func (s *stubReader) GetScopeNames(_ context.Context) ([]string, error)         { return nil, nil }
-func (s *stubReader) GetScopeStats(_ context.Context) ([]api.ScopeStats, error) { return nil, nil }
-func (s *stubReader) GetScopesByIATAs(_ context.Context, _ []string) ([]api.ScopeSummary, error) {
+func (s *stubReader) GetScopeNames(_ context.Context) ([]string, error) { return nil, nil }
+func (s *stubReader) GetScopeStats(_ context.Context, _ []string, _ time.Time) ([]api.ScopeStats, error) {
 	return nil, nil
 }
-
 func (s *stubReader) GetScopeByName(_ context.Context, _ string) (*api.ScopeDetail, error) {
 	return nil, nil
 }
@@ -69,7 +96,7 @@ func (s *stubReader) GetStatsPayloadBreakdown(_ context.Context, _ []string, _ t
 	return nil, nil
 }
 
-func (s *stubReader) GetStatsTopNodes(_ context.Context, _ []string, _ int32) ([]api.TopNode, error) {
+func (s *stubReader) GetStatsTopNodes(_ context.Context, _ []string, _ time.Time, _ int32) ([]api.TopNode, error) {
 	return nil, nil
 }
 
@@ -78,6 +105,10 @@ func (s *stubReader) GetStatsTopObservers(_ context.Context, _ []string, _ time.
 }
 
 func (s *stubReader) GetStatsTopAdvertisers(_ context.Context, _ []string, _ time.Time, _ int32) ([]api.TopAdvertiser, error) {
+	return nil, nil
+}
+
+func (s *stubReader) GetStatsClockDrift(_ context.Context, _ []string, _ int32) ([]api.ClockDriftEntry, error) {
 	return nil, nil
 }
 
@@ -117,6 +148,10 @@ func (s *stubReader) GetObserverTelemetryBucketed(_ context.Context, _ uuid.UUID
 	return nil, nil
 }
 
+func (s *stubReader) GetObserverActivity(_ context.Context, _ uuid.UUID, _, _ time.Duration, _ time.Time) (*api.ObserverActivity, error) {
+	return nil, nil
+}
+
 func (s *stubReader) GetPacket(_ context.Context, _ []byte) (*api.Packet, error) { return nil, nil }
 
 func (s *stubReader) GetChannel(_ context.Context, _ int32) (*api.Channel, error) { return nil, nil }
@@ -133,8 +168,8 @@ func (s *stubReader) GetCrossIATANeighbors(_ context.Context, _ uuid.UUID, _ str
 	return nil, nil
 }
 
-func (s *stubReader) ListChannels(_ context.Context, _ int32, _ []byte, _ []string, _ int64) (api.Page[api.ChannelSummary], error) {
-	return api.Page[api.ChannelSummary]{}, nil
+func (s *stubReader) ListChannels(_ context.Context, _ int32, _ []byte, _ []string, _ *bool, _ int64, _ *api.ChannelCursor) (api.ChannelPage, error) {
+	return api.ChannelPage{}, nil
 }
 
 func (s *stubReader) ListChannelMessages(_ context.Context, _ *int32, _ time.Time, _ int32, _ []string, _ string, _ int64) (api.Page[api.ChannelMessage], error) {
@@ -173,7 +208,7 @@ func (s *stubReader) ListPacketsAfterID(_ context.Context, _ int64, _, _ int16, 
 	return nil, nil
 }
 
-func (s *stubReader) ListKnownRoutes(_ context.Context, _ string, _ int32, _ time.Time, _ int32) ([]api.KnownRoute, error) {
+func (s *stubReader) ListKnownRoutes(_ context.Context, _ string, _ int32, _ time.Time, _ int64, _ int32) ([]api.KnownRoute, error) {
 	return nil, nil
 }
 
@@ -185,7 +220,7 @@ func (s *stubReader) SearchCrossIATARoutes(_ context.Context, _, _, _, _ string)
 	return nil, nil
 }
 
-func (s *stubReader) ListTraceTags(_ context.Context, _ []string, _, _ string, _, _ time.Time, _ time.Time, _ int32) ([]api.TraceTagSummary, error) {
+func (s *stubReader) ListTraceTags(_ context.Context, _ []string, _, _ string, _, _ time.Time, _ time.Time, _ string, _ int32) ([]api.TraceTagSummary, error) {
 	return nil, nil
 }
 
@@ -227,7 +262,7 @@ func TestGetOrSet_CacheMiss_FetchesAndStores(t *testing.T) {
 	c, _ := newTestClient(t)
 	stub := &stubReader{iatas: []api.IATA{{IATA: "YVR"}}}
 
-	result, err := getOrSet(context.Background(), c, "test:key", time.Minute, func() ([]api.IATA, error) {
+	result, err := getOrSet(context.Background(), c, "test:key", time.Minute, func(ctx context.Context) ([]api.IATA, error) {
 		return stub.ListIATAs(context.Background())
 	})
 	if err != nil {
@@ -246,11 +281,11 @@ func TestGetOrSet_CacheHit_DoesNotFetch(t *testing.T) {
 	stub := &stubReader{iatas: []api.IATA{{IATA: "YVR"}}}
 
 	// prime the cache
-	_, _ = getOrSet(context.Background(), c, "test:key", time.Minute, func() ([]api.IATA, error) {
+	_, _ = getOrSet(context.Background(), c, "test:key", time.Minute, func(ctx context.Context) ([]api.IATA, error) {
 		return stub.ListIATAs(context.Background())
 	})
 	// second call should hit cache
-	result, err := getOrSet(context.Background(), c, "test:key", time.Minute, func() ([]api.IATA, error) {
+	result, err := getOrSet(context.Background(), c, "test:key", time.Minute, func(ctx context.Context) ([]api.IATA, error) {
 		return stub.ListIATAs(context.Background())
 	})
 	if err != nil {
@@ -269,7 +304,7 @@ func TestGetOrSet_RedisError_DegradeGracefully(t *testing.T) {
 	mr.Close() // kill Redis
 
 	stub := &stubReader{iatas: []api.IATA{{IATA: "YVR"}}}
-	result, err := getOrSet(context.Background(), c, "test:key", time.Minute, func() ([]api.IATA, error) {
+	result, err := getOrSet(context.Background(), c, "test:key", time.Minute, func(ctx context.Context) ([]api.IATA, error) {
 		return stub.ListIATAs(context.Background())
 	})
 	if err != nil {
@@ -285,7 +320,7 @@ func TestGetOrSet_CorruptEntry_Overwrites(t *testing.T) {
 	mr.Set("test:key", "not-valid-json")
 
 	stub := &stubReader{iatas: []api.IATA{{IATA: "YVR"}}}
-	result, err := getOrSet(context.Background(), c, "test:key", time.Minute, func() ([]api.IATA, error) {
+	result, err := getOrSet(context.Background(), c, "test:key", time.Minute, func(ctx context.Context) ([]api.IATA, error) {
 		return stub.ListIATAs(context.Background())
 	})
 	if err != nil {
@@ -303,7 +338,7 @@ func TestGetOrSet_FetchError_Propagates(t *testing.T) {
 	c, _ := newTestClient(t)
 	stub := &stubReader{err: errors.New("db error")}
 
-	_, err := getOrSet(context.Background(), c, "test:key", time.Minute, func() ([]api.IATA, error) {
+	_, err := getOrSet(context.Background(), c, "test:key", time.Minute, func(ctx context.Context) ([]api.IATA, error) {
 		return stub.ListIATAs(context.Background())
 	})
 	if err == nil {
@@ -326,14 +361,14 @@ func TestCachedReader_IATASortingForStableKey(t *testing.T) {
 	}
 
 	// call with unsorted IATAs
-	getOrSet(context.Background(), c, "beacon:stats:overview:YVR,YYJ", time.Minute, func() (*api.StatsOverview, error) {
+	getOrSet(context.Background(), c, "beacon:stats:overview:YVR,YYJ", time.Minute, func(ctx context.Context) (*api.StatsOverview, error) {
 		calls++
 		return &api.StatsOverview{TotalPackets: 42}, nil
 	})
 
 	// call CachedReader with reversed order — should hit same key
 	_ = cr
-	result, err := getOrSet(context.Background(), c, "beacon:stats:overview:YVR,YYJ", time.Minute, func() (*api.StatsOverview, error) {
+	result, err := getOrSet(context.Background(), c, "beacon:stats:overview:YVR,YYJ", time.Minute, func(ctx context.Context) (*api.StatsOverview, error) {
 		calls++
 		return &api.StatsOverview{TotalPackets: 42}, nil
 	})
@@ -345,6 +380,30 @@ func TestCachedReader_IATASortingForStableKey(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("expected 1 fetch call, got %d", calls)
+	}
+}
+
+func TestInvalidateScopeNamesClearsDerivedKeys(t *testing.T) {
+	c, mr := newTestClient(t)
+	cr := &CachedReader{inner: &stubReader{}, c: c, ttl: CacheTTLs{}}
+	for _, k := range []string{keyScopeNames, keyScopeByNamePrefix + "#yow"} {
+		mr.Set(k, "x")
+	}
+	mr.Set("beacon:iatas", "keep")
+	cr.InvalidateScopeNames(context.Background())
+	if got := mr.Keys(); len(got) != 1 || got[0] != "beacon:iatas" {
+		t.Fatalf("keys left: %v", got)
+	}
+}
+
+func TestInvalidateIATABorder(t *testing.T) {
+	c, mr := newTestClient(t)
+	cr := &CachedReader{inner: &stubReader{}, c: c, ttl: CacheTTLs{}}
+	mr.Set(keyIATABorderPrefix+"YOW", "x")
+	mr.Set(keyIATABorderPrefix+"YYZ", "keep")
+	cr.InvalidateIATABorder(context.Background(), "YOW")
+	if got := mr.Keys(); len(got) != 1 || got[0] != keyIATABorderPrefix+"YYZ" {
+		t.Fatalf("keys left: %v", got)
 	}
 }
 
@@ -382,4 +441,8 @@ func TestCachedReader_InvalidateObserver(t *testing.T) {
 	if mr.Exists(keyObserverScopesPrefix + observerID.String()) {
 		t.Error("expected observer scopes key to be deleted")
 	}
+}
+
+func (s *stubReader) GetRouteEvidence(_ context.Context, _, _ string, _ api.RouteEvidenceQuery) (*api.RouteEvidence, error) {
+	return nil, nil
 }

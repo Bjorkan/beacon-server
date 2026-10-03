@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
@@ -34,6 +34,7 @@ func (s *Store) UpsertNode(ctx context.Context, n ingest.UpsertNodeParams, radio
 		Name:                    &n.Name,
 		Latitude:                n.Latitude,
 		Longitude:               n.Longitude,
+		ClearLocation:           n.ClearLocation,
 		DeviceClockDriftSeconds: driftSeconds,
 	}
 	if radio.FreqMHz != 0 {
@@ -61,12 +62,13 @@ func (s *Store) UpsertNodeShortID(ctx context.Context, nodeID uuid.UUID, iata st
 	})
 }
 
-func (s *Store) UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.UUID, iata string, snr *float32) error {
+func (s *Store) UpsertNodeNeighbor(ctx context.Context, nodeID, neighborID uuid.UUID, iata string, snr *float32, regionScope *string) error {
 	return s.q.UpsertNodeNeighbor(ctx, sqlc.UpsertNodeNeighborParams{
-		NodeID:     nodeID,
-		NeighborID: neighborID,
-		Iata:       iata,
-		Snr:        snr,
+		NodeID:      nodeID,
+		NeighborID:  neighborID,
+		Iata:        iata,
+		Snr:         snr,
+		RegionScope: regionScope,
 	})
 }
 
@@ -131,7 +133,7 @@ func (s *Store) ListNodes(ctx context.Context, nodeType int16, iatas []string, s
 		}
 		if len(v.Iatas) > 0 {
 			if err := json.Unmarshal(v.Iatas, &node.IATAs); err != nil {
-				log.Printf("store: failed to unmarshal node iatas: %v", err)
+				slog.Error("store: failed to unmarshal node iatas", "component", "db", "error", err)
 				node.IATAs = []api.NodeIATA{}
 			}
 		}
@@ -183,13 +185,13 @@ func (s *Store) GetNode(ctx context.Context, nodeID uuid.UUID) (*api.Node, error
 	}
 	neighbors, err := s.GetNodeNeighbors(ctx, nodeID)
 	if err != nil {
-		log.Printf("store: GetNodeNeighbors failed for %s: %v", nodeID, err)
+		slog.Error(fmt.Sprintf("store: GetNodeNeighbors failed for %s", nodeID), "component", "db", "error", err)
 		neighbors = []api.NodeNeighbor{}
 	}
 	node.Neighbors = neighbors
 	if len(row.Iatas) > 0 {
 		if err := json.Unmarshal(row.Iatas, &node.IATAs); err != nil {
-			log.Printf("store: failed to unmarshal node iatas: %v", err)
+			slog.Error("store: failed to unmarshal node iatas", "component", "db", "error", err)
 			node.IATAs = []api.NodeIATA{}
 		}
 	}

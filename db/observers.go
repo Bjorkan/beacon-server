@@ -6,19 +6,22 @@ package db
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
+	"math"
 	"time"
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/MeshCore-Beacon/beacon-server/internal/ingest"
+	"github.com/MeshCore-Beacon/beacon-server/internal/lora"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func (s *Store) UpsertObserver(ctx context.Context, pubkey []byte) (uuid.UUID, string, error) {
-	row, err := s.q.UpsertObserver(ctx, pubkey)
+func (s *Store) UpsertObserver(ctx context.Context, pubkey []byte, iata string) (uuid.UUID, string, error) {
+	row, err := s.q.UpsertObserver(ctx, sqlc.UpsertObserverParams{PublicKey: pubkey, Iata: iata, IataAt: ts(time.Now())})
 	if err != nil {
 		return uuid.Nil, "", err
 	}
@@ -114,14 +117,14 @@ func (s *Store) GetObserver(ctx context.Context, observerID uuid.UUID) (*api.Obs
 		RadioCR:          obs.RadioCr,
 		BatteryLevel:     obs.BatteryLevel,
 		UptimeSeconds:    obs.UptimeSeconds,
-		StatusMetadata:   obs.StatusMetadata,
+		StatusMetadata:   json.RawMessage(obs.StatusMetadata),
 		FirstSeen:        obs.FirstSeen.Time.UnixMilli(),
 		LastSeen:         obs.LastSeen.Time.UnixMilli(),
 		ObservationCount: *obs.ObservationCount,
 	}
 	scopes, err := s.GetObserverScopes(ctx, observerID)
 	if err != nil {
-		log.Printf("store: GetObserverScopes failed for %s: %v", observerID, err)
+		slog.Error(fmt.Sprintf("store: GetObserverScopes failed for %s", observerID), "component", "db", "error", err)
 		scopes = []string{}
 	}
 	observer.Scopes = scopes
@@ -157,8 +160,8 @@ func (s *Store) InsertObserverTelemetry(ctx context.Context, observerID uuid.UUI
 		ObserverID:       observerID,
 		ReportedAt:       pgtype.Timestamptz{Time: reportedAt, Valid: true},
 		BatteryVoltageMv: batteryMV,
-		AirtimeTxPct:     txAirSecs,
-		AirtimeRxPct:     rxAirSecs,
+		AirtimeTxSecs:    txAirSecs,
+		AirtimeRxSecs:    rxAirSecs,
 		NoiseFloorDb:     &noiseFloor,
 		UptimeSeconds:    &uptimeSeconds,
 		QueueLength:      queueLen,
@@ -182,8 +185,8 @@ func (s *Store) GetObserverTelemetry(ctx context.Context, observerID uuid.UUID, 
 		points = append(points, api.ObserverTelemetryPoint{
 			T:             v.ReportedAt.Time.UnixMilli(),
 			BatteryMV:     v.BatteryVoltageMv,
-			AirtimeTxPct:  v.AirtimeTxPct,
-			AirtimeRxPct:  v.AirtimeRxPct,
+			AirtimeTxSecs: v.AirtimeTxSecs,
+			AirtimeRxSecs: v.AirtimeRxSecs,
 			NoiseFloorDB:  v.NoiseFloorDb,
 			UptimeSeconds: v.UptimeSeconds,
 			QueueLength:   v.QueueLength,
@@ -193,37 +196,197 @@ func (s *Store) GetObserverTelemetry(ctx context.Context, observerID uuid.UUID, 
 	return &api.ObserverTelemetry{Points: points}, nil
 }
 
+// GetObserverTelemetryBucketed reads a day before since so the first bucket's counter increments have a baseline.
 func (s *Store) GetObserverTelemetryBucketed(ctx context.Context, observerID uuid.UUID, since, until time.Time, bucketHours int32) ([]api.ObserverTelemetryPoint, error) {
-	var sinceTS, untilTS pgtype.Timestamptz
-	if !since.IsZero() {
-		sinceTS = pgtype.Timestamptz{Time: since, Valid: true}
+	from := since
+	if !from.IsZero() {
+		from = from.Add(-24 * time.Hour)
 	}
-	if !until.IsZero() {
-		untilTS = pgtype.Timestamptz{Time: until, Valid: true}
+	raw, err := s.GetObserverTelemetry(ctx, observerID, from, until, 0)
+	if err != nil {
+		return nil, err
 	}
-	rows, err := s.q.GetObserverTelemetryBucketed(ctx, sqlc.GetObserverTelemetryBucketedParams{
+	return api.BucketTelemetry(raw.Points, since, time.Duration(bucketHours)*time.Hour), nil
+}
+
+// activityRawTail caps how far back hourly activity reads raw rows for hours not yet rolled.
+// Cleanup holds raw rows for unrolled hours up to the same 24h (background rawHoldbackCap).
+const activityRawTail = 24 * time.Hour
+
+// GetObserverActivity returns bucketed heard-activity for an observer over the trailing window.
+// Buckets of an hour or coarser come from the hourly rollup plus raw rows for the unrolled tail;
+// anything finer reads observations directly.
+// Range and Interval are left empty for the handler to fill.
+func (s *Store) GetObserverActivity(ctx context.Context, observerID uuid.UUID, window, interval time.Duration, until time.Time) (*api.ObserverActivity, error) {
+	obs, err := s.q.GetObserverByID(ctx, observerID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	if until.IsZero() {
+		until = now
+	} else {
+		until = until.UTC().Truncate(interval)
+	}
+	since := until.Add(-window)
+	if !since.Equal(since.Truncate(interval)) {
+		since = since.Truncate(interval).Add(interval)
+	}
+	activity := &api.ObserverActivity{WindowStart: since.UnixMilli(), WindowEnd: until.UnixMilli(), GeneratedAt: now.UnixMilli(), Source: "raw", Summary: &api.ObserverActivitySummary{}}
+	if interval >= time.Hour {
+		activity.Source = "hourly"
+	}
+	live, err := s.q.GetObserverActivityLiveSummary(ctx, sqlc.GetObserverActivityLiveSummaryParams{
+		ObserverID: observerID, GeneratedAt: pgtype.Timestamptz{Time: now, Valid: true},
+		HourStart: pgtype.Timestamptz{Time: now.Truncate(time.Hour).Add(-time.Hour), Valid: true}, HourEnd: pgtype.Timestamptz{Time: now.Truncate(time.Hour), Valid: true}})
+	if err != nil {
+		return nil, err
+	}
+	activity.Summary.LastCompleteHour = live.LastCompleteHour
+	if live.LatestRecordedAt.Valid {
+		v := live.LatestRecordedAt.Time.UnixMilli()
+		activity.Summary.LatestRecordedAt = &v
+	}
+	activity.Summary.LastCompleteHourStart = now.Truncate(time.Hour).Add(-time.Hour).UnixMilli()
+	activity.Summary.LastCompleteHourEnd = now.Truncate(time.Hour).UnixMilli()
+	// radio is non-nil only when airtime is actually costable, so radio != null implies costed buckets
+	if obs.RadioSf != nil && obs.RadioBwKhz != nil && obs.RadioCr != nil &&
+		*obs.RadioSf >= 7 && *obs.RadioSf <= 12 && *obs.RadioBwKhz > 0 && *obs.RadioCr > 0 {
+		activity.Radio = &api.ObserverActivityRadio{
+			FreqMHz:         obs.RadioFreqMhz,
+			SF:              *obs.RadioSf,
+			BWKHz:           *obs.RadioBwKhz,
+			CR:              *obs.RadioCr,
+			PreambleSymbols: lora.PreambleSymbols(int(*obs.RadioSf)),
+		}
+	}
+	sinceTS := pgtype.Timestamptz{Time: since, Valid: true}
+	binWidth := pgtype.Interval{Microseconds: interval.Microseconds(), Valid: true}
+
+	if interval >= time.Hour {
+		// Unrolled hours read raw rows from the rollup watermark, at most activityRawTail back.
+		watermark, err := s.q.GetLatestCompleteRollupHour(ctx)
+		if err != nil {
+			return nil, err
+		}
+		tailStart := until.Add(-activityRawTail)
+		if watermark.Valid {
+			rolledUntil := watermark.Time.Add(time.Hour)
+			activity.RolledUntil = new(rolledUntil.UnixMilli())
+			if rolledUntil.After(tailStart) {
+				tailStart = rolledUntil
+			}
+		}
+		activity.RawFrom = new(tailStart.UnixMilli())
+		tailStartTS := pgtype.Timestamptz{Time: tailStart, Valid: true}
+		rows, err := s.q.GetObserverActivityHourly(ctx, sqlc.GetObserverActivityHourlyParams{
+			ObserverID: observerID,
+			Column2:    sinceTS,
+			Column3:    binWidth,
+			TailStart:  tailStartTS,
+			Until:      pgtype.Timestamptz{Time: until, Valid: true},
+		})
+		if err != nil {
+			return nil, err
+		}
+		activity.Points = make([]api.ObserverActivityPoint, 0, len(rows))
+		for _, r := range rows {
+			p := api.ObserverActivityPoint{T: r.Bucket.Time.UnixMilli(), Observations: r.Observations}
+			activity.Summary.RecordedPackets += r.Observations
+			if r.AirtimeN > 0 {
+				airtime := r.AirtimeMs
+				p.AirtimeMs = &airtime
+			}
+			if r.SnrN > 0 {
+				avg := r.SnrSum / float32(r.SnrN)
+				min := r.SnrMin
+				if !math.IsNaN(float64(avg)) && !math.IsInf(float64(avg), 0) {
+					p.SNRAvg = &avg
+				}
+				if !math.IsNaN(float64(min)) && !math.IsInf(float64(min), 0) {
+					p.SNRMin = &min
+				}
+			}
+			if r.RssiN > 0 {
+				avg := float32(r.RssiSum) / float32(r.RssiN)
+				p.RSSIAvg = &avg
+			}
+			activity.Points = append(activity.Points, p)
+		}
+		typeRows, err := s.q.GetObserverActivityHourlyPayloadTypes(ctx, sqlc.GetObserverActivityHourlyPayloadTypesParams{
+			ObserverID: observerID,
+			Column2:    sinceTS,
+			TailStart:  tailStartTS,
+			Until:      pgtype.Timestamptz{Time: until, Valid: true},
+		})
+		if err != nil {
+			return nil, err
+		}
+		activity.PayloadTypes = make([]api.PayloadBreakdownItem, 0, len(typeRows))
+		for _, v := range typeRows {
+			payloadType := v.PayloadType
+			activity.PayloadTypes = append(activity.PayloadTypes, api.PayloadBreakdownItem{
+				PayloadType:     payloadType,
+				PayloadTypeName: api.PayloadTypeName(payloadType),
+				Count:           v.Count,
+			})
+		}
+		return activity, nil
+	}
+
+	rows, err := s.q.GetObserverActivityRaw(ctx, sqlc.GetObserverActivityRawParams{
 		ObserverID: observerID,
 		Column2:    sinceTS,
-		Column3:    untilTS,
-		Column4:    bucketHours,
+		Column3:    binWidth,
+		Until:      pgtype.Timestamptz{Time: until, Valid: true},
 	})
 	if err != nil {
 		return nil, err
 	}
-	points := make([]api.ObserverTelemetryPoint, 0, len(rows))
+	activity.Points = make([]api.ObserverActivityPoint, 0, len(rows))
 	for _, r := range rows {
-		points = append(points, api.ObserverTelemetryPoint{
-			T:             r.Bucket.Time.UnixMilli(),
-			BatteryMV:     &r.BatteryVoltageMv,
-			AirtimeTxPct:  &r.AirtimeTxPct,
-			AirtimeRxPct:  &r.AirtimeRxPct,
-			NoiseFloorDB:  &r.NoiseFloorDb,
-			UptimeSeconds: &r.UptimeSeconds,
-			QueueLength:   &r.QueueLength,
-			ReceiveErrors: &r.ReceiveErrors,
+		p := api.ObserverActivityPoint{T: r.Bucket.Time.UnixMilli(), Observations: r.Observations}
+		activity.Summary.RecordedPackets += r.Observations
+		if r.AirtimeN > 0 {
+			airtime := r.AirtimeMs
+			p.AirtimeMs = &airtime
+		}
+		if r.SnrN > 0 {
+			avg, min := r.SnrAvg, r.SnrMin
+			if !math.IsNaN(float64(avg)) && !math.IsInf(float64(avg), 0) {
+				p.SNRAvg = &avg
+			}
+			if !math.IsNaN(float64(min)) && !math.IsInf(float64(min), 0) {
+				p.SNRMin = &min
+			}
+		}
+		if r.RssiN > 0 {
+			avg := r.RssiAvg
+			p.RSSIAvg = &avg
+		}
+		activity.Points = append(activity.Points, p)
+	}
+	typeRows, err := s.q.GetObserverActivityRawPayloadTypes(ctx, sqlc.GetObserverActivityRawPayloadTypesParams{
+		ObserverID: observerID,
+		Column2:    sinceTS,
+		Until:      pgtype.Timestamptz{Time: until, Valid: true},
+	})
+	if err != nil {
+		return nil, err
+	}
+	activity.PayloadTypes = make([]api.PayloadBreakdownItem, 0, len(typeRows))
+	for _, v := range typeRows {
+		payloadType := int16(-1)
+		if v.PayloadType != nil {
+			payloadType = *v.PayloadType
+		}
+		activity.PayloadTypes = append(activity.PayloadTypes, api.PayloadBreakdownItem{
+			PayloadType:     payloadType,
+			PayloadTypeName: api.PayloadTypeName(payloadType),
+			Count:           v.Count,
 		})
 	}
-	return points, nil
+	return activity, nil
 }
 
 func (s *Store) ListObserverAdverts(ctx context.Context, observerID uuid.UUID, cursor int64, limit int32) (api.Page[api.AdvertObservation], error) {
@@ -233,7 +396,7 @@ func (s *Store) ListObserverAdverts(ctx context.Context, observerID uuid.UUID, c
 		Limit:      limit + 1, // fetch one extra to detect hasMore
 	})
 	if err != nil {
-		log.Printf("api: ListObserverAdverts failed: %v", err)
+		slog.Error("api: ListObserverAdverts failed", "component", "db", "error", err)
 		return api.Page[api.AdvertObservation]{}, err
 	}
 	hasMore := len(rows) > int(limit)
@@ -300,10 +463,11 @@ func (s *Store) GetObserverRadio(ctx context.Context, observerID uuid.UUID) (ing
 	return settings, nil
 }
 
-func (s *Store) UpsertObserverBroker(ctx context.Context, observerID uuid.UUID, brokerName string) error {
+func (s *Store) UpsertObserverBroker(ctx context.Context, observerID uuid.UUID, brokerName string, isPacket bool) error {
 	params := sqlc.UpsertObserverBrokerParams{
 		ObserverID: observerID,
 		BrokerName: brokerName,
+		IsPacket:   isPacket,
 	}
 	return s.q.UpsertObserverBroker(ctx, params)
 }
@@ -312,6 +476,17 @@ func (s *Store) UpsertObserverScope(ctx context.Context, observerID uuid.UUID, s
 	return s.q.UpsertObserverScope(ctx, sqlc.UpsertObserverScopeParams{
 		ObserverID: observerID,
 		ScopeID:    scopeID,
+	})
+}
+
+// UpdateObserverRegionScope records the observer's own OTA-reported region scope
+// (the "self" field of a /neighbors report). Unrelated to UpsertObserverScope
+// above, which links an observer to a named transport_scopes row matched by
+// key fingerprint; this stores the raw OTA-configured scope string instead.
+func (s *Store) UpdateObserverRegionScope(ctx context.Context, observerID uuid.UUID, regionScope string) error {
+	return s.q.UpdateObserverRegionScope(ctx, sqlc.UpdateObserverRegionScopeParams{
+		ID:          observerID,
+		RegionScope: &regionScope,
 	})
 }
 
@@ -326,4 +501,8 @@ func (s *Store) IsObserverByPubkey(ctx context.Context, pubkey []byte) bool {
 
 func (s *Store) DeleteOldTelemetry(ctx context.Context, cutoff time.Time) error {
 	return s.q.DeleteOldTelemetry(ctx, pgtype.Timestamptz{Time: cutoff, Valid: true})
+}
+
+func (s *Store) DeleteOldObservers(ctx context.Context, cutoff time.Time) ([]uuid.UUID, error) {
+	return s.q.DeleteOldObservers(ctx, pgtype.Timestamptz{Time: cutoff, Valid: true})
 }

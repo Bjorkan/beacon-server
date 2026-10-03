@@ -8,16 +8,14 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/MeshCore-Beacon/beacon-server/internal/ingest"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/meshcore-go/meshcore-go"
 )
@@ -58,6 +56,32 @@ func (s *Store) SetPacketDecrypted(ctx context.Context, hash []byte) error {
 	return s.q.SetPacketDecrypted(ctx, hash)
 }
 
+// buildLatestObserverPath fills in PacketLatestObserver's optional path fields from the
+// nullable path_length_byte/hash_size/hop_count/path_bytes columns joined in alongside the
+// latest (or matching) observation. hashSize/hopCount nil means no observation joined at all
+// (only possible via ListPackets/ListPacketsByIATAs' LEFT JOIN LATERAL -- ListPacketsAfterID's
+// inner join always has them, callers there can pass &v.Field directly).
+func buildLatestObserverPath(pathLengthByte, hashSize, hopCount *int16, pathBytes []byte) (*api.PacketPathLength, *string) {
+	if hashSize == nil || hopCount == nil {
+		return nil, nil
+	}
+	raw := ""
+	if pathLengthByte != nil {
+		raw = fmt.Sprintf("%02x", *pathLengthByte)
+	}
+	pathLength := &api.PacketPathLength{
+		Raw:      raw,
+		HashSize: *hashSize,
+		HopCount: *hopCount,
+	}
+	var pathBytesHex *string
+	if pathBytes != nil {
+		s := hex.EncodeToString(pathBytes)
+		pathBytesHex = &s
+	}
+	return pathLength, pathBytesHex
+}
+
 func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int16, iatas []string, scopes []string, since, until time.Time, cursor int64, limit int32) (api.Page[api.PacketSummary], error) {
 	if len(iatas) > 0 {
 		return s.listPacketsByIATAs(ctx, payloadTypes, routeTypes, iatas, scopes, since, until, cursor, limit)
@@ -91,7 +115,9 @@ func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int1
 		rows = rows[:limit]
 	}
 	items := make([]api.PacketSummary, 0, len(rows))
+	lookups := make([]endpointLookup, 0, len(rows))
 	for _, v := range rows {
+		var lookup endpointLookup
 		item := api.PacketSummary{
 			PacketHash:       hex.EncodeToString(v.PacketHash),
 			PayloadType:      v.PayloadType,
@@ -103,15 +129,24 @@ func (s *Store) ListPackets(ctx context.Context, payloadTypes, routeTypes []int1
 			LastHeardAt:      v.LastHeardAt.Time.UnixMilli(),
 			ObservationCount: int32(v.ObservationCount),
 		}
+		if v.Summary != "" {
+			item.Summary = &v.Summary
+		}
 		if v.LatestObserverID != (uuid.UUID{}) {
 			item.LatestObserver = &api.PacketLatestObserver{
 				ID:          v.LatestObserverID,
 				DisplayName: v.LatestObserverName,
 				IATA:        v.LatestObserverIata,
 			}
+			lookup = endpointLookup{iata: v.LatestObserverIata, ep: parsePacketEndpoints(v.PayloadType, v.RawPayload, v.OriginPubkey)}
+			item.LatestObserver.PathLength, item.LatestObserver.PathBytes = buildLatestObserverPath(
+				&v.LatestObserverPathLengthByte, &v.LatestObserverHashSize, &v.LatestObserverHopCount, v.LatestObserverPathBytes,
+			)
 		}
 		items = append(items, item)
+		lookups = append(lookups, lookup)
 	}
+	s.fillLatestEndpoints(ctx, items, lookups)
 	var nextCursor *int64
 	if hasMore && len(items) > 0 {
 		last := items[len(items)-1].LastHeardAt
@@ -158,8 +193,18 @@ func (s *Store) listPacketsByIATAs(ctx context.Context, payloadTypes, routeTypes
 	if hasMore {
 		rows = rows[:limit]
 	}
+	// Observers duplicate a packet across the scan, so the page can collapse
+	// short while the site still has history below scan_floor. Stopping here
+	// would strand every older packet behind a hasMore=false.
+	var scanFloor pgtype.Timestamptz
+	if len(rows) > 0 && rows[0].ScanSaturated {
+		hasMore = true
+		scanFloor = rows[0].ScanFloor
+	}
 	items := make([]api.PacketSummary, 0, len(rows))
+	lookups := make([]endpointLookup, 0, len(rows))
 	for _, v := range rows {
+		var lookup endpointLookup
 		item := api.PacketSummary{
 			PacketHash:       hex.EncodeToString(v.PacketHash),
 			PayloadType:      v.PayloadType,
@@ -171,20 +216,35 @@ func (s *Store) listPacketsByIATAs(ctx context.Context, payloadTypes, routeTypes
 			LastHeardAt:      v.LastHeardAt.Time.UnixMilli(),
 			ObservationCount: int32(v.ObservationCount),
 		}
+		if v.Summary != "" {
+			item.Summary = &v.Summary
+		}
 		if v.LatestObserverID != (uuid.UUID{}) {
 			item.LatestObserver = &api.PacketLatestObserver{
 				ID:          v.LatestObserverID,
 				DisplayName: v.LatestObserverName,
 				IATA:        v.LatestObserverIata,
 			}
+			lookup = endpointLookup{iata: v.LatestObserverIata, ep: parsePacketEndpoints(v.PayloadType, v.RawPayload, v.OriginPubkey)}
+			item.LatestObserver.PathLength, item.LatestObserver.PathBytes = buildLatestObserverPath(
+				&v.LatestObserverPathLengthByte, &v.LatestObserverHashSize, &v.LatestObserverHopCount, v.LatestObserverPathBytes,
+			)
 		}
 		items = append(items, item)
+		lookups = append(lookups, lookup)
 	}
+	s.fillLatestEndpoints(ctx, items, lookups)
 	// Cursor follows site-local recency, not the packet's global last_heard_at.
 	var nextCursor *int64
 	if hasMore && len(rows) > 0 {
-		last := rows[len(rows)-1].SiteHeardAt.Time.UnixMilli()
-		nextCursor = &last
+		last := rows[len(rows)-1].SiteHeardAt.Time
+		// A saturated scan never read below its floor. Paging past it would
+		// skip that band; resuming at it only repeats packets already shown.
+		if scanFloor.Valid && scanFloor.Time.After(last) {
+			last = scanFloor.Time
+		}
+		ms := last.UnixMilli()
+		nextCursor = &ms
 	}
 	return api.Page[api.PacketSummary]{
 		Items:      items,
@@ -206,7 +266,9 @@ func (s *Store) ListPacketsAfterID(ctx context.Context, afterObservationID int64
 		return nil, err
 	}
 	items := make([]api.PacketSummary, 0, len(rows))
+	lookups := make([]endpointLookup, 0, len(rows))
 	for _, v := range rows {
+		var lookup endpointLookup
 		item := api.PacketSummary{
 			PacketHash:       hex.EncodeToString(v.PacketHash),
 			PayloadType:      v.PayloadType,
@@ -218,15 +280,26 @@ func (s *Store) ListPacketsAfterID(ctx context.Context, afterObservationID int64
 			LastHeardAt:      v.LastHeardAt.Time.UnixMilli(),
 			ObservationCount: int32(v.ObservationCount),
 		}
+		if v.Summary != "" {
+			item.Summary = &v.Summary
+		}
 		if v.LatestObserverID != (uuid.UUID{}) {
 			item.LatestObserver = &api.PacketLatestObserver{
 				ID:          v.LatestObserverID,
 				DisplayName: v.LatestObserverName,
 				IATA:        v.LatestObserverIata,
 			}
+			lookup = endpointLookup{iata: v.LatestObserverIata, ep: parsePacketEndpoints(v.PayloadType, v.RawPayload, v.OriginPubkey)}
+			// Inner join here (unlike ListPackets/listPacketsByIATAs' LEFT JOIN LATERAL), so
+			// these are never nil when an observer was joined at all.
+			item.LatestObserver.PathLength, item.LatestObserver.PathBytes = buildLatestObserverPath(
+				&v.LatestObserverPathLengthByte, &v.LatestObserverHashSize, &v.LatestObserverHopCount, v.LatestObserverPathBytes,
+			)
 		}
 		items = append(items, item)
+		lookups = append(lookups, lookup)
 	}
+	s.fillLatestEndpoints(ctx, items, lookups)
 	return items, nil
 }
 
@@ -292,7 +365,10 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 		ObservationCount: int32(len(obsRows)),
 		Observations:     make([]api.PacketObservationDetail, 0, len(obsRows)),
 	}
-	minHeardAt := obsRows[0].HeardAt.Time
+	var minHeardAt time.Time
+	if len(obsRows) > 0 {
+		minHeardAt = obsRows[0].HeardAt.Time
+	}
 	if len(obsRows) > 1 {
 		maxHeardAt := obsRows[0].HeardAt.Time
 		for _, v := range obsRows[1:] {
@@ -337,49 +413,14 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 			}
 		}
 	}
-	// 1-byte source/destination hashes for the payload types that carry a resolvable
-	// endpoint (REQUEST, RESPONSE, TEXT_MESSAGE, PATH, ANON_REQ's destination). Constant
-	// for this packet hash, so parsed once; resolution itself still happens per-observation
-	// below since candidates depend on the observation's IATA, same as the intermediate
-	// hop resolution already does.
-	var sourceHashByte, destHashByte []byte
-	switch row.PayloadType {
-	case int16(meshcore.PayloadTypeAnonReq):
-		if anonReq, err := meshcore.AnonReqFromBytes(row.RawPayload); err == nil {
-			destHashByte = []byte{anonReq.Destination}
-		}
-	case int16(meshcore.PayloadTypeReq):
-		if req, err := meshcore.RequestFromBytes(row.RawPayload); err == nil {
-			sourceHashByte = []byte{req.Source}
-			destHashByte = []byte{req.Destination}
-		}
-	case int16(meshcore.PayloadTypeResponse):
-		if resp, err := meshcore.ResponseFromBytes(row.RawPayload); err == nil {
-			sourceHashByte = []byte{resp.Source}
-			destHashByte = []byte{resp.Destination}
-		}
-	case int16(meshcore.PayloadTypeTxtMsg):
-		if txt, err := meshcore.TextMessageFromBytes(row.RawPayload); err == nil {
-			sourceHashByte = []byte{txt.Source}
-			destHashByte = []byte{txt.Destination}
-		}
-	case int16(meshcore.PayloadTypePath):
-		if path, err := meshcore.PathFromBytes(row.RawPayload); err == nil {
-			sourceHashByte = []byte{path.Source}
-			destHashByte = []byte{path.Destination}
-		}
+	// Endpoints resolve against each observation's IATA, all in one batch.
+	ep := parsePacketEndpoints(row.PayloadType, row.RawPayload, row.OriginPubkey)
+	lookups := make([]endpointLookup, len(obsRows))
+	for i, v := range obsRows {
+		lookups[i] = endpointLookup{iata: v.Iata, ep: ep}
 	}
-	// ADVERT's source is an exact pubkey match, not ambiguous like the above -- and unlike
-	// them it doesn't depend on IATA, so resolve it once here rather than per observation.
-	var resolvedAdvertSource *api.ResolvedNode
-	if row.PayloadType == int16(meshcore.PayloadTypeAdvert) && row.OriginPubkey != nil {
-		if nodeID, err := s.GetNodeByPubkey(ctx, row.OriginPubkey); err == nil {
-			if nodes, err := s.GetNodesByIDs(ctx, []uuid.UUID{nodeID}); err == nil {
-				resolvedAdvertSource = nodes[nodeID]
-			}
-		}
-	}
-	for _, v := range obsRows {
+	sources, destinations := s.resolveEndpoints(ctx, lookups)
+	for i, v := range obsRows {
 		obs := api.PacketObservationDetail{
 			ID:           v.ID,
 			ObserverID:   v.ObserverID,
@@ -391,9 +432,11 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 				HashSize: v.HashSize,
 				HopCount: v.HopCount,
 			},
-			RSSI:         v.Rssi,
-			SNR:          v.Snr,
-			SourceBroker: *v.SourceBroker,
+			RSSI: v.Rssi,
+			SNR:  v.Snr,
+		}
+		if v.SourceBroker != nil {
+			obs.SourceBroker = *v.SourceBroker
 		}
 		prop := int32(v.HeardAt.Time.Sub(minHeardAt).Milliseconds())
 		obs.PropagationTimeMs = &prop
@@ -402,7 +445,7 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 			if len(traceRawHashes) > 0 {
 				resolved, err := s.ResolvePathHashes(ctx, v.Iata, traceRawHashes)
 				if err != nil {
-					log.Printf("store: path resolution failed for observation %d: %v", v.ID, err)
+					slog.Error(fmt.Sprintf("store: path resolution failed for observation %d", v.ID), "component", "db", "error", err)
 				} else {
 					resolvedPath = api.BuildResolvedPath(traceRawHashes, resolved)
 				}
@@ -415,31 +458,13 @@ func (s *Store) GetPacket(ctx context.Context, packetHash []byte) (*api.Packet, 
 			}
 			resolved, err := s.ResolvePathHashes(ctx, v.Iata, hashes)
 			if err != nil {
-				log.Printf("store: path resolution failed for observation %d: %v", v.ID, err)
+				slog.Error(fmt.Sprintf("store: path resolution failed for observation %d", v.ID), "component", "db", "error", err)
 			} else {
 				resolvedPath = api.BuildResolvedPath(hashes, resolved)
 			}
 		}
 		obs.ResolvedPath = resolvedPath
-		if row.PayloadType == int16(meshcore.PayloadTypeAdvert) {
-			hop := api.ResolveExactNode(resolvedAdvertSource)
-			obs.ResolvedSource = &hop
-		} else if len(sourceHashByte) == 1 {
-			if r, err := s.ResolvePathHashes(ctx, v.Iata, [][]byte{sourceHashByte}); err != nil {
-				log.Printf("store: source resolution failed for observation %d: %v", v.ID, err)
-			} else {
-				hop := api.BuildResolvedPath([][]byte{sourceHashByte}, r)[0]
-				obs.ResolvedSource = &hop
-			}
-		}
-		if len(destHashByte) == 1 {
-			if r, err := s.ResolvePathHashes(ctx, v.Iata, [][]byte{destHashByte}); err != nil {
-				log.Printf("store: destination resolution failed for observation %d: %v", v.ID, err)
-			} else {
-				hop := api.BuildResolvedPath([][]byte{destHashByte}, r)[0]
-				obs.ResolvedDestination = &hop
-			}
-		}
+		obs.ResolvedSource, obs.ResolvedDestination = sources[i], destinations[i]
 		if row.PayloadType == int16(meshcore.PayloadTypeTrace) && len(traceRawHashes) > 0 {
 			// Swap in the trace's own path hashes so PathData's hop-block split (driven by
 			// pathBytes + hashSize) lines up 1:1 with resolvedPath -- the raw SNR bytes
@@ -487,7 +512,7 @@ func (s *Store) UpsertIATA(ctx context.Context, iata string) error {
 	return s.q.UpsertIATA(ctx, iata)
 }
 
-func (s *Store) InsertObservation(ctx context.Context, o ingest.InsertObservationParams) (bool, error) {
+func (s *Store) InsertObservation(ctx context.Context, o ingest.InsertObservationParams) (bool, int64, error) {
 	params := sqlc.InsertObservationParams{
 		PacketHash:        o.PacketHash,
 		ObserverID:        o.ObserverID,
@@ -506,15 +531,13 @@ func (s *Store) InsertObservation(ctx context.Context, o ingest.InsertObservatio
 		CodingRate:        &o.CodingRate,
 		SourceBroker:      &o.SourceBroker,
 		PayloadType:       &o.PayloadType,
+		AirtimeMs:         o.AirtimeMs,
 	}
 	row, err := s.q.InsertObservation(ctx, params)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil // conflict, not an error
-	}
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
-	return row.ID != 0, nil
+	return row.Inserted, row.ObservationCount, nil
 }
 
 func (s *Store) ListNodeObservations(ctx context.Context, nodeID uuid.UUID, cursor int64, limit int32) (api.Page[api.PacketObservationSummary], error) {
@@ -556,10 +579,14 @@ func (s *Store) ListNodeObservations(ctx context.Context, nodeID uuid.UUID, curs
 	}, nil
 }
 
-func (s *Store) GetPacketObservationCount(ctx context.Context, packetHash []byte) (int64, error) {
-	return s.q.GetPacketObservationCount(ctx, packetHash)
-}
+// Small because each packet cascades to its observations.
+const packetDeleteBatch = 1000
 
 func (s *Store) DeleteOldPackets(ctx context.Context, cutoff time.Time) error {
-	return s.q.DeleteOldPackets(ctx, pgtype.Timestamptz{Time: cutoff, Valid: true})
+	return deleteInBatches(ctx, packetDeleteBatch, func(ctx context.Context, n int32) (int64, error) {
+		return s.q.DeleteOldPackets(ctx, sqlc.DeleteOldPacketsParams{
+			Cutoff:    pgtype.Timestamptz{Time: cutoff, Valid: true},
+			BatchSize: n,
+		})
+	})
 }

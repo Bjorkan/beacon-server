@@ -11,7 +11,8 @@ package presence
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -24,28 +25,36 @@ import (
 type Store interface {
 	ingest.DB
 
-	// TouchObservers applies coalesced last_seen bumps and observation_count
-	// deltas for the given observer IDs in one statement.
-	TouchObservers(ctx context.Context, ids []uuid.UUID, seen []time.Time, counts []int32) error
+	// TouchObservers applies coalesced last_seen bumps, observation_count
+	// deltas and last_iata for the given observer IDs in one statement. An
+	// IATA only replaces one heard earlier (iataAts), so a late flush can't regress it.
+	TouchObservers(ctx context.Context, ids []uuid.UUID, seen []time.Time, counts []int32, iatas []string, iataAts []time.Time) error
 
 	// TouchObserverBrokers applies coalesced last_seen/last_packet_at bumps
 	// for the given (observer, broker) pairs in one statement.
-	TouchObserverBrokers(ctx context.Context, ids []uuid.UUID, brokers []string, seen []time.Time) error
+	TouchObserverBrokers(ctx context.Context, ids []uuid.UUID, brokers []string, seen, packets []time.Time) error
 
 	// TouchPackets applies coalesced last_heard_at bumps for the given packet
 	// hashes in one statement.
 	TouchPackets(ctx context.Context, hashes [][]byte, heard []time.Time) error
+
+	DeleteOldObservers(ctx context.Context, cutoff time.Time) ([]uuid.UUID, error)
 }
 
 type identity struct {
 	id   uuid.UUID
 	name string
+	seen time.Time
 }
 
 type observerBump struct {
-	seen  time.Time
-	count int32
+	seen   time.Time
+	count  int32
+	iata   string
+	iataAt time.Time
 }
+
+type brokerBump struct{ seen, packet time.Time }
 
 type brokerKey struct {
 	id     uuid.UUID
@@ -64,7 +73,7 @@ type Coalescer struct {
 	identities     map[string]identity // pubkey -> observer row
 	dirtyObservers map[uuid.UUID]observerBump
 	knownBrokers   map[brokerKey]struct{}
-	dirtyBrokers   map[brokerKey]time.Time
+	dirtyBrokers   map[brokerKey]brokerBump
 	knownIATAs     map[string]struct{}
 	packetsSeen    map[string]time.Time // hash -> last observation
 	dirtyPackets   map[string]time.Time
@@ -82,7 +91,7 @@ func New(store Store, flushInterval, packetTTL time.Duration) *Coalescer {
 		identities:     make(map[string]identity),
 		dirtyObservers: make(map[uuid.UUID]observerBump),
 		knownBrokers:   make(map[brokerKey]struct{}),
-		dirtyBrokers:   make(map[brokerKey]time.Time),
+		dirtyBrokers:   make(map[brokerKey]brokerBump),
 		knownIATAs:     make(map[string]struct{}),
 		packetsSeen:    make(map[string]time.Time),
 		dirtyPackets:   make(map[string]time.Time),
@@ -91,42 +100,52 @@ func New(store Store, flushInterval, packetTTL time.Duration) *Coalescer {
 
 // UpsertObserver serves repeat lookups from the identity cache and records a
 // last_seen/observation_count bump instead of writing through.
-func (c *Coalescer) UpsertObserver(ctx context.Context, pubkey []byte) (uuid.UUID, string, error) {
+func (c *Coalescer) UpsertObserver(ctx context.Context, pubkey []byte, iata string) (uuid.UUID, string, error) {
 	key := string(pubkey)
 	c.mu.Lock()
 	if ident, ok := c.identities[key]; ok {
 		bump := c.dirtyObservers[ident.id]
 		bump.seen = c.now()
 		bump.count++
+		if iata != "" {
+			bump.iata, bump.iataAt = iata, bump.seen
+		}
 		c.dirtyObservers[ident.id] = bump
+		ident.seen = bump.seen
+		c.identities[key] = ident
 		c.mu.Unlock()
 		return ident.id, ident.name, nil
 	}
 	c.mu.Unlock()
 
-	id, name, err := c.Store.UpsertObserver(ctx, pubkey)
+	id, name, err := c.Store.UpsertObserver(ctx, pubkey, iata)
 	if err != nil {
 		return id, name, err
 	}
 	c.mu.Lock()
-	c.identities[key] = identity{id: id, name: name}
+	c.identities[key] = identity{id: id, name: name, seen: c.now()}
 	c.mu.Unlock()
 	return id, name, nil
 }
 
 // UpsertObserverBroker writes through the first time a pair is seen and
 // records a bump afterwards.
-func (c *Coalescer) UpsertObserverBroker(ctx context.Context, observerID uuid.UUID, brokerName string) error {
+func (c *Coalescer) UpsertObserverBroker(ctx context.Context, observerID uuid.UUID, brokerName string, isPacket bool) error {
 	key := brokerKey{id: observerID, broker: brokerName}
 	c.mu.Lock()
 	if _, ok := c.knownBrokers[key]; ok {
-		c.dirtyBrokers[key] = c.now()
+		bump := c.dirtyBrokers[key]
+		bump.seen = c.now()
+		if isPacket {
+			bump.packet = bump.seen
+		}
+		c.dirtyBrokers[key] = bump
 		c.mu.Unlock()
 		return nil
 	}
 	c.mu.Unlock()
 
-	if err := c.Store.UpsertObserverBroker(ctx, observerID, brokerName); err != nil {
+	if err := c.Store.UpsertObserverBroker(ctx, observerID, brokerName, isPacket); err != nil {
 		return err
 	}
 	c.mu.Lock()
@@ -191,6 +210,30 @@ func (c *Coalescer) UpdateObserverStatus(ctx context.Context, p ingest.UpdateObs
 	return id, err
 }
 
+// DeleteOldObservers persists cached activity before pruning and forgets IDs so
+// returning observers write through. Include identities even if an earlier
+// presence flush failed or is still in flight; GREATEST prevents older flushes
+// from overwriting this freshness. A failed preparation must not delete rows.
+func (c *Coalescer) DeleteOldObservers(ctx context.Context, cutoff time.Time) ([]uuid.UUID, error) {
+	c.mu.Lock()
+	observers := c.dirtyObservers
+	for _, ident := range c.identities {
+		bump := observers[ident.id]
+		if ident.seen.After(bump.seen) {
+			bump.seen = ident.seen
+		}
+		observers[ident.id] = bump
+	}
+	c.dirtyObservers = make(map[uuid.UUID]observerBump)
+	clear(c.identities)
+	clear(c.knownBrokers)
+	c.mu.Unlock()
+	if err := c.flushObservers(ctx, observers); err != nil {
+		return nil, err
+	}
+	return c.Store.DeleteOldObservers(ctx, cutoff)
+}
+
 // Run flushes on the configured interval until ctx is cancelled, then does a
 // final flush so a clean shutdown loses nothing.
 func (c *Coalescer) Run(ctx context.Context) {
@@ -218,7 +261,7 @@ func (c *Coalescer) Flush(ctx context.Context) {
 	brokers := c.dirtyBrokers
 	packets := c.dirtyPackets
 	c.dirtyObservers = make(map[uuid.UUID]observerBump)
-	c.dirtyBrokers = make(map[brokerKey]time.Time)
+	c.dirtyBrokers = make(map[brokerKey]brokerBump)
 	c.dirtyPackets = make(map[string]time.Time)
 	cutoff := c.now().Add(-c.packetTTL)
 	for key, seen := range c.packetsSeen {
@@ -228,31 +271,23 @@ func (c *Coalescer) Flush(ctx context.Context) {
 	}
 	c.mu.Unlock()
 
-	if len(observers) > 0 {
-		ids := make([]uuid.UUID, 0, len(observers))
-		seen := make([]time.Time, 0, len(observers))
-		counts := make([]int32, 0, len(observers))
-		for id, bump := range observers {
-			ids = append(ids, id)
-			seen = append(seen, bump.seen)
-			counts = append(counts, bump.count)
-		}
-		if err := c.Store.TouchObservers(ctx, ids, seen, counts); err != nil {
-			log.Printf("presence: flush observers failed (%d rows dropped): %v", len(ids), err)
-		}
+	if err := c.flushObservers(ctx, observers); err != nil {
+		slog.Error(fmt.Sprintf("presence: flush observers failed (%d rows dropped)", len(observers)), "component", "presence", "error", err)
 	}
 
 	if len(brokers) > 0 {
 		ids := make([]uuid.UUID, 0, len(brokers))
 		names := make([]string, 0, len(brokers))
 		seen := make([]time.Time, 0, len(brokers))
+		packetTimes := make([]time.Time, 0, len(brokers))
 		for key, ts := range brokers {
 			ids = append(ids, key.id)
 			names = append(names, key.broker)
-			seen = append(seen, ts)
+			seen = append(seen, ts.seen)
+			packetTimes = append(packetTimes, ts.packet)
 		}
-		if err := c.Store.TouchObserverBrokers(ctx, ids, names, seen); err != nil {
-			log.Printf("presence: flush observer brokers failed (%d rows dropped): %v", len(ids), err)
+		if err := c.Store.TouchObserverBrokers(ctx, ids, names, seen, packetTimes); err != nil {
+			slog.Error(fmt.Sprintf("presence: flush observer brokers failed (%d rows dropped)", len(ids)), "component", "presence", "error", err)
 		}
 	}
 
@@ -264,7 +299,26 @@ func (c *Coalescer) Flush(ctx context.Context) {
 			heard = append(heard, ts)
 		}
 		if err := c.Store.TouchPackets(ctx, hashes, heard); err != nil {
-			log.Printf("presence: flush packets failed (%d rows dropped): %v", len(hashes), err)
+			slog.Error(fmt.Sprintf("presence: flush packets failed (%d rows dropped)", len(hashes)), "component", "presence", "error", err)
 		}
 	}
+}
+
+func (c *Coalescer) flushObservers(ctx context.Context, observers map[uuid.UUID]observerBump) error {
+	if len(observers) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(observers))
+	seen := make([]time.Time, 0, len(observers))
+	counts := make([]int32, 0, len(observers))
+	iatas := make([]string, 0, len(observers))
+	iataAts := make([]time.Time, 0, len(observers))
+	for id, bump := range observers {
+		ids = append(ids, id)
+		seen = append(seen, bump.seen)
+		counts = append(counts, bump.count)
+		iatas = append(iatas, bump.iata)
+		iataAts = append(iataAts, bump.iataAt)
+	}
+	return c.Store.TouchObservers(ctx, ids, seen, counts, iatas, iataAts)
 }

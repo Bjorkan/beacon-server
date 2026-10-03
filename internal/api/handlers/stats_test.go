@@ -117,7 +117,7 @@ func TestGetStatsPayloadBreakdown_OK(t *testing.T) {
 func TestGetStatsTopNodes_OK(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/stats/top-nodes", getStatsTopNodes(stubReader{
-		getStatsTopNodes: func(_ context.Context, _ []string, _ int32) ([]api.TopNode, error) {
+		getStatsTopNodes: func(_ context.Context, _ []string, _ time.Time, _ int32) ([]api.TopNode, error) {
 			return []api.TopNode{{IATA: "YVR", ObservationCount: 50}}, nil
 		},
 	}))
@@ -181,6 +181,52 @@ func TestGetStatsTopAdvertisers_OK(t *testing.T) {
 	}
 }
 
+func TestGetStatsClockDrift_OK(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/clock-drift", getStatsClockDrift(stubReader{
+		getStatsClockDrift: func(_ context.Context, _ []string, _ int32) ([]api.ClockDriftEntry, error) {
+			return []api.ClockDriftEntry{{ClockDriftSeconds: -600}}, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/clock-drift", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetStatsClockDrift_MultiIATA_PassedThrough(t *testing.T) {
+	var gotIATAs []string
+	r := chi.NewRouter()
+	r.Get("/stats/clock-drift", getStatsClockDrift(stubReader{
+		getStatsClockDrift: func(_ context.Context, iatas []string, _ int32) ([]api.ClockDriftEntry, error) {
+			gotIATAs = iatas
+			return nil, nil
+		},
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/clock-drift?iatas=YVR,YYJ", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if len(gotIATAs) != 2 || gotIATAs[0] != "YVR" || gotIATAs[1] != "YYJ" {
+		t.Errorf("expected [YVR YYJ], got %v", gotIATAs)
+	}
+}
+
+func TestGetStatsClockDrift_InvalidLimit(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/stats/clock-drift", getStatsClockDrift(stubReader{}))
+	req := httptest.NewRequest(http.MethodGet, "/stats/clock-drift?limit=notanint", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
 func TestGetStatsTopTalkers_InvalidSince(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/stats/top-talkers", getStatsTopTalkers(stubReader{}))
@@ -236,10 +282,10 @@ func TestGetStatsRadioPresets_OK(t *testing.T) {
 func TestGetStatsScopes_OK(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/stats/scopes", getStatsScopes(stubReader{
-		getScopeStats: func(_ context.Context) ([]api.ScopeStats, error) {
+		getScopeStats: func(_ context.Context, _ []string, _ time.Time) ([]api.ScopeStats, error) {
 			return []api.ScopeStats{{Name: "#bc", PacketCount: 100}}, nil
 		},
-	}))
+	}, nil))
 	req := httptest.NewRequest(http.MethodGet, "/stats/scopes", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

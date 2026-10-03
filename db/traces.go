@@ -7,10 +7,12 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	sqlc "github.com/MeshCore-Beacon/beacon-server/db/sqlc"
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
+	"github.com/MeshCore-Beacon/beacon-server/internal/ingest"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -20,19 +22,23 @@ type tracePayload struct {
 	SNRValues  []float32 `json:"snrValues"`
 }
 
-func (s *Store) UpsertTraceIATA(ctx context.Context, traceTag []byte, iata string, heardAt time.Time) error {
-	return s.q.UpsertTraceIATA(ctx, sqlc.UpsertTraceIATAParams{
-		TraceTag:  traceTag,
-		Iata:      iata,
-		LastHeard: pgtype.Timestamptz{Time: heardAt, Valid: true},
+func (s *Store) RecordTrace(ctx context.Context, h ingest.TraceHearing) error {
+	return s.q.RecordTrace(ctx, sqlc.RecordTraceParams{
+		TraceTag: h.TraceTag,
+		Iata:     h.IATA,
+		HeardAt:  pgtype.Timestamptz{Time: h.HeardAt, Valid: true},
 	})
+}
+
+func (s *Store) DeleteOldTraceTags(ctx context.Context, cutoff time.Time) error {
+	return s.q.DeleteOldTraceTags(ctx, pgtype.Timestamptz{Time: cutoff, Valid: true})
 }
 
 func (s *Store) DeleteOldTraceIATAs(ctx context.Context, cutoff time.Time) error {
 	return s.q.DeleteOldTraceIATAs(ctx, pgtype.Timestamptz{Time: cutoff, Valid: true})
 }
 
-func (s *Store) ListTraceTags(ctx context.Context, iatas []string, scope, traceType string, since, until time.Time, cursor time.Time, limit int32) ([]api.TraceTagSummary, error) {
+func (s *Store) ListTraceTags(ctx context.Context, iatas []string, scope, traceType string, since, until time.Time, cursor time.Time, cursorTag string, limit int32) ([]api.TraceTagSummary, error) {
 	var sinceTS, untilTS, cursorTS pgtype.Timestamptz
 	if !since.IsZero() {
 		sinceTS = pgtype.Timestamptz{Time: since, Valid: true}
@@ -43,6 +49,14 @@ func (s *Store) ListTraceTags(ctx context.Context, iatas []string, scope, traceT
 	if !cursor.IsZero() {
 		cursorTS = pgtype.Timestamptz{Time: cursor, Valid: true}
 	}
+	var tag []byte
+	if cursorTag != "" {
+		b, err := hex.DecodeString(cursorTag)
+		if err != nil {
+			return nil, fmt.Errorf("cursor tag: %w", err)
+		}
+		tag = b
+	}
 	rows, err := s.q.ListTraceTags(ctx, sqlc.ListTraceTagsParams{
 		Column1: iatas,
 		Column2: scope,
@@ -51,6 +65,7 @@ func (s *Store) ListTraceTags(ctx context.Context, iatas []string, scope, traceT
 		Column5: cursorTS,
 		Limit:   limit,
 		Column7: traceType,
+		Column8: tag,
 	})
 	if err != nil {
 		return nil, err
@@ -110,21 +125,8 @@ func (s *Store) GetTraceByTag(ctx context.Context, tag string) (*api.TraceDetail
 			}
 			packet.RawPath = rawPath
 		}
-		// fetch observations to get IATAs for route resolution
-		packetHashBytes, err := hex.DecodeString(r.PacketHashHex)
-		if err == nil {
-			obsRows, err := s.q.ListObservationsForPacket(ctx, packetHashBytes)
-			if err == nil && len(obsRows) > 0 {
-				iatas := make([]string, 0, len(obsRows))
-				seen := make(map[string]struct{})
-				for _, v := range obsRows {
-					if _, ok := seen[v.Iata]; !ok {
-						seen[v.Iata] = struct{}{}
-						iatas = append(iatas, v.Iata)
-					}
-				}
-				packet.ResolvedRoute = s.resolveTraceRoute(ctx, &parsed, iatas)
-			}
+		if len(r.Iatas) > 0 {
+			packet.ResolvedRoute = s.resolveTraceRoute(ctx, &parsed, r.Iatas)
 		}
 		detail.Packets = append(detail.Packets, packet)
 	}

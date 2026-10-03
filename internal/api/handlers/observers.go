@@ -4,6 +4,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/MeshCore-Beacon/beacon-server/internal/api"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // ObserversRouter mounts all /observers routes onto a subrouter.
@@ -18,6 +20,7 @@ import (
 // GET  /observers                        → listObservers
 // GET  /observers/{observerId}           → getObserver
 // GET  /observers/{observerId}/telemetry → getObserverTelemetry
+// GET  /observers/{observerId}/activity  → getObserverActivity
 // GET  /observers/{observerId}/adverts   → listObserverAdverts
 func ObserversRouter(reader api.Reader) http.Handler {
 	r := chi.NewRouter()
@@ -26,6 +29,7 @@ func ObserversRouter(reader api.Reader) http.Handler {
 		r.Get("/", getObserver(reader))
 		r.Get("/adverts", listObserverAdverts(reader))
 		r.Get("/telemetry", getObserverTelemetry(reader))
+		r.Get("/activity", getObserverActivity(reader))
 	})
 	return r
 }
@@ -45,7 +49,7 @@ func ObserversRouter(reader api.Reader) http.Handler {
 //	@Param		name	query		string	false	"Partial case-insensitive display name match"
 //	@Param		scope	query		string	false	"Filter by transport scope name e.g. %23bc (URL-encoded #bc)"
 //	@Param		cursor	query		int		false	"last_seen epoch ms of last item for pagination"
-//	@Param		limit	query		int		false	"Max results (default 50)"
+//	@Param		limit	query		int		false	"Max results (default 50); must be positive, values above 200 are clamped" minimum(1) maximum(200)
 //	@Success	200		{object}	api.Page[api.ObserverSummary]
 //	@Failure	400		{object}	handlers.APIError
 //	@Failure	500		{object}	handlers.APIError
@@ -66,20 +70,16 @@ func listObservers(reader api.Reader) http.HandlerFunc {
 			}
 			cursor = c
 		}
-		var limit int32 = 50
-		if limitParam := r.URL.Query().Get("limit"); limitParam != "" {
-			l, err := strconv.ParseInt(limitParam, 10, 32)
-			if err != nil {
-				respondError(w, http.StatusBadRequest, "limit must be an integer")
-				return
-			}
-			limit = int32(l)
+		limit, err := parseLimit(r, 50)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
 		}
 		iatas := parseIATAs(r)
 		if regionIDStr := r.URL.Query().Get("regionId"); regionIDStr != "" || r.URL.Query().Get("region") != "" {
 			regionIATAs, err := resolveRegionIATAs(r.Context(), regionIDStr, r.URL.Query().Get("region"), reader)
 			if err != nil {
-				respondError(w, http.StatusBadRequest, err.Error())
+				respondRegionError(w, err)
 				return
 			}
 			iatas = append(iatas, regionIATAs...)
@@ -102,6 +102,7 @@ func listObservers(reader api.Reader) http.HandlerFunc {
 //	@Success	200			{object}	api.Observer
 //	@Failure	400			{object}	handlers.APIError
 //	@Failure	404			{object}	handlers.APIError
+//	@Failure	500			{object}	handlers.APIError
 //	@Router		/observers/{observerId} [get]
 func getObserver(reader api.Reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -112,8 +113,12 @@ func getObserver(reader api.Reader) http.HandlerFunc {
 			return
 		}
 		obs, err := reader.GetObserver(r.Context(), id)
-		if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows), err == nil && obs == nil:
 			respondError(w, http.StatusNotFound, "observer not found")
+			return
+		case err != nil:
+			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 		respond(w, http.StatusOK, obs)
@@ -127,7 +132,7 @@ func getObserver(reader api.Reader) http.HandlerFunc {
 //	@Produce	json
 //	@Param		observerId	path		string	true	"Observer UUID"
 //	@Param		cursor		query		int		false	"Observation ID of last item for pagination"
-//	@Param		limit		query		int		false	"Max results (default 50)"
+//	@Param		limit		query		int		false	"Max results (default 50); must be positive, values above 200 are clamped" minimum(1) maximum(200)
 //	@Success	200			{object}	api.Page[api.AdvertObservation]
 //	@Failure	400			{object}	handlers.APIError
 //	@Failure	500			{object}	handlers.APIError
@@ -148,14 +153,10 @@ func listObserverAdverts(reader api.Reader) http.HandlerFunc {
 			}
 			cursor = c
 		}
-		var limit int32 = 50
-		if limitParam := r.URL.Query().Get("limit"); limitParam != "" {
-			l, err := strconv.ParseInt(limitParam, 10, 32)
-			if err != nil {
-				respondError(w, http.StatusBadRequest, "limit must be an integer")
-				return
-			}
-			limit = int32(l)
+		limit, err := parseLimit(r, 50)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
 		}
 		adverts, err := reader.ListObserverAdverts(r.Context(), observerID, cursor, limit)
 		if err != nil {
@@ -226,7 +227,8 @@ func getObserverTelemetry(reader api.Reader) http.HandlerFunc {
 		if bucketHours == 0 {
 			telemetry, err = reader.GetObserverTelemetry(r.Context(), observerID, since, until, afterID)
 		} else {
-			points, err := reader.GetObserverTelemetryBucketed(r.Context(), observerID, since, until, bucketHours)
+			var points []api.ObserverTelemetryPoint
+			points, err = reader.GetObserverTelemetryBucketed(r.Context(), observerID, since, until, bucketHours)
 			if err == nil {
 				telemetry = &api.ObserverTelemetry{Points: points}
 			}
@@ -238,5 +240,88 @@ func getObserverTelemetry(reader api.Reader) http.HandlerFunc {
 		telemetry.Range = rangeParam
 		telemetry.Interval = intervalParam
 		respond(w, http.StatusOK, telemetry)
+	}
+}
+
+// activityIntervals is the fixed bucket set; every value divides 24h so bucket
+// starts stay aligned to the clock regardless of when the window began.
+var activityIntervals = map[string]time.Duration{
+	"5m":  5 * time.Minute,
+	"15m": 15 * time.Minute,
+	"1h":  time.Hour,
+	"6h":  6 * time.Hour,
+	"24h": 24 * time.Hour,
+}
+
+// getObserverActivity godoc
+//
+//	@Summary	Get observer heard-activity history
+//	@Tags		Observers
+//	@Produce	json
+//	@Param		observerId	path		string	true	"Observer UUID"
+//	@Param		range		query		string	false	"Trailing window as a Go duration, max 720h (default 24h); max 48h when interval is under 1h"
+//	@Param		interval	query		string	false	"Bucket size: 5m, 15m, 1h, 6h or 24h (default 15m)"
+//	@Param		until	query		int	false	"Optional exclusive end in epoch milliseconds; aligned down to a complete bucket, at most 30 days old. Activity uses this window; summary freshness/latestRecordedAt and the last complete hour are measured at response generation time, independently of until."
+//	@Success	200			{object}	api.ObserverActivity
+//	@Failure	400			{object}	handlers.APIError
+//	@Failure	404			{object}	handlers.APIError
+//	@Failure	500			{object}	handlers.APIError
+//	@Router		/observers/{observerId}/activity [get]
+func getObserverActivity(reader api.Reader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		observerID, err := uuid.Parse(chi.URLParam(r, "observerId"))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid observer ID")
+			return
+		}
+		rangeParam := r.URL.Query().Get("range")
+		if rangeParam == "" {
+			rangeParam = "24h"
+		}
+		window, err := time.ParseDuration(rangeParam)
+		if err != nil || window <= 0 || window > 720*time.Hour {
+			respondError(w, http.StatusBadRequest, "invalid range, use a duration up to 720h e.g. 24h, 168h, 720h")
+			return
+		}
+		intervalParam := r.URL.Query().Get("interval")
+		if intervalParam == "" {
+			intervalParam = "15m"
+		}
+		interval, ok := activityIntervals[intervalParam]
+		if !ok {
+			respondError(w, http.StatusBadRequest, "invalid interval, use 5m, 15m, 1h, 6h or 24h")
+			return
+		}
+		// the raw path scans live observations, so keep sub-hour windows short
+		if interval < time.Hour && window > 48*time.Hour {
+			respondError(w, http.StatusBadRequest, "range must be 48h or less for intervals under 1h")
+			return
+		}
+		if window/interval > 1000 {
+			respondError(w, http.StatusBadRequest, "range/interval exceeds 1000 buckets")
+			return
+		}
+		until := time.Time{}
+		if values, ok := r.URL.Query()["until"]; ok {
+			n, err := strconv.ParseInt(values[0], 10, 64)
+			now := time.Now()
+			if len(values) != 1 || err != nil || n < 0 || n > now.Add(clockSkewTolerance).UnixMilli() || n < now.Add(-720*time.Hour).UnixMilli() {
+				respondError(w, http.StatusBadRequest, "until must be one past epoch-millisecond timestamp within 30 days")
+				return
+			}
+			until = time.UnixMilli(n)
+		}
+		activity, err := reader.GetObserverActivity(r.Context(), observerID, window, interval, until)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				respondError(w, http.StatusNotFound, "observer not found")
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+		activity.Range = rangeParam
+		activity.Interval = intervalParam
+		respond(w, http.StatusOK, activity)
 	}
 }

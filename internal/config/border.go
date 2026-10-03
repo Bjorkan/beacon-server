@@ -15,7 +15,7 @@ import (
 // map: well-formed Feature, geometry Polygon or MultiPolygon, every coordinate within
 // lon [-180,180] / lat [-90,90], every ring closed (first point == last point, 4+ points --
 // see orb.Ring.Closed). On success, returns the Feature re-marshaled to JSON with its bbox
-// computed and set, so reads never need to recompute it (db/migrations/011_add_iata_border.sql).
+// computed and set, so reads never need to recompute it (iata_codes.border).
 //
 // Coordinate order: GeoJSON packs coordinates [lon, lat], not [lat, lon]. A border authored
 // with the axes swapped is still well-formed JSON and its numbers can still individually fall
@@ -29,6 +29,9 @@ func ValidateBorder(raw []byte) (json.RawMessage, error) {
 	}
 	if feat.Type != "Feature" {
 		return nil, fmt.Errorf(`top-level "type" must be "Feature", got %q`, feat.Type)
+	}
+	if feat.Geometry == nil {
+		return nil, fmt.Errorf("Feature must have a Polygon or MultiPolygon geometry")
 	}
 	switch geom := feat.Geometry.(type) {
 	case orb.Polygon:

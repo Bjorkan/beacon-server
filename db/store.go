@@ -22,6 +22,7 @@ import (
 // Store wraps the sqlc-generated Queries and implements both ingest.DB and api.Reader.
 type Store struct {
 	q                   sqlc.Querier
+	pool                *pgxpool.Pool // rollups need a dedicated connection; nil in mock-backed tests
 	clockDriftThreshold time.Duration // see api.Node.ClockOutOfSync
 	staleThreshold      time.Duration // see api.NodeSummary.Stale
 }
@@ -32,7 +33,7 @@ type Store struct {
 // staleThreshold is how long since last_seen before a node's Stale is reported true; see
 // internal/config.ResolvedConfig.NodeStaleThreshold.
 func New(pool *pgxpool.Pool, clockDriftThreshold, staleThreshold time.Duration) *Store {
-	return &Store{q: sqlc.New(pool), clockDriftThreshold: clockDriftThreshold, staleThreshold: staleThreshold}
+	return &Store{q: sqlc.New(pool), pool: pool, clockDriftThreshold: clockDriftThreshold, staleThreshold: staleThreshold}
 }
 
 func (s *Store) ResolvePathHashes(ctx context.Context, iata string, hashes [][]byte) (map[string][]api.ResolvedPathEntry, error) {
@@ -83,6 +84,32 @@ func (s *Store) ResolvePathHashes(ctx context.Context, iata string, hashes [][]b
 	return result, nil
 }
 
+// ResolveEndpointHashes matches one-byte packet endpoints across advertised roles.
+// Keep this separate from the infrastructure-only intermediate path resolver.
+func (s *Store) ResolveEndpointHashes(ctx context.Context, iata string, hashes [][]byte) (map[string][]api.ResolvedPathEntry, error) {
+	if len(hashes) == 0 {
+		return nil, nil
+	}
+	for _, hash := range hashes {
+		if len(hash) != 1 {
+			return nil, nil
+		}
+	}
+	rows, err := s.q.ResolveEndpointHashes(ctx, sqlc.ResolveEndpointHashesParams{Iata: iata, Column2: hashes})
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]api.ResolvedPathEntry)
+	for _, row := range rows {
+		key := hex.EncodeToString(row.Hash)
+		result[key] = append(result[key], api.ResolvedPathEntry{
+			NodeID: row.NodeID, Name: row.Name, Latitude: row.Latitude,
+			Longitude: row.Longitude, PublicKey: row.PublicKey,
+		})
+	}
+	return result, nil
+}
+
 // nullableUUID returns nil for a zero UUID, or a pointer to the UUID otherwise.
 func nullableUUID(id uuid.UUID) *uuid.UUID {
 	if id == (uuid.UUID{}) {
@@ -104,7 +131,7 @@ func tristate(b *bool) string {
 }
 
 // toChannelMessage maps raw sqlc row fields to an api.ChannelMessage.
-func toChannelMessage(id int64, packetHashHex string, channelHash []byte, senderName *string, content *string, sentAt pgtype.Timestamptz, observationCount int64) api.ChannelMessage {
+func toChannelMessage(id int64, packetHashHex string, channelHash []byte, senderName *string, content *string, sentAt pgtype.Timestamptz, observationCount int64, scope *string, transport *bool) api.ChannelMessage {
 	sn := ""
 	if senderName != nil {
 		sn = *senderName
@@ -121,5 +148,23 @@ func toChannelMessage(id int64, packetHashHex string, channelHash []byte, sender
 		Content:          ct,
 		SentAt:           sentAt.Time.UnixMilli(),
 		ObservationCount: observationCount,
+		Scope:            scope,
+		ScopeStatus:      api.RecordedChannelScopeStatus(scope, transport),
+	}
+}
+
+// deleteInBatches repeats a delete until a batch comes back short.
+func deleteInBatches(ctx context.Context, batchSize int32, del func(context.Context, int32) (int64, error)) error {
+	for {
+		n, err := del(ctx, batchSize)
+		if err != nil {
+			return err
+		}
+		if n < int64(batchSize) {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 	}
 }

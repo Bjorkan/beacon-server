@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -29,9 +29,8 @@ type DecryptGroupTextResult struct {
 	ChannelID   int
 	ChannelHash []byte
 	Entry       keystore.Entry
-	// NewMessage is false if InsertChannelMessage found the message already existed
-	// (packet_hash is unique per message) -- e.g. re-running the backfill twice.
-	NewMessage bool
+	// Message is nil when the packet already has a stored channel message.
+	Message *InsertedChannelMessage
 }
 
 // DecryptGroupText attempts to decrypt a GRP_TXT payload against keys and, on success,
@@ -42,7 +41,7 @@ type DecryptGroupTextResult struct {
 // decides what to do with that. The live path falls back to UpsertChannelHashOnly itself;
 // BackfillChannelMessages, which only scans packets already recorded that way, just leaves
 // them as they are and tries again next boot.
-func DecryptGroupText(ctx context.Context, db DB, keys ChannelKeyStore, packetHash, rawPayload []byte) (*DecryptGroupTextResult, error) {
+func DecryptGroupText(ctx context.Context, db DB, keys ChannelKeyStore, packetHash, rawPayload []byte, historical bool) (*DecryptGroupTextResult, error) {
 	grpTxt, err := meshcore.GroupTextFromBytes(rawPayload)
 	if err != nil {
 		return nil, err
@@ -71,17 +70,18 @@ func DecryptGroupText(ctx context.Context, db DB, keys ChannelKeyStore, packetHa
 		PacketHash: packetHash,
 		SenderName: strings.ReplaceAll(strings.ToValidUTF8(payload.Sender, "\uFFFD"), "\x00", ""),
 		SentAt:     time.Unix(int64(payload.Timestamp), 0),
+		Historical: historical,
 		Content:    strings.ReplaceAll(strings.ToValidUTF8(payload.Text, "\uFFFD"), "\x00", ""),
 	}
 	newMsg, err := db.InsertChannelMessage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("insert channel message: %w", err)
 	}
-	if newMsg {
+	if newMsg != nil {
 		// Non-fatal: the message is stored either way, so just log and continue -- matches
 		// the live ingest path's existing behavior of not treating this as a hard failure.
 		if err := db.SetPacketDecrypted(ctx, packetHash); err != nil {
-			log.Printf("ingest: failed to set packet decrypted for %s: %v", hex.EncodeToString(packetHash), err)
+			slog.Error(fmt.Sprintf("ingest: failed to set packet decrypted for %s", hex.EncodeToString(packetHash)), "component", "ingest", "error", err)
 		}
 	}
 	return &DecryptGroupTextResult{
@@ -89,7 +89,7 @@ func DecryptGroupText(ctx context.Context, db DB, keys ChannelKeyStore, packetHa
 		ChannelID:   channelID,
 		ChannelHash: channelHashBytes,
 		Entry:       usedEntry,
-		NewMessage:  newMsg,
+		Message:     newMsg,
 	}, nil
 }
 
@@ -108,16 +108,29 @@ func BackfillChannelMessages(ctx context.Context, db DB, keys ChannelKeyStore) (
 	if err != nil {
 		return 0, err
 	}
+	return backfill(ctx, db, keys, packets), nil
+}
+
+// BackfillChannelHashes retries only the channels whose keys were just imported at runtime.
+func BackfillChannelHashes(ctx context.Context, db DB, keys ChannelKeyStore, hashes [][]byte) (int, error) {
+	packets, err := db.ListUndecryptedGroupTextPacketsByHash(ctx, hashes)
+	if err != nil {
+		return 0, err
+	}
+	return backfill(ctx, db, keys, packets), nil
+}
+
+func backfill(ctx context.Context, db DB, keys ChannelKeyStore, packets []UndecryptedPacket) int {
 	decrypted := 0
 	for _, p := range packets {
-		result, err := DecryptGroupText(ctx, db, keys, p.PacketHash, p.RawPayload)
+		result, err := DecryptGroupText(ctx, db, keys, p.PacketHash, p.RawPayload, true)
 		if err != nil {
-			log.Printf("ingest: backfill: decrypt failed for packet %s: %v", hex.EncodeToString(p.PacketHash), err)
+			slog.Error(fmt.Sprintf("ingest: backfill: decrypt failed for packet %s", hex.EncodeToString(p.PacketHash)), "component", "ingest", "error", err)
 			continue
 		}
-		if result != nil && result.NewMessage {
+		if result != nil && result.Message != nil {
 			decrypted++
 		}
 	}
-	return decrypted, nil
+	return decrypted
 }

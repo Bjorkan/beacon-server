@@ -22,6 +22,7 @@ func RoutesRouter(reader api.Reader) http.Handler {
 	r.Get("/", listKnownRoutes(reader))
 	r.Get("/cross", searchCrossIATARoutes(reader))
 	r.Get("/search", searchKnownRoutes(reader))
+	r.Get("/{iata}/{pathKey}/observations", getRouteEvidence(reader))
 	return r
 }
 
@@ -33,7 +34,9 @@ func RoutesRouter(reader api.Reader) http.Handler {
 //	@Param		iata		query		string	false	"Filter by IATA code"
 //	@Param		hopCount	query		int		false	"Filter by exact hop count"
 //	@Param		cursor		query		int		false	"Epoch ms timestamp of last item for pagination"
-//	@Param		limit		query		int		false	"Max results (default 50)"
+//	@Param		cursorId	query		int		false	"id of the last item; with cursor, also returns later routes sharing that millisecond"
+//	@Param		limit		query		int		false	"Max results (default 50); must be positive, values above 200 are clamped" minimum(1) maximum(200)
+//	@Failure	400			{object}	handlers.APIError
 //	@Success	200			{object}	[]api.KnownRoute
 //	@Failure	500			{object}	handlers.APIError
 //	@Router		/routes [get]
@@ -52,13 +55,26 @@ func listKnownRoutes(reader api.Reader) http.HandlerFunc {
 				cursor = time.UnixMilli(ms)
 			}
 		}
-		var limit int32 = 50
-		if v := r.URL.Query().Get("limit"); v != "" {
-			if l, err := strconv.ParseInt(v, 10, 32); err == nil {
-				limit = int32(l)
+		// cursorId breaks ties within the cursor's millisecond.
+		var cursorID int64
+		if v := r.URL.Query().Get("cursorId"); v != "" {
+			id, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || id <= 0 {
+				respondError(w, http.StatusBadRequest, "cursorId must be a positive integer")
+				return
 			}
+			if cursor.IsZero() {
+				respondError(w, http.StatusBadRequest, "cursorId requires cursor")
+				return
+			}
+			cursorID = id
 		}
-		routes, err := reader.ListKnownRoutes(r.Context(), iata, hopCount, cursor, limit)
+		limit, err := parseLimit(r, 50)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		routes, err := reader.ListKnownRoutes(r.Context(), iata, hopCount, cursor, cursorID, limit)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return

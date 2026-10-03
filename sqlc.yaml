@@ -5,7 +5,7 @@ version: "2"
 sql:
   - engine: "postgresql"
     queries: "db/queries"
-    schema: "db/migrations"
+    schema: ["db/migrations", "db/sqlc_scratch"]
     gen:
       go:
         package: "db"

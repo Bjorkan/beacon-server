@@ -11,15 +11,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/MeshCore-Beacon/beacon-server/internal/config"
 	redis "github.com/redis/go-redis/v9"
+	"golang.org/x/sync/singleflight"
 )
 
 // Client wraps a Redis client with helper methods used by CachedReader.
 type Client struct {
 	rdb *redis.Client
+	sf  singleflight.Group // one fetch per key across concurrent misses
 }
 
 // NewClient creates a new Redis client from the given address, password, and
@@ -75,6 +78,24 @@ func (c *Client) del(ctx context.Context, keys ...string) {
 	c.rdb.Del(ctx, keys...)
 }
 
+// delPrefix SCANs the whole keyspace; call it rarely.
+func (c *Client) delPrefix(ctx context.Context, prefix string) {
+	var cursor uint64
+	for {
+		keys, next, err := c.rdb.Scan(ctx, cursor, prefix+"*", 100).Result()
+		if err != nil {
+			return
+		}
+		if len(keys) > 0 {
+			c.rdb.Del(ctx, keys...)
+		}
+		if next == 0 {
+			return
+		}
+		cursor = next
+	}
+}
+
 // getOrSet retrieves a cached value by key, deserialising it into T.
 // On a cache miss it calls fetch, stores the result under key with the given
 // TTL, and returns it. If Redis is unavailable or returns an unexpected error,
@@ -82,38 +103,62 @@ func (c *Client) del(ctx context.Context, keys ...string) {
 // fails to unmarshal (corrupt or schema-changed), the entry is overwritten
 // with a fresh fetch. Errors from Set are ignored so a Redis hiccup never
 // fails a request.
-func getOrSet[T any](ctx context.Context, c *Client, key string, ttl time.Duration, fetch func() (T, error)) (T, error) {
+func getOrSet[T any](ctx context.Context, c *Client, key string, ttl time.Duration, fetch func(context.Context) (T, error)) (T, error) {
 	raw, err := c.rdb.Get(ctx, key).Bytes()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		// real Redis error, degrade gracefully
-		return fetch()
+		slog.DebugContext(ctx, "cache bypass", "component", "cache", "reason", "read_error")
+		return fetch(ctx)
 	}
 	var zero, out T
-	if errors.Is(err, redis.Nil) {
-		// cache miss — fetch, store, return
-		val, err := fetch()
-		if err != nil {
-			return zero, err
+	if err == nil {
+		if err = json.Unmarshal(raw, &out); err == nil {
+			slog.DebugContext(ctx, "cache hit", "component", "cache")
+			return out, nil
 		}
-		data, jsonErr := json.Marshal(val)
-		if jsonErr != nil {
-			return val, nil
-		}
-		_ = c.rdb.Set(ctx, key, data, ttl)
-		return val, nil
+		slog.DebugContext(ctx, "cache invalid entry", "component", "cache")
+	} else {
+		slog.DebugContext(ctx, "cache miss", "component", "cache")
 	}
-	if err = json.Unmarshal(raw, &out); err != nil {
-		// corrupt cache entry — overwrite it
-		val, err := fetch()
-		if err != nil {
-			return zero, err
-		}
-		data, jsonErr := json.Marshal(val)
-		if jsonErr != nil {
-			return val, nil
-		}
-		_ = c.rdb.Set(ctx, key, data, ttl)
-		return val, nil
+	raw, err = fetchShared(ctx, c, key, ttl, func(ctx context.Context) (any, error) { return fetch(ctx) })
+	if err != nil {
+		return zero, err
+	}
+	// Each caller decodes its own copy: handlers may decorate the value they get.
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return zero, err
 	}
 	return out, nil
+}
+
+// sharedFetchTimeout bounds a fetch that no single request owns.
+const sharedFetchTimeout = 30 * time.Second
+
+// fetchShared runs one fetch per key across concurrent misses and returns its JSON. The fetch
+// gets its own bounded context so one caller disconnecting can't fail the others, and each
+// caller still stops waiting when its own context ends.
+func fetchShared(ctx context.Context, c *Client, key string, ttl time.Duration, fetch func(context.Context) (any, error)) ([]byte, error) {
+	ch := c.sf.DoChan(key, func() (any, error) {
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sharedFetchTimeout)
+		defer cancel()
+		val, err := fetch(fctx)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(val)
+		if err != nil {
+			return nil, err
+		}
+		_ = c.rdb.Set(fctx, key, data, ttl)
+		return data, nil
+	})
+	select {
+	case r := <-ch:
+		if r.Err != nil {
+			return nil, r.Err
+		}
+		return r.Val.([]byte), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }

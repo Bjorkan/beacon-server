@@ -17,6 +17,14 @@ type PacketLatestObserver struct {
 	ID          uuid.UUID `json:"id"`
 	DisplayName *string   `json:"displayName,omitempty"`
 	IATA        string    `json:"iata"`
+	// PathLength/PathBytes and captured endpoint resolutions are stored on the observation,
+	// so list/backfill reads need no per-hash resolution queries. Legacy observations have
+	// no endpoint snapshot. ResolvedPath remains a detail/opted-in WS feature.
+	PathLength          *PacketPathLength `json:"pathLength,omitempty"`
+	PathBytes           *string           `json:"pathBytes,omitempty"` // hex-encoded accumulated path hashes
+	ResolvedPath        []ResolvedHop     `json:"resolvedPath,omitempty"`
+	ResolvedSource      *ResolvedHop      `json:"resolvedSource,omitempty"`
+	ResolvedDestination *ResolvedHop      `json:"resolvedDestination,omitempty"`
 }
 
 // PacketSummary is the minimal packet representation used in list responses.
@@ -32,7 +40,7 @@ type PacketSummary struct {
 	LastHeardAt      int64                 `json:"lastHeardAt"`     // epoch ms
 	ObservationCount int32                 `json:"observationCount"`
 	LatestObserver   *PacketLatestObserver `json:"latestObserver,omitempty"`
-	Summary          *string               `json:"summary,omitempty"` // human-readable payload summary
+	Summary          *string               `json:"summary,omitempty"` // advert name, or the ACK/TRACE/PING summary; omitted when unavailable
 }
 
 // PacketPathLength is the decoded path_length byte from a packet observation.
@@ -59,7 +67,9 @@ type PacketObservationDetail struct {
 	SourceBroker      string           `json:"sourceBroker"`
 	ResolvedPath      []ResolvedHop    `json:"resolvedPath"` // per-observation resolved path hashes
 	// ResolvedSource/ResolvedDestination are the packet's endpoints, when the payload type
-	// carries a resolvable one: an exact match for ADVERT's full pubkey, an ambiguous
+	// carries one. Prefer the snapshot captured at ingest; legacy observations without a
+	// snapshot use the current node registry. Endpoint matching itself is unchanged:
+	// an exact match for ADVERT's full pubkey, an ambiguous
 	// hash-prefix match (like intermediate hops) for TEXT_MESSAGE/PATH/ANON_REQ's 1-byte
 	// source/destination hashes. Nil when the payload type doesn't carry one at all (e.g.
 	// GRP_TXT/GRP_DATA/TRACE aren't node-to-node addressed) -- see BuildResolvedPath and
