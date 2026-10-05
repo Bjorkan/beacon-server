@@ -16,7 +16,7 @@ import (
 // listObserverDirectory godoc
 //
 // @Summary List observers with windowed traffic counts
-// @Description Counts cover completed UTC hourly analytics. Incomplete windows return null counts and name ordering. Repeat filters and explicit since/until on later pages. Results may move as data changes.
+// @Description Defaults to the trailing seven days through request time. Counts combine completed whole-hour analytics with retained observations for other hours and exact boundary slices. Incomplete history still returns numeric counts and the requested sort; coverage describes available history. Repeat filters and the returned windowStart/windowEnd as since/until with the cursor on later pages. Results may move as data changes; refresh without bounds for a new rolling window.
 // @Tags Observers
 // @Produce json
 // @Param iata query string false "Single IATA"
@@ -29,8 +29,8 @@ import (
 // @Param name query string false "Case-insensitive partial name"
 // @Param scope query string false "Transport scope membership"
 // @Param sort query string false "traffic (default) or name"
-// @Param since query int64 false "Inclusive epoch ms, rounded down to UTC hour; default 24 hours before until"
-// @Param until query int64 false "Exclusive epoch ms, rounded down to UTC hour; default end of latest rollable hour"
+// @Param since query int64 false "Inclusive epoch ms, preserved exactly; default seven days before until; maximum window 31 days"
+// @Param until query int64 false "Exclusive epoch ms, preserved exactly; default request time"
 // @Param cursor query int64 false "nextCursor returned by preceding page"
 // @Param limit query int false "Page size, default 50, maximum 200"
 // @Success 200 {object} api.ObserverDirectory
@@ -88,27 +88,27 @@ func listObserverDirectory(reader api.Reader) http.HandlerFunc {
 				return
 			}
 		}
-		now := time.Now().UTC()
-		until := now.Add(-95 * time.Minute).Truncate(time.Hour).Add(time.Hour)
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		until := now
 		if values.Has("until") {
 			n, e := strconv.ParseInt(values.Get("until"), 10, 64)
 			if e != nil || n <= 0 || n > now.UnixMilli() {
 				respondError(w, 400, "until must be a past epoch millisecond timestamp")
 				return
 			}
-			until = time.UnixMilli(n).UTC().Truncate(time.Hour)
+			until = time.UnixMilli(n).UTC()
 		}
-		since := until.Add(-24 * time.Hour)
+		since := until.Add(-7 * 24 * time.Hour)
 		if values.Has("since") {
 			n, e := strconv.ParseInt(values.Get("since"), 10, 64)
 			if e != nil || n <= 0 {
 				respondError(w, 400, "since must be positive epoch milliseconds")
 				return
 			}
-			since = time.UnixMilli(n).UTC().Truncate(time.Hour)
+			since = time.UnixMilli(n).UTC()
 		}
 		if !since.Before(until) || until.Sub(since) > 31*24*time.Hour {
-			respondError(w, 400, "directory window must be between one hour and 31 days")
+			respondError(w, 400, "directory window must be positive and at most 31 days")
 			return
 		}
 		q.Since = since.UnixMilli()

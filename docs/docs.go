@@ -1432,7 +1432,7 @@ const docTemplate = `{
         },
         "/observers/directory": {
             "get": {
-                "description": "Counts cover completed UTC hourly analytics. Incomplete windows return null counts and name ordering. Repeat filters and explicit since/until on later pages. Results may move as data changes.",
+                "description": "Defaults to the trailing seven days through request time. Counts combine completed whole-hour analytics with retained observations for other hours and exact boundary slices. Incomplete history still returns numeric counts and the requested sort; coverage describes available history. Repeat filters and the returned windowStart/windowEnd as since/until with the cursor on later pages. Results may move as data changes; refresh without bounds for a new rolling window.",
                 "produces": [
                     "application/json"
                 ],
@@ -1504,14 +1504,14 @@ const docTemplate = `{
                     {
                         "type": "integer",
                         "format": "int64",
-                        "description": "Inclusive epoch ms, rounded down to UTC hour; default 24 hours before until",
+                        "description": "Inclusive epoch ms, preserved exactly; default seven days before until; maximum window 31 days",
                         "name": "since",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "format": "int64",
-                        "description": "Exclusive epoch ms, rounded down to UTC hour; default end of latest rollable hour",
+                        "description": "Exclusive epoch ms, preserved exactly; default request time",
                         "name": "until",
                         "in": "query"
                     },
@@ -4544,6 +4544,7 @@ const docTemplate = `{
                     }
                 },
                 "maxObservationCount": {
+                    "description": "Maximum over all matching observers, not only this page; zero when none match.",
                     "type": "integer"
                 },
                 "nextCursor": {
@@ -4601,6 +4602,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "observationCount": {
+                    "description": "Available observations in [windowStart, windowEnd), including zero with missing history.",
                     "type": "integer"
                 },
                 "observerType": {

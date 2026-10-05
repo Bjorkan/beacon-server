@@ -20,9 +20,12 @@ type ObserverDirectoryQuery struct {
 
 type ObserverDirectoryItem struct {
 	ObserverSummary
+	// Available observations in [windowStart, windowEnd), including zero with missing history.
 	ObservationCount *int64 `json:"observationCount"`
 }
 
+// Coverage counts intersecting UTC hours. Complete hours use whole-hour rollups;
+// partial hours have partial/boundary rollups or available raw observations.
 type ObserverDirectoryCoverage struct {
 	Status        string `json:"status"`
 	ExpectedHours int    `json:"expectedHours"`
@@ -33,12 +36,13 @@ type ObserverDirectoryCoverage struct {
 
 type ObserverDirectory struct {
 	Page[ObserverDirectoryItem]
-	GeneratedAt         int64                     `json:"generatedAt"`
-	WindowStart         int64                     `json:"windowStart"`
-	WindowEnd           int64                     `json:"windowEnd"`
-	Sort                string                    `json:"sort"`
-	EffectiveSort       string                    `json:"effectiveSort"`
-	Coverage            ObserverDirectoryCoverage `json:"coverage"`
-	MaxObservationCount *int64                    `json:"maxObservationCount"`
-	ObserverTypes       []string                  `json:"observerTypes"`
+	GeneratedAt   int64                     `json:"generatedAt"`
+	WindowStart   int64                     `json:"windowStart"`
+	WindowEnd     int64                     `json:"windowEnd"`
+	Sort          string                    `json:"sort"`
+	EffectiveSort string                    `json:"effectiveSort"`
+	Coverage      ObserverDirectoryCoverage `json:"coverage"`
+	// Maximum over all matching observers, not only this page; zero when none match.
+	MaxObservationCount *int64   `json:"maxObservationCount"`
+	ObserverTypes       []string `json:"observerTypes"`
 }

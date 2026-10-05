@@ -702,6 +702,8 @@ definitions:
           $ref: '#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverDirectoryItem'
         type: array
       maxObservationCount:
+        description: Maximum over all matching observers, not only this page; zero
+          when none match.
         type: integer
       nextCursor:
         type: integer
@@ -740,6 +742,8 @@ definitions:
       id:
         type: string
       observationCount:
+        description: Available observations in [windowStart, windowEnd), including
+          zero with missing history.
         type: integer
       observerType:
         description: e.g. "meshcoretomqtt", "meshcoreha"
@@ -2810,9 +2814,13 @@ paths:
       - Observers
   /observers/directory:
     get:
-      description: Counts cover completed UTC hourly analytics. Incomplete windows
-        return null counts and name ordering. Repeat filters and explicit since/until
-        on later pages. Results may move as data changes.
+      description: Defaults to the trailing seven days through request time. Counts
+        combine completed whole-hour analytics with retained observations for other
+        hours and exact boundary slices. Incomplete history still returns numeric
+        counts and the requested sort; coverage describes available history. Repeat
+        filters and the returned windowStart/windowEnd as since/until with the cursor
+        on later pages. Results may move as data changes; refresh without bounds for
+        a new rolling window.
       parameters:
       - description: Single IATA
         in: query
@@ -2854,14 +2862,13 @@ paths:
         in: query
         name: sort
         type: string
-      - description: Inclusive epoch ms, rounded down to UTC hour; default 24 hours
-          before until
+      - description: Inclusive epoch ms, preserved exactly; default seven days before
+          until; maximum window 31 days
         format: int64
         in: query
         name: since
         type: integer
-      - description: Exclusive epoch ms, rounded down to UTC hour; default end of
-          latest rollable hour
+      - description: Exclusive epoch ms, preserved exactly; default request time
         format: int64
         in: query
         name: until
