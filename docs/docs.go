@@ -1430,6 +1430,127 @@ const docTemplate = `{
                 }
             }
         },
+        "/observers/directory": {
+            "get": {
+                "description": "Defaults to the trailing seven days through request time. Counts combine completed whole-hour analytics with retained observations for other hours and exact boundary slices. Incomplete history still returns numeric counts and the requested sort; coverage describes available history. Repeat filters and the returned windowStart/windowEnd as since/until with the cursor on later pages. Results may move as data changes; refresh without bounds for a new rolling window.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Observers"
+                ],
+                "summary": "List observers with windowed traffic counts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Single IATA",
+                        "name": "iata",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated IATAs",
+                        "name": "iatas",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Region ID",
+                        "name": "regionId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Region slug",
+                        "name": "region",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Observer type",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Broker membership",
+                        "name": "broker",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "online or offline",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Case-insensitive partial name",
+                        "name": "name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Transport scope membership",
+                        "name": "scope",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "traffic (default) or name",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Inclusive epoch ms, preserved exactly; default seven days before until; maximum window 31 days",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Exclusive epoch ms, preserved exactly; default request time",
+                        "name": "until",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "nextCursor returned by preceding page",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size, default 50, maximum 200",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverDirectory"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/observers/{observerId}": {
             "get": {
                 "produces": [
@@ -4401,6 +4522,110 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverDirectory": {
+            "type": "object",
+            "properties": {
+                "coverage": {
+                    "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverDirectoryCoverage"
+                },
+                "effectiveSort": {
+                    "type": "string"
+                },
+                "generatedAt": {
+                    "type": "integer"
+                },
+                "hasMore": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverDirectoryItem"
+                    }
+                },
+                "maxObservationCount": {
+                    "description": "Maximum over all matching observers, not only this page; zero when none match.",
+                    "type": "integer"
+                },
+                "nextCursor": {
+                    "type": "integer"
+                },
+                "observerTypes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sort": {
+                    "type": "string"
+                },
+                "windowEnd": {
+                    "type": "integer"
+                },
+                "windowStart": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverDirectoryCoverage": {
+            "type": "object",
+            "properties": {
+                "completeHours": {
+                    "type": "integer"
+                },
+                "expectedHours": {
+                    "type": "integer"
+                },
+                "missingHours": {
+                    "type": "integer"
+                },
+                "partialHours": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverDirectoryItem": {
+            "type": "object",
+            "properties": {
+                "displayName": {
+                    "description": "friendly name from /status messages",
+                    "type": "string"
+                },
+                "iata": {
+                    "description": "most recently heard IATA",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "observationCount": {
+                    "description": "Available observations in [windowStart, windowEnd), including zero with missing history.",
+                    "type": "integer"
+                },
+                "observerType": {
+                    "description": "e.g. \"meshcoretomqtt\", \"meshcoreha\"",
+                    "type": "string"
+                },
+                "radio": {
+                    "description": "friendly radio param string: freqMhz,BwKhz,SF e.g. \"910.525,62.5,7\"",
+                    "type": "string"
+                },
+                "scopes": {
+                    "description": "list of observer forwarded scopes matched to config",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "description": "\"online\" or \"offline\" derived from last_status_at",
+                    "type": "string"
+                }
+            }
+        },
         "github_com_MeshCore-Beacon_beacon-server_internal_api.ObserverSummary": {
             "type": "object",
             "properties": {
@@ -5811,7 +6036,7 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "2.0.1",
+	Version:          "2.0.2",
 	Host:             "localhost:8080",
 	BasePath:         "/api/v1",
 	Schemes:          []string{"http", "https"},

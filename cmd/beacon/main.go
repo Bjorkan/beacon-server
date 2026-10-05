@@ -45,7 +45,7 @@ import (
 var version = "dev"
 
 //	@title			MeshCore Beacon API
-//	@version		2.0.1
+//	@version		2.0.2
 //	@description	MeshCore network observation backend. Ingests LoRa packets from MQTT brokers, stores in PostgreSQL, and streams live events via WebSocket.
 //	@description	REST requests share a configurable per-client rate limit (default 300/minute and a 300-request one-second burst cap). Exceeded limits return HTTP 429 with error.code=rate_limited and a Retry-After header in seconds. CORS preflights and WebSocket upgrades do not consume this API budget.
 //	@description	WebSocket upgrade attempts at /ws have a configurable per-client limit (default 10/minute, including failed handshakes). Rate exhaustion returns HTTP 429 with Retry-After before upgrade. An accepted socket exceeding the concurrent cap closes with code 1013 before hello; established connections remain open.
@@ -197,8 +197,11 @@ func main() {
 	scopes.Load(scopeEntries)
 	scopes.SetManualMembers(cfg.ManualScopeMembers())
 	slog.Info(fmt.Sprintf("loaded %d transport scopes", len(scopeEntries)), "component", "startup")
-	directory := meshmapper.NewDirectory(store)
+	directory := meshmapper.NewDirectory(store, cfg.MeshMapper.APIKey)
 	if cfg.MeshMapper.Scopes.Enabled || cfg.MeshMapper.Zones.Enabled || cfg.MeshMapper.Channels.Enabled {
+		if cfg.MeshMapper.APIKey == "" {
+			slog.Warn("MeshMapper integration unconfigured: set MESHMAPPER_API_KEY or meshmapper.api_key; retaining cached data", "component", "meshmapper")
+		}
 		restoreCtx, cancelRestore := context.WithTimeout(ctx, 10*time.Second)
 		err = directory.Restore(restoreCtx)
 		cancelRestore()
