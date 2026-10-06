@@ -259,9 +259,9 @@ definitions:
         type: string
       iata:
         type: string
-      lat:
+      latitude:
         type: number
-      lon:
+      longitude:
         type: number
     type: object
   github_com_MeshCore-Beacon_beacon-server_internal_api.KnownRoute:
@@ -327,10 +327,10 @@ definitions:
       lastSeen:
         description: epoch ms
         type: integer
-      lat:
+      latitude:
         description: decimal degrees, from advert AppData
         type: number
-      lng:
+      longitude:
         description: decimal degrees, from advert AppData
         type: number
       locationSource:
@@ -405,9 +405,9 @@ definitions:
       lastSeen:
         description: epoch ms
         type: integer
-      lat:
+      latitude:
         type: number
-      lng:
+      longitude:
         type: number
       name:
         type: string
@@ -439,10 +439,10 @@ definitions:
         type: boolean
       knownNeighborCount:
         type: integer
-      lat:
+      latitude:
         description: decimal degrees, from advert AppData
         type: number
-      lng:
+      longitude:
         description: decimal degrees, from advert AppData
         type: number
       name:

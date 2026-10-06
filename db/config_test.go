@@ -38,8 +38,8 @@ func TestListIATAs(t *testing.T) {
 	if iatas[0].IATA != "YVR" {
 		t.Errorf("expected IATA YVR, got %s", iatas[0].IATA)
 	}
-	if *iatas[0].Lat != lat {
-		t.Errorf("expected Lat %f, got %f", lat, *iatas[0].Lat)
+	if *iatas[0].Latitude != lat {
+		t.Errorf("expected Latitude %f, got %f", lat, *iatas[0].Latitude)
 	}
 }
 
@@ -63,8 +63,8 @@ func TestGetIATA(t *testing.T) {
 	if iata.IATA != "YVR" {
 		t.Errorf("expected YVR, got %s", iata.IATA)
 	}
-	if *iata.Lng != lng {
-		t.Errorf("expected Lng %f, got %f", lng, *iata.Lng)
+	if *iata.Longitude != lng {
+		t.Errorf("expected Longitude %f, got %f", lng, *iata.Longitude)
 	}
 }
 

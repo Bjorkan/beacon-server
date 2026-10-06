@@ -30,8 +30,8 @@ func (s *Store) ListIATAs(ctx context.Context) ([]api.IATA, error) {
 		iatas = append(iatas, api.IATA{
 			IATA:        v.Iata,
 			DisplayName: v.DisplayName,
-			Lat:         v.ApproxLat,
-			Lng:         v.ApproxLng,
+			Latitude:    v.ApproxLat,
+			Longitude:   v.ApproxLng,
 		})
 	}
 	return iatas, nil
@@ -45,8 +45,8 @@ func (s *Store) GetIATA(ctx context.Context, iata string) (*api.IATA, error) {
 	return &api.IATA{
 		IATA:        i.Iata,
 		DisplayName: i.DisplayName,
-		Lat:         i.ApproxLat,
-		Lng:         i.ApproxLng,
+		Latitude:    i.ApproxLat,
+		Longitude:   i.ApproxLng,
 	}, nil
 }
 
